@@ -15,7 +15,7 @@
             aria-atomic="true"
           >{{ memoryCountLabel }}</span>
         </div>
-        <p class="agent-memory__intro">A deliberate snapshot, not hidden learning.</p>
+        <p class="agent-memory__intro">Preferences and facts carried into your conversations.</p>
       </div>
       <v-btn class="agent-memory__close" icon="mdi-close" variant="text" aria-label="Close agent memory" :disabled="Boolean(actionBusy)" :title="actionBusy ? 'Wait for the memory change to finish' : undefined" @click="requestClose" />
     </header>
@@ -496,9 +496,7 @@ onBeforeUnmount(() => {
   gap: var(--wiki-space-2);
   align-items: center;
   padding: var(--wiki-space-3) var(--wiki-space-4);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--wiki-accent-warm) 8%, transparent), transparent 58%),
-    var(--wiki-surface-raised);
+  background: var(--wiki-surface-raised);
 }
 
 .agent-memory__mark,

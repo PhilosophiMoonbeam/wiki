@@ -202,7 +202,7 @@ describe('Ask modal accessibility contract', () => {
     expect(resultItem).toContain('v-list-item-subtitle {{ item.description }}')
 
     const mobileStart = search.indexOf("@media #{map-get($display-breakpoints, 'sm-and-down')}")
-    const narrowPhoneStart = search.indexOf('@media (max-width: 639.98px)', mobileStart)
+    const narrowPhoneStart = search.indexOf('@media (max-width: 599.98px)', mobileStart)
     const mobileLayout = search.slice(mobileStart, narrowPhoneStart)
     const scopeTargetHeight = mobileLayout.match(/&-scope-actions \.v-btn \{ min-height: ([\d.]+)rem;/)
 

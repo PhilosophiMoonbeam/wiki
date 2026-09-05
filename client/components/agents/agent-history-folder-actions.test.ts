@@ -159,13 +159,11 @@ describe('Agent history folder actions', () => {
 
   it('keeps clear-history scope, retention, and folder-exemption copy truthful', () => {
     expect(panelTemplate).toContain('aria-label="Clear Recent history; saved folders are preserved"')
-    expect(panelTemplate).toContain('Clear history')
     expect(panelTemplate).toContain('@click="requestClear"')
     expect(panelTemplate).toContain('Clears only Recent, unfiled conversations. Saved folders and their conversations are preserved.')
     expect(panelTemplate).toContain(':disabled="clearHistoryDisabled"')
     expect(panelTemplate).toContain('class="agent-history__clear"')
-    expect(panelTemplate).toContain('color="error"')
-    expect(panelTemplate).toContain('prepend-icon="mdi-delete-sweep-outline"')
+    expect(panelTemplate).toContain('icon="mdi-delete-sweep-outline"')
     expect(panelTemplate).toContain('size="small"')
     expect(panelTemplate).toContain('variant="tonal"')
     expect(panelTemplate.indexOf('class="agent-history__new-folder"')).toBeLessThan(

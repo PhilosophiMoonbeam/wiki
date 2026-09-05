@@ -10,8 +10,7 @@
         <v-icon icon="mdi-history" size="21" />
       </div>
       <div class="agent-history__heading">
-        <p class="agent-history__kicker">Conversation archive</p>
-        <h2>Chat history</h2>
+        <h2>Conversations</h2>
         <p class="agent-history__intro">{{ displaySessions.length }} {{ displaySessions.length === 1 ? 'conversation' : 'conversations' }} in this workspace</p>
       </div>
       <v-btn ref="historyCloseButton" icon="mdi-close" size="small" variant="text" aria-label="Close chat history" @click="closeHistory" />
@@ -23,15 +22,13 @@
       </v-btn>
       <v-btn
         class="agent-history__clear"
-        color="error"
-        prepend-icon="mdi-delete-sweep-outline"
+        icon="mdi-delete-sweep-outline"
         size="small"
-        variant="tonal"
+        variant="text"
         aria-label="Clear Recent history; saved folders are preserved"
         :disabled="clearHistoryDisabled"
         @click="requestClear"
       >
-        Clear history
         <v-tooltip activator="parent" location="bottom">Clears only Recent, unfiled conversations. Saved folders and their conversations are preserved.</v-tooltip>
       </v-btn>
     </div>
@@ -922,9 +919,10 @@ onBeforeUnmount(() => {
   border-radius: var(--wiki-control-radius);
   color: rgb(var(--v-theme-primary));
   display: flex;
-  height: var(--wiki-control-height);
+  height: 2rem;
+  flex: 0 0 2rem;
   justify-content: center;
-  width: var(--wiki-control-height);
+  width: 2rem;
 }
 .agent-history__heading { flex: 1; min-width: 0; }
 .agent-history__kicker {

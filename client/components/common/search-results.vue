@@ -11,59 +11,23 @@
     .search-results-container(:class='{ "search-results-container--ask": isAgentOpen }')
       h1#wiki-agent-title.sr-only(v-if='isAgentOpen') Wiki Agent workspace
       h1#wiki-search-title.sr-only(v-else) Wiki search
-      .search-results-agent-nav(v-if='isAgentOpen')
-        v-btn.search-results-agent-back(
-          prepend-icon='mdi-arrow-left'
-          variant='text'
-          @click='returnToSearch'
-        ) Search
-        .search-results-agent-context
-          .search-results-agent-mark
-            v-icon(icon='mdi-auto-fix' size='17')
-          span Agent workspace
-        v-btn.search-results-agent-close(
-          icon='mdi-close'
-          variant='text'
-          aria-label='Close Wiki Agent'
-          @click='closeSearch'
-        )
-      .search-results-controls(v-else)
-        v-btn-toggle.search-results-mode(
-          v-if='canAsk'
-          :model-value='searchMode'
-          mandatory
-          density='compact'
-          color='primary'
-          :aria-label='$t(`common:header.searchModeLabel`)'
-          @update:model-value='setSearchMode'
-        )
-          v-btn(value='search' prepend-icon='mdi-magnify') {{$t('common:header.searchMode')}}
-          v-btn(value='ask' prepend-icon='mdi-auto-fix' data-modal-focus-key='search-ask-mode') {{$t('common:header.askMode')}}
-        .search-results-controls-title(v-else)
+      .search-results-controls(v-if='!isAgentOpen')
+        .search-results-controls-title
           v-icon(icon='mdi-magnify' size='19')
           span Search the Wiki
-        v-chip.search-results-shortcut(
+        v-btn.search-results-agent-entry(
           v-if='canAsk'
           variant='text'
-          size='small'
-          prepend-icon='mdi-keyboard-outline'
-          title='Shortcut to switch between Search and Ask mode'
-          aria-label='Shortcut to switch between Search and Ask mode: Control or Command plus Shift plus A'
-        ) Ctrl/⌘ + Shift + A
+          prepend-icon='mdi-book-open-page-variant-outline'
+          data-modal-focus-key='search-ask-mode'
+          @click='openAsk'
+        ) Open Wiki Agent
         v-btn.search-results-close(
           icon='mdi-close'
           variant='text'
           :aria-label='$t(`common:header.searchClose`)'
           @click='closeSearch'
         )
-        .search-results-keyboard-hint(
-          v-if='!isAgentOpen && normalizedSearch.length >= 2'
-          aria-hidden='true'
-          title='Keyboard shortcuts: navigate, open, close'
-        )
-          kbd ↑↓
-          kbd ↵
-          kbd Esc
       InlineAgentChat(
         v-if='isAgentOpen'
         ref='inlineAgent'
@@ -84,7 +48,7 @@
         .search-results-scope
           .search-results-scope-copy
             .search-results-eyebrow Search scope
-            .search-results-scope-title Choose where direct matches come from
+            .search-results-scope-title Find the right page
           .search-results-scope-actions(role='group' aria-label='Search scope')
             v-btn(
               size='small'
@@ -153,10 +117,10 @@
                 v-if='canAsk'
                 color='primary'
                 variant='tonal'
-                prepend-icon='mdi-auto-fix'
+                prepend-icon='mdi-book-open-page-variant-outline'
                 @click='askCurrentQuery'
                 data-modal-focus-key='search-ask-query'
-              ) Ask Wiki
+              ) Ask about this
             .search-results-none(v-if='hasFreshResponse && results.length < 1')
               async-state(
                 state='empty'
@@ -167,7 +131,7 @@
                 v-btn.search-results-empty-ask(
                   color='primary'
                   variant='tonal'
-                  prepend-icon='mdi-auto-fix'
+                  prepend-icon='mdi-book-open-page-variant-outline'
                   @click='askCurrentQuery'
                   data-modal-focus-key='search-ask-empty'
                 ) Ask Wiki about "{{ normalizedSearch }}"
@@ -248,6 +212,14 @@
                   )
                     v-list-item-title {{ term }}
                   v-divider(v-if='idx < suggestions.length - 1' aria-hidden='true')
+        .search-results-keyboard-hint(
+          v-if='!isAgentOpen && normalizedSearch.length >= 2'
+          aria-hidden='true'
+          title='Keyboard shortcuts: navigate, open, close'
+        )
+          kbd ↑↓
+          kbd ↵
+          kbd Esc
 </template>
 
 <script lang='ts'>
@@ -811,13 +783,7 @@ export default defineComponent({
 
   &--ask {
     animation: none;
-    background:
-      radial-gradient(ellipse 68rem 34rem at 50% -16rem, color-mix(in srgb, var(--wiki-ambient-accent) 30%, transparent), transparent),
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--wiki-ambient-accent) 5%, rgb(var(--v-theme-background))),
-        rgb(var(--v-theme-background))
-      );
+    background: rgb(var(--v-theme-background));
     overflow: hidden;
     isolation: isolate;
     z-index: 1009;
@@ -837,51 +803,9 @@ export default defineComponent({
       flex-direction: column;
       height: 100%;
       max-width: none;
-      padding: 0 clamp(var(--wiki-space-3), 2vw, var(--wiki-space-6));
+      padding: 0;
     }
   }
-
-  &-agent-nav {
-    align-items: center;
-    box-sizing: border-box;
-    color: var(--search-overlay-ink);
-    display: grid;
-    flex: 0 0 auto;
-    grid-template-columns: 1fr auto 1fr;
-    min-height: calc(var(--wiki-control-height) + var(--wiki-space-8) + max(0px, env(safe-area-inset-top)));
-    padding-block-start: max(0px, env(safe-area-inset-top));
-    width: min(72rem, 100%);
-  }
-
-  &-agent-back {
-    justify-self: start;
-    letter-spacing: 0;
-    text-transform: none;
-  }
-
-  &-agent-context {
-    align-items: center;
-    display: flex;
-    gap: var(--wiki-space-2);
-    color: color-mix(in srgb, currentColor 80%, transparent);
-    font-size: var(--wiki-label-size);
-    font-weight: var(--wiki-label-weight);
-    letter-spacing: .08em;
-    text-transform: uppercase;
-  }
-
-  &-agent-mark {
-    align-items: center;
-    display: flex;
-    width: var(--wiki-space-8);
-    height: var(--wiki-space-8);
-    justify-content: center;
-    border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
-    border-radius: var(--wiki-control-radius);
-    background: color-mix(in srgb, currentColor 8%, transparent);
-  }
-
-  &-agent-close { justify-self: end; }
 
   &-controls {
     position: relative;
@@ -890,8 +814,8 @@ export default defineComponent({
     min-height: calc(var(--wiki-control-height) + var(--wiki-space-5));
     flex: 0 0 auto;
     align-items: center;
-    justify-content: center;
-    padding: var(--wiki-space-1) calc(var(--wiki-control-height) + var(--wiki-space-2));
+    justify-content: space-between;
+    padding: var(--wiki-space-1) calc(var(--wiki-control-height) + var(--wiki-space-2)) var(--wiki-space-1) 0;
     color: var(--search-overlay-ink);
   }
 
@@ -904,50 +828,21 @@ export default defineComponent({
     letter-spacing: .04em;
   }
 
-  &-mode {
-    max-width: 100%;
-    margin: 0;
-  }
-
   &-close {
     position: absolute !important;
     inset-inline-end: var(--wiki-space-1);
   }
 
+  &-agent-entry { margin-inline-start: auto; letter-spacing: 0; text-transform: none; }
+
   &-keyboard-hint {
-    position: absolute;
-    inset-inline-end: calc(var(--wiki-control-height) + var(--wiki-space-3));
-    display: inline-flex;
-    align-items: center;
-    gap: var(--wiki-space-1);
-    color: color-mix(in srgb, currentColor 76%, transparent);
-
-    kbd {
-      min-width: calc(var(--wiki-space-6) + var(--wiki-space-1));
-      padding: var(--wiki-space-1) var(--wiki-space-2);
-      border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
-      border-radius: var(--wiki-radius-xs);
-      background: color-mix(in srgb, currentColor 8%, transparent);
-      box-shadow: var(--wiki-shadow-inset);
-      font-family: var(--wiki-font-mono);
-      font-size: var(--wiki-label-size);
-      font-weight: var(--wiki-label-weight);
-      line-height: 1.25;
-      text-align: center;
-    }
-
-    @media #{map-get($display-breakpoints, 'md-and-down')} {
-      display: none;
-    }
-  }
-
-  &-shortcut {
-    position: absolute !important;
-    inset-inline-start: var(--wiki-space-1);
-
-    @media #{map-get($display-breakpoints, 'md-and-down')} {
-      display: none !important;
-    }
+    display: flex;
+    gap: .5rem;
+    justify-content: flex-end;
+    padding: .65rem 1rem;
+    color: color-mix(in srgb, var(--search-overlay-ink) 65%, transparent);
+    font-family: var(--wiki-font-mono);
+    font-size: .7rem;
   }
 
   &-search {
@@ -1207,7 +1102,7 @@ export default defineComponent({
   &--ask .inline-agent {
     box-sizing: border-box;
     flex: 1 1 auto;
-    max-width: 112rem;
+    max-width: none;
     min-height: 0;
     padding: 0;
   }
@@ -1223,15 +1118,11 @@ export default defineComponent({
       padding-top: calc(var(--v-layout-top, 72px) + var(--search-mobile-app-bar-extension-height));
     }
     &-container { padding-inline: var(--wiki-space-2); }
-    &-container--ask { padding: 0 var(--wiki-space-2); }
-    &-agent-nav { min-height: calc(var(--wiki-control-height) + var(--wiki-space-6) + max(0px, env(safe-area-inset-top))); padding-inline: var(--wiki-space-2); }
+    &-container--ask { padding: 0; }
     &-scope { align-items: flex-start; flex-direction: column; gap: var(--wiki-space-3); }
     &-scope-actions { justify-content: flex-start; }
     &-scope-actions .v-btn { min-height: 2.75rem; }
     &-content { padding: var(--wiki-space-3); }
-  }
-  @media (max-width: 639.98px) {
-    &--ask .search-results-agent-nav { display: none; }
   }
 
   @media (max-width: 599.98px) {
@@ -1239,13 +1130,10 @@ export default defineComponent({
     &-scope-copy { min-width: 0; }
     &-scope-actions .v-btn { max-width: 100%; padding-inline: var(--wiki-space-3); }
     &-summary { align-items: flex-start; flex-wrap: wrap; }
-    &-mode .v-btn { min-width: 0; padding-inline: var(--wiki-space-2); }
-    &-mode .v-btn__content { overflow: hidden; text-overflow: ellipsis; }
     &-ask .v-btn__content { font-size: .78rem; }
     &-item { padding-inline: var(--wiki-space-1); }
     &-item-chevron { display: none; }
     &-item-mark { height: var(--wiki-control-height); width: var(--wiki-control-height); }
-    &-agent-context span { display: none; }
   }
 }
 

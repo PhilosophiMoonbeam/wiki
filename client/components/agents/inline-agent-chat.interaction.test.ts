@@ -475,7 +475,8 @@ const openPanelMenu = async (mounted: MountedInlineAgent): Promise<HTMLElement[]
   await settle()
   expect(mounted.activator.getAttribute('aria-expanded')).toBe('true')
   const items = Array.from(mounted.root.querySelectorAll<HTMLElement>('[role="menuitem"]'))
-  expect(items.map(item => item.textContent?.trim())).toEqual(['Conversation history', 'Agent memory'])
+  expect(items.slice(0, 2).map(item => item.textContent?.trim())).toEqual(['Conversation history', 'Agent memory'])
+  expect(items[2]?.textContent).toContain('Temporary conversation')
   return items
 }
 
@@ -611,35 +612,14 @@ describe('Inline Agent clear-unfiled confirmation', () => {
   })
 })
 
-describe('Inline Agent fixed desktop layout', () => {
-  it('reserves fixed wide columns only once every panel and gap fits', () => {
-    const wideLayout = componentStyles.match(/@media \(min-width:\s*1760px\)([\s\S]*?)(?=@media|$)/)?.[1] ?? ''
-
-    expect(wideLayout).toContain('grid-template-columns: 19rem minmax(0, 68rem) 21rem;')
-    expect(wideLayout).toContain('gap: var(--wiki-space-4);')
-    expect(wideLayout).toMatch(/\.inline-agent__side--history \{\s*grid-column: 1;/)
-    expect(wideLayout).toMatch(/\.inline-agent__side--memory \{\s*grid-column: 3;/)
-    expect(componentSource).toContain("window.matchMedia('(min-width: 1760px)')")
-    expect(componentStyles).not.toMatch(/\.inline-agent\.inline-agent--(?:history|memory|panels)-open\s*\{[^}]*grid-template-columns/s)
-  })
-
-  it('keeps one centered chat track and anchors overlay panels to workspace edges from 1024 through 1759 pixels', () => {
-    const dockedLayout = componentStyles.match(
-      /@media \(min-width:\s*1024px\) and \(max-width:\s*1759\.98px\)([\s\S]*?)(?=@media|$)/
-    )?.[1] ?? ''
-
-    const baseHistorySide = componentStyles.match(/\.inline-agent__side--history \{([^}]*)\}/)?.[1] ?? ''
-    const baseMemorySide = componentStyles.match(/\.inline-agent__side--memory \{([^}]*)\}/)?.[1] ?? ''
-    expect(dockedLayout).toContain('grid-template-columns: minmax(0, 68rem);')
-    expect(dockedLayout).toMatch(/\.inline-agent__side \{[\s\S]*?position: absolute;/)
-    expect(dockedLayout).not.toMatch(/\.inline-agent__side \{[^}]*grid-(?:column|row):/)
-    expect(dockedLayout).toContain('inset-inline-start: 0;')
-    expect(baseHistorySide).not.toContain('grid-column:')
-    expect(baseMemorySide).not.toContain('grid-column:')
-    expect(dockedLayout).toContain('inset-inline-end: 0;')
-    expect(dockedLayout).toContain('width: 19rem;')
-    expect(dockedLayout).toContain('width: 21rem;')
-    expect(componentStyles).toMatch(/\.inline-agent__side \{[\s\S]*?overflow: hidden;[\s\S]*?border-radius: var\(--wiki-panel-radius\);[\s\S]*?background: transparent;/)
+describe('Inline Agent desktop layout', () => {
+  it('allocates columns only to open panels and keeps them beside the conversation', () => {
+    const desktop = componentStyles.match(/@media \(min-width:\s*1024px\)([\s\S]*?)(?=@media|$)/)?.[1] ?? ''
+    expect(desktop).toContain('.inline-agent--history { grid-template-columns: 18rem minmax(0, 1fr); }')
+    expect(desktop).toContain('.inline-agent--memory { grid-template-columns: minmax(0, 1fr) 21rem; }')
+    expect(desktop).toMatch(/\.inline-agent__side \{\s*position: relative;/)
+    expect(componentSource).toContain("'inline-agent--history': historyOpen")
+    expect(componentSource).toContain("'inline-agent--memory': memoryOpen")
   })
 })
 

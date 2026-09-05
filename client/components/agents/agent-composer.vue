@@ -71,7 +71,6 @@
         class="agent-composer__input"
         :aria-label="composerInputLabel"
         :aria-describedby="composerInputDescriptionIds"
-        :role="skillsEnabled ? 'combobox' : undefined"
         :aria-autocomplete="skillsEnabled ? 'list' : undefined"
         :aria-haspopup="skillsEnabled ? 'listbox' : undefined"
         :placeholder="composerInputPlaceholder"
@@ -80,7 +79,6 @@
         flat
         hide-details
         :disabled="disabled || sendInProgress"
-        :aria-expanded="skillsEnabled ? skillCommandOpen : undefined"
         :aria-controls="skillsEnabled && skillCommandOpen ? 'agent-skill-command-results' : undefined"
         :aria-activedescendant="skillsEnabled && skillCommandOpen && activeCommandSkill ? `agent-skill-command-${activeCommandSkill.versionId}` : undefined"
         @select="handleSelectionChange"
@@ -665,7 +663,11 @@ const submit = (): void => {
     }
   })
 }
-defineExpose({ focusInput, focusSkillsTrigger })
+const setDraft = async (value: string): Promise<void> => {
+  draft.value = value
+  await focusInput()
+}
+defineExpose({ focusInput, focusSkillsTrigger, setDraft })
 onMounted(() => {
   mounted = true
   mountCaretMirror()
@@ -691,11 +693,20 @@ onBeforeUnmount(() => {
   border: 1px solid var(--wiki-surface-border-strong);
   border-radius: var(--wiki-panel-radius);
   background: var(--wiki-surface-raised);
-  box-shadow: var(--wiki-shadow-xs);
+  box-shadow: var(--wiki-shadow-sm), var(--wiki-shadow-inset);
   font-family: var(--wiki-font-body);
   transition:
     border-color var(--wiki-motion-normal) var(--wiki-motion-ease),
     box-shadow var(--wiki-motion-normal) var(--wiki-motion-ease);
+}
+
+.agent-composer:has(textarea:focus-visible) {
+  outline: 2px solid var(--wiki-focus-color);
+  outline-offset: 2px;
+}
+.agent-composer__input :deep(.v-field:has(:focus-visible)) {
+  outline: none;
+  box-shadow: none;
 }
 
 .agent-composer--sending {

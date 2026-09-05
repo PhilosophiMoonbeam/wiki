@@ -691,8 +691,8 @@ test.describe('responsive UI quality matrix', () => {
   test('keeps Agent Chat readable and operable', async ({ page }) => {
     await openAuthenticatedPage(page, '/', '.page-header-section')
     await openSearch(page)
-    await expect(page.getByRole('button', { name: /^ask$/i })).toBeVisible()
-    await page.getByRole('button', { name: /^ask$/i }).click()
+    await expect(page.locator('.search-results-agent-entry')).toBeVisible()
+    await page.locator('.search-results-agent-entry').click()
 
     const agent = page.getByRole('region', { name: 'Wiki Agent' })
     await expect(agent).toBeVisible()
@@ -719,7 +719,7 @@ test.describe('responsive UI quality matrix', () => {
     const visibleSidePanels = agent.locator('.inline-agent__side:visible')
     const scrim = agent.locator('.inline-agent__scrim')
 
-    if (viewport.width >= 1440) {
+    if (viewport.width >= 1760) {
       await page.locator('.search-results--ask').evaluate(async element => {
         await Promise.all(element.getAnimations().map(animation => animation.finished))
       })
@@ -802,39 +802,12 @@ test.describe('responsive UI quality matrix', () => {
       await expect(agent.getByRole('button', { name: 'Close Wiki Agent' })).toBeVisible()
     }
 
-    await expect(agent.getByText('How this session uses the model')).toHaveCount(0)
-    const profileCount = await page.evaluate(async () =>
-      (await fetch('/_api/agents/profiles')).json().then((value: { profiles?: unknown[] }) => value.profiles?.length ?? 0)
-    )
-    const settingsButton = agent.getByRole('button', { name: 'Session configuration' })
-    await expect(settingsButton).toBeVisible()
-    await settingsButton.click()
-    const sessionScope = agent.getByText('Session scope', { exact: true })
-    await expect(sessionScope).toBeVisible()
-    await expect(agent.getByText('Pinned skills (always loaded)')).toHaveCount(0)
-    if (profileCount > 0) {
-      await expect(agent.getByText('Provider profile')).toBeVisible()
-    }
-    const settings = agent.locator('.inline-agent__settings')
-    const settingsLayout = await settings.evaluate(element => {
-      const bounds = element.getBoundingClientRect()
-      return {
-        bottom: bounds.bottom,
-        clientHeight: element.clientHeight,
-        overflowY: getComputedStyle(element).overflowY,
-        scrollHeight: element.scrollHeight
-      }
-    })
-    expect(settingsLayout.overflowY).toBe('auto')
-    expect(settingsLayout.bottom).toBeLessThanOrEqual((page.viewportSize()?.height ?? 0) + 1)
-    if (settingsLayout.scrollHeight > settingsLayout.clientHeight) {
-      await settings.evaluate(element => {
-        element.scrollTop = element.scrollHeight
-      })
-      await expect.poll(() => settings.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
-    }
-    await settingsButton.click()
-    await expect(sessionScope).toBeHidden()
+    await expect(agent.getByRole('button', { name: 'Return to Wiki Search' })).toBeVisible()
+    await expect(agent.getByRole('button', { name: 'Close Wiki Agent' })).toBeVisible()
+    await agent.getByRole('button', { name: 'Return to Wiki Search' }).click()
+    await expect(page.locator('.search-results-search')).toBeVisible()
+    await page.locator('.search-results-agent-entry').click()
+    await expect(agent).toBeVisible()
     await expectLocatorWithinViewport(agent, 'Wiki Agent panel')
     await expectResponsiveLayout(page, 'Wiki Agent panel')
   })

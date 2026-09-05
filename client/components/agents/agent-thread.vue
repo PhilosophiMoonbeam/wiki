@@ -17,7 +17,7 @@
       >
         <div v-if="entry.message.role === 'assistant'" class="agent-message__identity" aria-hidden="true">
           <v-avatar color="primary" size="28" variant="tonal">
-            <v-icon icon="mdi-auto-fix" size="16" />
+            <v-icon icon="mdi-book-open-page-variant-outline" size="16" />
           </v-avatar>
         </div>
         <header v-else class="agent-message__identity agent-message__identity--user">
@@ -491,12 +491,12 @@ watch(
 }
 
 .agent-message--assistant .agent-message__surface {
-  background: rgb(var(--v-theme-surface));
-  border: 1px solid var(--wiki-surface-border);
-  border-inline-start: var(--wiki-space-1) solid color-mix(in srgb, var(--wiki-accent-warm) 62%, var(--wiki-surface-border));
-  border-radius: var(--wiki-control-radius);
-  box-shadow: var(--wiki-shadow-xs), var(--wiki-shadow-inset);
-  padding: var(--wiki-space-4) var(--wiki-space-5);
+  background: transparent;
+  border: 0;
+  border-inline-start: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: var(--wiki-space-2) 0 var(--wiki-space-4) var(--wiki-space-3);
 }
 
 .agent-message--assistant.agent-message--pending .agent-message__surface,

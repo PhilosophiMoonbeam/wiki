@@ -2,6 +2,7 @@
   <section
     ref="inlineAgentRoot"
     class="inline-agent"
+    :class="{ 'inline-agent--history': historyOpen, 'inline-agent--memory': memoryOpen }"
     aria-labelledby="inline-agent-title"
     :aria-busy="loading"
   >
@@ -47,16 +48,16 @@
     <v-card class="inline-agent__card" elevation="0">
       <v-toolbar class="inline-agent__toolbar" color="transparent" density="comfortable" tag="header">
         <div class="inline-agent__mobile-navigation">
-          <v-btn class="inline-agent__mobile-return" icon="mdi-arrow-left" variant="text" aria-label="Return to Wiki Search" :disabled="memoryMutationBusy" :title="memoryMutationBusy ? 'Wait for the memory change to finish' : undefined" @click="emit('return-search')" />
-          <v-btn class="inline-agent__mobile-close" icon="mdi-close" variant="text" aria-label="Close Wiki Agent" :disabled="memoryMutationBusy" :title="memoryMutationBusy ? 'Wait for the memory change to finish' : undefined" @click="emit('close')" />
+          <v-btn class="inline-agent__mobile-return" icon="mdi-magnify" variant="text" aria-label="Return to Wiki Search" :disabled="memoryMutationBusy" :title="memoryMutationBusy ? 'Wait for the memory change to finish' : undefined" @click="emit('return-search')" />
+
         </div>
         <div class="inline-agent__identity">
           <v-avatar class="inline-agent__avatar" color="primary" size="38" variant="tonal">
-            <v-icon icon="mdi-auto-fix" size="20" aria-hidden="true" />
+            <v-icon icon="mdi-book-open-page-variant-outline" size="20" aria-hidden="true" />
           </v-avatar>
           <div class="inline-agent__heading">
             <h2 id="inline-agent-title">Wiki Agent</h2>
-            <p class="inline-agent__session-title">{{ sessionTitle }}</p>
+            <p class="inline-agent__session-title" :title="sessionTitle">{{ sessionTitle }}</p>
           </div>
         </div>
 
@@ -66,7 +67,7 @@
           <v-btn
             class="inline-agent__desktop-panel-btn"
             ref="historyTrigger"
-            icon="mdi-history"
+            prepend-icon="mdi-history"
             :color="historyOpen ? 'primary' : undefined"
             :variant="historyOpen ? 'tonal' : 'text'"
             :aria-label="historyOpen ? 'Close agent conversation history' : 'Open agent conversation history'"
@@ -74,11 +75,11 @@
             aria-controls="agent-history-panel"
             :disabled="memoryMutationBusy && memoryOpen && panelMode !== 'wide'"
             @click="toggleHistory"
-          />
+          >History</v-btn>
           <v-btn
             class="inline-agent__desktop-panel-btn"
             ref="memoryTrigger"
-            icon="mdi-brain"
+            prepend-icon="mdi-brain"
             :color="memoryOpen ? 'primary' : undefined"
             :variant="memoryOpen ? 'tonal' : 'text'"
             :aria-label="memoryOpen ? 'Close agent memory' : 'Manage agent memory'"
@@ -86,7 +87,7 @@
             aria-controls="agent-memory-panel"
             :disabled="memoryMutationBusy"
             @click="toggleMemory"
-          />
+          >Memory</v-btn>
           <v-menu location="bottom end" attach=".inline-agent">
             <template #activator="{ props: menuProps }">
               <v-btn v-bind="menuProps" class="inline-agent__mobile-panel-menu" icon="mdi-view-dashboard-outline" variant="text" size="small" aria-label="Open Agent panels: conversation history and memory" />
@@ -110,6 +111,17 @@
                 :disabled="memoryMutationBusy"
                 @click="toggleMemory"
               />
+              <v-divider class="my-1" />
+              <v-list-item
+                class="inline-agent__panel-menu-item"
+                role="menuitem"
+                link
+                prepend-icon="mdi-clock-outline"
+                title="Temporary conversation"
+                subtitle="Start without saving to history"
+                :disabled="loading || sending || sessionMutationBusy"
+                @click="newTemporarySession"
+              />
             </v-list>
           </v-menu>
           <v-btn
@@ -129,6 +141,7 @@
             :disabled="loading || sending || sessionMutationBusy"
             @click="newSession"
           ><span class="inline-agent__session-action-label">New</span></v-btn>
+          <v-btn class="inline-agent__mobile-close" icon="mdi-close" variant="text" aria-label="Close Wiki Agent" :disabled="memoryMutationBusy" :title="memoryMutationBusy ? 'Wait for the memory change to finish' : undefined" @click="emit('close')" />
         </div>
       </v-toolbar>
 
@@ -178,10 +191,12 @@
               </div>
 
               <section v-if="thread && !hasConversation" class="inline-agent__welcome" aria-labelledby="inline-agent-welcome-title">
-                <p class="inline-agent__welcome-index">Archive desk</p>
-                <h2 id="inline-agent-welcome-title">Begin with what you need to understand.</h2>
+                <div class="inline-agent__welcome-mark" aria-hidden="true"><v-icon icon="mdi-book-open-page-variant-outline" size="30" /></div>
+                <p class="inline-agent__welcome-index">Your knowledge, connected</p>
+                <h2 id="inline-agent-welcome-title">A little curiosity.
+                  <em>A clearer picture.</em></h2>
                 <p class="inline-agent__welcome-copy">
-                  Wiki Agent traces answers through the knowledge you can access, keeps sources visible, and turns careful intent into auditable work.
+                  Explore an idea, connect the dots, or work on your Wiki. Start with a question; follow the sources wherever they lead.
                 </p>
                 <div class="inline-agent__starters" role="group" aria-label="Conversation starters">
                   <v-btn
@@ -192,10 +207,10 @@
                     variant="text"
                     :disabled="!canSubmit"
                     :title="!canSubmit ? submitUnavailableReason : undefined"
-                    @click="sendPrompt(starter.prompt)"
+                    @click="preparePrompt(starter.prompt)"
                   >
                     <v-icon start :icon="starter.icon" />
-                    {{ starter.label }}
+                    <span class="inline-agent__starter-copy"><strong>{{ starter.label }}</strong><small>{{ starter.description }}</small></span>
                     <v-icon class="inline-agent__starter-arrow" end icon="mdi-arrow-right" size="16" />
                   </v-btn>
                 </div>
@@ -261,12 +276,12 @@
               <div v-if="currentPage" class="inline-agent__page-context" role="note" :aria-label="`${currentPage.locale}/${currentPage.path} is available to consult`">
                 <v-icon icon="mdi-file-link-outline" size="16" aria-hidden="true" />
                 <span>
-                  <strong>Page context</strong> · <bdi dir="auto">{{ currentPage.locale }}/{{ currentPage.path }}</bdi>
+                  <strong>Reading with you</strong> · <bdi dir="auto">{{ currentPage.locale }}/{{ currentPage.path }}</bdi>
                 </span>
               </div>
               <div class="inline-agent__notice">
                 <v-icon icon="mdi-shield-check-outline" size="15" aria-hidden="true" />
-                <span>Permissions are enforced. Verify cited sources before relying on model output.</span>
+                <span>Answers link to sources. Page changes ask for your approval.</span>
               </div>
             </div>
             <p
@@ -411,7 +426,7 @@ const agents = useAgentsStore()
 const { connection, decidingApprovalId, error, goalBusy, loading, profiles, sending, sessionMutationBusy, skills, skillsLoadError, skillsLoading, skillsPartial, thread } = storeToRefs(agents)
 const inlineAgentRoot = useTemplateRef<HTMLElement>('inlineAgentRoot')
 const transcript = useTemplateRef<HTMLElement>('transcript')
-const composer = useTemplateRef<{ focusInput: () => Promise<void>; focusSkillsTrigger: () => Promise<void> }>('composer')
+const composer = useTemplateRef<{ focusInput: () => Promise<void>; focusSkillsTrigger: () => Promise<void>; setDraft: (value: string) => Promise<void> }>('composer')
 type ComponentRoot = { $el?: unknown }
 const historyTrigger = useTemplateRef<ComponentRoot | HTMLElement>('historyTrigger')
 const memoryTrigger = useTemplateRef<ComponentRoot | HTMLElement>('memoryTrigger')
@@ -470,7 +485,7 @@ const goalSubmitUnavailableReason = computed(() => !openGoal.value
 const submitUnavailableReason = computed(() => !providerAvailable.value ? providerUnavailableMessage.value : loading.value ? 'Opening conversation' : sending.value ? 'Sending your message' : sessionMutationBusy.value ? 'Wait for the current conversation update to finish' : activeRun.value ? 'Wait for the current response to finish' : openGoal.value ? goalSubmitUnavailableReason.value : '')
 const preferredSkillIds = computed(() => thread.value?.session.skills.map(skill => skill.skillId) ?? [])
 const invocationLimit = computed(() => Math.max(0, 8 - preferredSkillIds.value.length))
-const sessionTitle = computed(() => thread.value?.session.title || 'New conversation')
+const sessionTitle = computed(() => thread.value?.session.retention === 'temporary' ? 'Temporary · not saved to history' : thread.value?.session.title || 'New conversation')
 const connectionLabel = computed(() => loading.value
   ? 'Opening'
   : connection.value === 'reconnecting'
@@ -494,10 +509,16 @@ const connectionTone = computed<'ready' | 'error' | 'busy'>(() => loading.value 
       ? 'busy'
       : 'ready')
 const starters = computed(() => [
-  ...(currentPage.value ? [{ label: 'Summarize this page', prompt: 'Summarize the current Wiki page and cite the key sections.', icon: 'mdi-text-box-search-outline' }] : []),
-  { label: 'Find related pages', prompt: 'Find Wiki pages related to the current topic and explain how they connect.', icon: 'mdi-file-link-outline' },
-  { label: 'What changed recently?', prompt: 'Summarize the most recently updated Wiki pages I can access.', icon: 'mdi-history' }
+  ...(currentPage.value
+    ? [{ label: 'Understand this page', description: 'Key ideas, with sources', prompt: 'Summarize the current Wiki page and cite the key sections.', icon: 'mdi-text-box-search-outline' }]
+    : [{ label: 'Explore the Wiki', description: 'Find a place to begin', prompt: 'Give me an overview of the main topics in the Wiki, with links to useful starting pages.', icon: 'mdi-compass-outline' }]),
+  { label: 'Connect the dots', description: 'Discover related knowledge', prompt: currentPage.value ? 'Find Wiki pages related to the current page and explain how they connect.' : 'Help me explore connections between topics in the Wiki. Ask me which topic I want to start with.', icon: 'mdi-vector-link' },
+  { label: 'Catch up', description: 'See what changed recently', prompt: 'Summarize the most recently updated Wiki pages I can access.', icon: 'mdi-history' }
 ])
+
+const preparePrompt = async (prompt: string): Promise<void> => {
+  await composer.value?.setDraft(prompt)
+}
 
 const ensureInitialized = (): Promise<void> => {
   if (initialization) return initialization
@@ -752,7 +773,10 @@ const handleTranscriptScroll = (): void => {
 }
 const reconcileTranscriptGrowth = async (shouldFollow: boolean): Promise<void> => {
   await nextTick()
-  if (shouldFollow && transcript.value) {
+  if (!hasConversation.value && transcript.value) {
+    transcript.value.scrollTo({ top: 0, behavior: 'auto' })
+    transcriptFollowing.value = true
+  } else if (shouldFollow && transcript.value) {
     transcript.value.scrollTo({ top: transcript.value.scrollHeight, behavior: 'auto' })
     transcriptFollowing.value = true
   } else {
@@ -885,15 +909,8 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
 
 <style scoped>
 .inline-agent {
-  --agent-conversation-width: 56rem;
+  --agent-conversation-width: 49rem;
   --inline-agent-workspace-base: color-mix(in srgb, var(--wiki-surface-raised) 76%, rgb(var(--v-theme-background)));
-  --inline-agent-workspace-gradient:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--wiki-accent-warm) 7%, transparent),
-      transparent 42%,
-      color-mix(in srgb, var(--wiki-accent-spectral) 4%, transparent)
-    );
   position: relative;
   display: grid;
   width: 100%;
@@ -901,7 +918,7 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
   min-height: 0;
   max-width: var(--wiki-shell-max);
   margin: 0 auto;
-  grid-template-columns: minmax(0, 68rem);
+  grid-template-columns: minmax(0, 1fr);
   justify-content: center;
   gap: 0;
   color: rgb(var(--v-theme-on-surface));
@@ -935,18 +952,17 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
 }
 
 .inline-agent__card {
+  container: agent-workspace / inline-size;
   position: relative;
   display: flex;
   min-width: 0;
   grid-column: 1;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--wiki-surface-border-strong);
-  border-radius: var(--wiki-hero-radius) !important;
-  background: color-mix(in srgb, var(--wiki-surface-raised) 88%, transparent);
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  box-shadow: var(--wiki-shadow-lg), var(--wiki-shadow-inset);
+  border: 0;
+  border-radius: 0 !important;
+  background: rgb(var(--v-theme-background));
+  box-shadow: none;
   text-align: start;
 }
 
@@ -956,10 +972,8 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
   padding-block-start: 0;
   padding-inline: var(--wiki-space-4);
   border-bottom: 1px solid var(--wiki-surface-border);
-  background:
-    var(--inline-agent-workspace-gradient),
-    color-mix(in srgb, var(--wiki-surface-raised) 78%, transparent) !important;
-  box-shadow: var(--wiki-shadow-xs);
+  background: rgb(var(--v-theme-background)) !important;
+  box-shadow: none;
 }
 
 
@@ -1025,7 +1039,10 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
 }
 
 .inline-agent__mobile-navigation {
-  display: none;
+  display: flex;
+  margin-inline-end: var(--wiki-space-3);
+  padding-inline-end: var(--wiki-space-3);
+  border-inline-end: 1px solid var(--wiki-surface-border);
 }
 
 .inline-agent__mobile-panel-menu {
@@ -1067,14 +1084,7 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
   flex-direction: column;
   overflow: hidden;
   padding: var(--wiki-space-4) clamp(var(--wiki-space-4), 3vw, var(--wiki-space-8)) 0;
-  background:
-    repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent calc(var(--wiki-space-12) - 1px),
-      color-mix(in srgb, var(--wiki-surface-border) 34%, transparent) var(--wiki-space-12)
-    ),
-    color-mix(in srgb, var(--inline-agent-workspace-base) 72%, transparent);
+  background: rgb(var(--v-theme-background));
 }
 .inline-agent__transcript-wrap {
   position: relative;
@@ -1189,91 +1199,102 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
   position: relative;
   width: min(100%, var(--agent-conversation-width));
   margin: auto;
-  padding: clamp(var(--wiki-space-6), 5vw, var(--wiki-space-10));
+  padding: clamp(1.5rem, 4vh, 4rem) 0;
   text-align: start;
 }
 
-.inline-agent__welcome::before {
-  position: absolute;
-  inset-block: var(--wiki-space-6);
-  inset-inline-start: 0;
-  width: var(--wiki-space-1);
-  border-start-start-radius: 0;
-  border-start-end-radius: var(--wiki-radius-pill);
-  border-end-end-radius: var(--wiki-radius-pill);
-  border-end-start-radius: 0;
-  background: var(--wiki-ambient-accent);
-  content: '';
+.inline-agent__welcome-mark {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: 1.75rem;
+  color: var(--wiki-accent-ink, rgb(var(--v-theme-primary)));
+  border: 1px solid var(--wiki-surface-border-strong);
+  border-radius: 50%;
+  background: var(--wiki-surface-sunken);
 }
 
-
-
 .inline-agent__welcome-index {
-  margin: 0 0 var(--wiki-space-1);
-  color: var(--wiki-accent-warm);
-  font-size: var(--wiki-label-size);
-  font-weight: var(--wiki-label-weight);
-  letter-spacing: .11em;
+  margin: 0 0 1rem;
+  color: var(--wiki-accent-ink, rgb(var(--v-theme-primary)));
+  font-size: .7rem;
+  font-weight: 650;
+  letter-spacing: .15em;
   text-transform: uppercase;
 }
 
 .inline-agent__welcome h2 {
-  max-width: 36rem;
   margin: 0;
   color: rgb(var(--v-theme-on-surface));
   font-family: var(--wiki-font-display);
-  font-size: clamp(1.5rem, 4vw, 2.125rem);
-  font-weight: 680;
-  letter-spacing: -.035em;
-  line-height: var(--wiki-leading-heading);
+  font-size: clamp(2.4rem, 4vw, 4.25rem);
+  font-weight: 450;
+  letter-spacing: -.045em;
+  line-height: 1.04;
+  text-wrap: balance;
+}
+
+.inline-agent__welcome h2 em {
+  display: block;
+  font-weight: inherit;
+  color: var(--wiki-accent-ink, rgb(var(--v-theme-primary)));
 }
 
 .inline-agent__welcome-copy {
-  max-width: 39rem;
-  margin: var(--wiki-space-5) 0 var(--wiki-space-6);
-  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 72%, transparent);
-  line-height: var(--wiki-leading-body);
+  max-width: 34rem;
+  margin: 1.4rem 0 2rem;
+  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 70%, transparent);
+  font-size: 1rem;
+  line-height: 1.65;
 }
-
 
 .inline-agent__starters {
   display: grid;
   width: 100%;
-  grid-template-columns: 1fr;
-  gap: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .65rem;
 }
 
 .inline-agent__starter {
-  min-height: var(--wiki-control-height);
-  justify-content: flex-start;
-  padding-inline: var(--wiki-space-2);
-  border: 0;
-  border-block-end: 1px solid var(--wiki-surface-border);
-  border-radius: 0;
+  height: auto !important;
+  min-height: 6.5rem;
+  padding: 1rem;
+  border: 1px solid var(--wiki-surface-border);
+  border-radius: var(--wiki-control-radius);
+  background: var(--wiki-surface-raised);
+  color: rgb(var(--v-theme-on-surface)) !important;
   text-align: start;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  transition: border-color .18s, background .18s;
 }
-
-.inline-agent__starter-arrow {
-  margin-inline-start: auto !important;
-  opacity: .58;
+.inline-agent__starter:hover {
+  border-color: var(--wiki-accent-ink, rgb(var(--v-theme-primary)));
+  background: var(--wiki-surface-sunken);
 }
+.inline-agent__starter :deep(.v-btn__content) {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  justify-items: start;
+  gap: .75rem;
+  width: 100%;
+}
+.inline-agent__starter :deep(.v-icon--start) { margin: 0; font-size: 1.25rem; }
+.inline-agent__starter-copy { grid-column: 1 / -1; grid-row: 2; display: grid; gap: .25rem; }
+.inline-agent__starter-copy strong { font-size: .83rem; font-weight: 600; }
+.inline-agent__starter-copy small { font-size: .73rem; font-weight: 400; opacity: .7; }
+.inline-agent__starter-arrow { grid-column: 2; grid-row: 1; opacity: .5; }
 
 .inline-agent__composer {
   position: relative;
   z-index: 1;
   flex: 0 0 auto;
   padding: var(--wiki-space-4) clamp(var(--wiki-space-4), 3vw, var(--wiki-space-8)) max(var(--wiki-space-4), env(safe-area-inset-bottom));
-  border-top: 1px solid var(--wiki-surface-border);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--wiki-accent-warm) 4%, transparent),
-      transparent
-    ),
-    color-mix(in srgb, var(--wiki-surface-raised) 84%, transparent);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 calc(var(--wiki-space-2) * -1) var(--wiki-space-6) color-mix(in srgb, var(--wiki-shadow-color) 32%, transparent);
+  border-top: 0;
+  background: rgb(var(--v-theme-background));
+  box-shadow: none;
 }
 .inline-agent__composer-inner {
   width: min(100%, var(--agent-conversation-width));
@@ -1433,68 +1454,31 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
   }
 }
 
-@media (min-width: 1760px) {
-  .inline-agent {
-    grid-template-columns: 19rem minmax(0, 68rem) 21rem;
-    gap: var(--wiki-space-4);
-  }
-
-  .inline-agent__card {
-    grid-column: 2;
-  }
-
+/* Panels occupy their own columns so reading and writing remain unobstructed. */
+@media (min-width: 1024px) {
+  .inline-agent { grid-template-columns: minmax(0, 1fr); }
+  .inline-agent--history { grid-template-columns: 18rem minmax(0, 1fr); }
+  .inline-agent--memory { grid-template-columns: minmax(0, 1fr) 21rem; }
+  .inline-agent__card { grid-column: 1; grid-row: 1; }
+  .inline-agent--history .inline-agent__card { grid-column: 2; }
   .inline-agent__side {
     position: relative;
     z-index: auto;
+    border-radius: 0;
     width: 100%;
     max-width: none;
     grid-row: 1;
     justify-self: stretch;
     filter: none;
   }
-
-  .inline-agent__side--history {
-    grid-column: 1;
-  }
-
-  .inline-agent__side--memory {
-    grid-column: 3;
-  }
+  .inline-agent__side--history { grid-column: 1; border-inline-end: 1px solid var(--wiki-surface-border); }
+  .inline-agent__side--memory { grid-column: 2; border-inline-start: 1px solid var(--wiki-surface-border); }
+  .inline-agent__side :deep(.agent-history),
+  .inline-agent__side :deep(.agent-memory) { border: 0; border-radius: 0 !important; box-shadow: none; }
 }
-
-@media (min-width: 1024px) and (max-width: 1759.98px) {
-  .inline-agent {
-    grid-template-columns: minmax(0, 68rem);
-    justify-content: center;
-  }
-
-  .inline-agent__card {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .inline-agent__side {
-    position: absolute;
-    z-index: 5;
-    inset-block: 0;
-    max-width: none;
-    box-sizing: border-box;
-    filter: drop-shadow(var(--wiki-shadow-md));
-  }
-
-  .inline-agent__side--history {
-    inset-inline-start: 0;
-    inset-inline-end: auto;
-    width: 19rem;
-    justify-self: start;
-  }
-
-  .inline-agent__side--memory {
-    inset-inline-start: auto;
-    inset-inline-end: 0;
-    width: 21rem;
-    justify-self: end;
-  }
+@media (min-width: 1760px) {
+  .inline-agent--history.inline-agent--memory { grid-template-columns: 18rem minmax(0, 1fr) 21rem; }
+  .inline-agent--history .inline-agent__side--memory { grid-column: 3; }
 }
 
 @media (max-width: 1023.98px) {
@@ -1544,13 +1528,29 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
 }
 
 @media (max-width: 900px) {
-  .inline-agent__starters {
-    grid-template-columns: 1fr;
-  }
+  .inline-agent__starters { grid-template-columns: 1fr; }
+  .inline-agent__starter { min-height: 3.5rem; padding: .75rem; }
+  .inline-agent__starter :deep(.v-btn__content) { display: flex; gap: .75rem; }
+  .inline-agent__starter-copy { flex: 1; }
 
   .inline-agent__welcome {
     max-width: 40rem;
   }
+}
+
+/* A docked panel can make a desktop conversation as narrow as a tablet. */
+@container agent-workspace (max-width: 780px) {
+  .inline-agent__desktop-panel-btn { display: none; }
+  .inline-agent__mobile-panel-menu { display: inline-flex !important; }
+  .inline-agent__session-action-label { display: none; }
+  .inline-agent__session-action { min-width: var(--wiki-control-height); padding-inline: var(--wiki-space-2); }
+  .inline-agent__session-action :deep(.v-btn__prepend) { margin: 0; }
+  .inline-agent__temporary-session { display: none; }
+  .inline-agent__notice { display: none; }
+  .inline-agent__starters { grid-template-columns: 1fr; }
+  .inline-agent__starter { min-height: 3.5rem; padding: .75rem; }
+  .inline-agent__starter :deep(.v-btn__content) { display: flex; gap: .75rem; }
+  .inline-agent__starter-copy { flex: 1; }
 }
 
 @media (min-width: 640px) and (max-width: 1023.98px) {
@@ -1614,6 +1614,9 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
     display: flex;
     align-items: center;
     gap: 0;
+    margin-inline-end: .4rem;
+    padding: 0;
+    border: 0;
   }
 
   .inline-agent__mobile-return,
@@ -1640,7 +1643,9 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
   }
   .inline-agent__identity {
     overflow: hidden;
+    gap: .375rem;
   }
+  .inline-agent__avatar { width: 32px !important; height: 32px !important; }
 
   .inline-agent__heading h2 {
     overflow: hidden;
@@ -1665,7 +1670,7 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
   .inline-agent__panel-actions {
     gap: 0;
   }
-
+  .inline-agent__temporary-session { display: none; }
 
   .inline-agent__toolbar :deep(.v-btn) {
     min-width: var(--wiki-control-height);
@@ -1691,13 +1696,12 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
   }
 
   .inline-agent__welcome {
-    padding: var(--wiki-space-5);
+    padding: var(--wiki-space-5) var(--wiki-space-2);
   }
 
 
-  .inline-agent__welcome h2 {
-    font-size: 1.5rem;
-  }
+  .inline-agent__welcome h2 { font-size: clamp(2rem, 8vw, 3rem); }
+  .inline-agent__welcome-mark { display: none; }
 
   .inline-agent__welcome-copy {
     margin-block: var(--wiki-space-4);
@@ -1781,7 +1785,6 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
     opacity: .72;
   }
 
-  .inline-agent__welcome::before,
   .inline-agent__loading-mark {
     background: Highlight;
   }

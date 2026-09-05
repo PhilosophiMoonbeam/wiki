@@ -92,14 +92,18 @@
           .nav-header-slot-actions(v-if='$vuetify.display.mdAndUp || mobileActions')
             slot(name='actions')
           v-btn.nav-header-agent(
-            v-if='canUseAgent && !hideSearch && mode !== `edit` && $vuetify.display.lgAndUp'
-            prepend-icon='mdi-auto-fix'
+            v-if='canUseAgent && !hideSearch && mode !== `edit`'
+            :prepend-icon='$vuetify.display.mdAndUp ? `mdi-book-open-page-variant-outline` : undefined'
+            :icon='$vuetify.display.smAndDown ? `mdi-book-open-page-variant-outline` : undefined'
+            aria-label='Open Wiki Agent'
+            title='Wiki Agent · Ctrl/⌘ + Shift + A'
             variant='tonal'
             color='primary'
             size='small'
             data-search-modal-action
             @click='openAgent'
-          ) Wiki Agent
+          )
+            span(v-if='$vuetify.display.mdAndUp') Wiki Agent
           //- LANGUAGES
 
           template(v-if='mode === `view` && locales.length > 0 && $vuetify.display.mdAndUp')

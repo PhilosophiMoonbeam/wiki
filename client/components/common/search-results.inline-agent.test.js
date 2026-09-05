@@ -136,7 +136,7 @@ describe('inline Ask mode contract', () => {
   test('renders Ask as an immersive conversation instead of launching another application', () => {
     expect(template).toMatch(/InlineAgentChat\s*\(/)
     expect(template).toMatch(/v-if=['"]isAgentOpen['"]/)
-    expect(template).toMatch(/search-results-agent-nav/)
+    expect(template).toMatch(/search-results-agent-entry/)
     expect(template).toMatch(/@return-search=['"]returnToSearch['"]/)
     expect(template).toMatch(/@close=['"]closeSearch['"]/)
     expect(template).toMatch(/role=['"]dialog['"]/)
@@ -145,9 +145,7 @@ describe('inline Ask mode contract', () => {
     expect(template).toMatch(/:aria-labelledby=['"]isAgentOpen \? `wiki-agent-title` : `wiki-search-title`['"]/)
     expect(search).toMatch(/\.search-results\s*\{[\s\S]*height:\s*100dvh[\s\S]*inset:\s*0/)
     expect(search).toMatch(/&--ask\s*\{[\s\S]*overflow:\s*hidden[\s\S]*z-index:\s*1009/)
-    expect(search).toMatch(
-      /&--ask\s*\{[\s\S]*color-mix\(in srgb, var\(--wiki-ambient-accent\) 5%, rgb\(var\(--v-theme-background\)\)\)[\s\S]*rgb\(var\(--v-theme-background\)\)[\s\S]*isolation:\s*isolate/
-    )
+    expect(search).toMatch(/&--ask\s*\{[\s\S]*background:\s*rgb\(var\(--v-theme-background\)\)/)
     expect(search).toMatch(/&--ask\s*\{\s*animation:\s*none/)
     expect(search).toMatch(/&--ask\s*\{[\s\S]*animation:\s*agentWorkspaceReveal var\(--wiki-motion-slow\)/)
     expect(search).not.toMatch(/height:\s*calc\(100dvh/)
@@ -155,8 +153,8 @@ describe('inline Ask mode contract', () => {
     expect(search).toMatch(
       /@media #\{map-get\(\$display-breakpoints, ['"]sm-and-down['"]\)\}\s*\{[\s\S]*&:not\(\.search-results--ask\)\s*\{[\s\S]*--search-mobile-app-bar-extension-height:\s*48px;[\s\S]*padding-top:\s*calc\(var\(--v-layout-top,\s*72px\) \+ var\(--search-mobile-app-bar-extension-height\)\);/
     )
-    expect(search).toMatch(/&-container--ask\s*\{[\s\S]*padding:\s*0\s+var\(--wiki-space-2\)/)
-    expect(inline).toMatch(/inline-agent__mobile-return" icon="mdi-arrow-left"[\s\S]*aria-label="Return to Wiki Search"[\s\S]*@click="emit\('return-search'\)"/)
+    expect(search).toMatch(/&-container--ask\s*\{[\s\S]*padding:\s*0;/)
+    expect(inline).toMatch(/inline-agent__mobile-return" icon="mdi-magnify"[\s\S]*aria-label="Return to Wiki Search"[\s\S]*@click="emit\('return-search'\)"/)
     expect(inline).toMatch(/inline-agent__mobile-close" icon="mdi-close"[\s\S]*aria-label="Close Wiki Agent"[\s\S]*@click="emit\('close'\)"/)
     expect(inline).toMatch(
       /inline-agent__mobile-panel-menu" icon="mdi-view-dashboard-outline"[\s\S]*aria-label="Open Agent panels: conversation history and memory"/
@@ -170,14 +168,12 @@ describe('inline Ask mode contract', () => {
     expect(inline).toMatch(/newTemporarySession = \(\): Promise<void> => createSession\('temporary'\)/)
     expect(inline).toMatch(/newSession = \(\): Promise<void> => createSession\('saved'\)/)
     expect(inline).not.toMatch(/font-size:\s*0/)
-    expect(search).toMatch(/&-agent-nav\s*\{[\s\S]*padding-block-start:\s*max\(0px,\s*env\(safe-area-inset-top\)\)/)
     expect(inline).toMatch(/\.inline-agent__toolbar\s*\{[\s\S]*padding-block-start:\s*0/)
     expect(inline).toMatch(/\.inline-agent__progress\s*\{[\s\S]*var\(--wiki-space-6\) - var\(--wiki-space-1\)/)
     expect(inline).toMatch(
       /@media \(max-width: 639\.98px\)\s*\{[\s\S]*\.inline-agent__toolbar\s*\{[\s\S]*padding-block-start:\s*max\(0px,\s*env\(safe-area-inset-top\)\)[\s\S]*\.inline-agent__progress\s*\{[\s\S]*env\(safe-area-inset-top\)/
     )
     expect(inline).toMatch(/padding-block-end:\s*max\(var\(--wiki-space-1\),\s*env\(safe-area-inset-bottom\)\)/)
-    expect(search).toMatch(/@media \(max-width: 639\.98px\)\s*\{[\s\S]*&--ask \.search-results-agent-nav\s*\{\s*display:\s*none;/)
     expect(template).not.toMatch(/action=['"]\/_?api\/agents\/launch['"]/)
     expect(template).not.toMatch(/target=['"]_blank['"]/)
     expect(search).toMatch(/if\s*\(!inlineAgent\)\s*return/)
@@ -199,20 +195,11 @@ describe('inline Ask mode contract', () => {
     )
   })
 
-  test('uses the toolbar atmosphere as the shared translucent workspace surface', () => {
-    const cardStyle = inline.match(/\.inline-agent__card\s*\{([\s\S]*?)\n\}/)?.[1] ?? ''
-    const toolbarStyle = inline.match(/\.inline-agent__toolbar\s*\{([\s\S]*?)\n\}/)?.[1] ?? ''
-    const bodyStyle = inline.match(/\.inline-agent__body\s*\{([\s\S]*?)\n\}/)?.[1] ?? ''
-    const sideStyle = [...inline.matchAll(/\.inline-agent__side\s*\{([\s\S]*?)\n\}/g)]
-      .map(match => match[1])
-      .find(style => /background:\s*transparent/.test(style)) ?? ''
-    expect(inline).toMatch(/--inline-agent-workspace-gradient:/)
-    expect(cardStyle).toMatch(/background:\s*color-mix\([\s\S]*transparent\)/)
-    expect(toolbarStyle).toMatch(/border-bottom:\s*1px solid var\(--wiki-surface-border\)/)
-    expect(toolbarStyle).toMatch(/var\(--inline-agent-workspace-gradient\)/)
-    expect(bodyStyle).toMatch(/color-mix\(in srgb, var\(--inline-agent-workspace-base\)[\s\S]*transparent\)/)
-    expect(sideStyle).toMatch(/overflow:\s*hidden/)
-    expect(sideStyle).toMatch(/background:\s*transparent/)
+  test('uses the application background across the conversation workspace', () => {
+    for (const selector of ['card', 'toolbar', 'body']) {
+      const style = inline.match(new RegExp(`\\.inline-agent__${selector}\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] ?? ''
+      expect(style).toContain('rgb(var(--v-theme-background))')
+    }
   })
 
   test('reuses authenticated sessions without changing the Wiki page route', () => {
@@ -227,13 +214,13 @@ describe('inline Ask mode contract', () => {
     expect(inline).toMatch(/<AgentHistoryPanel/)
     expect(inline).toMatch(/inline-agent__side--memory/)
     expect(inline).toMatch(/<AgentMemoryManager :model-value="memoryOpen"[\s\S]*@update:model-value="updateMemoryOpen"/)
-    expect(search).toMatch(/&--ask \.inline-agent\s*\{[\s\S]*max-width:\s*112rem/)
+    expect(search).toMatch(/&--ask \.inline-agent\s*\{[\s\S]*max-width:\s*none/)
     expect(inline).toMatch(/panelMode = ref<'wide' \| 'docked' \| 'modal'>/)
     expect(inline).toMatch(/panelModeMedia\.forEach\(media => media\.addEventListener\(['"]change['"],\s*reconcilePanelMode\)\)/)
     expect(inline).toMatch(/panelModeMedia\.forEach\(media => media\.removeEventListener\(['"]change['"],\s*reconcilePanelMode\)\)/)
     expect(inline).toMatch(/window\.matchMedia\(['"]\(min-width: 1760px\)['"]\)/)
     expect(inline).toMatch(/window\.matchMedia\(['"]\(min-width: 1024px\) and \(max-width: 1759\.98px\)['"]\)/)
-    expect(inline).toMatch(/@media \(min-width: 1024px\) and \(max-width: 1759\.98px\)/)
+    expect(inline).toMatch(/@media \(min-width: 1024px\)/)
     expect(inline).toMatch(/@media \(max-width: 1023\.98px\)/)
     expect(inline).toMatch(/@media \(max-width: 1023\.98px\)\s*\{[\s\S]*\.inline-agent__card\s*\{[\s\S]*grid-column:\s*1;[\s\S]*grid-row:\s*1;/)
     expect(inline).toMatch(/\.inline-agent__side--history\s*\{[\s\S]*inset-inline-start:\s*0;[\s\S]*inset-inline-end:\s*auto;[\s\S]*justify-self:\s*start;/)
@@ -377,7 +364,7 @@ describe('inline Ask mode contract', () => {
     expect(header).toMatch(/event\.ctrlKey\s*\|\|\s*event\.metaKey/)
     expect(search).toMatch(/focusComposer\(\)/)
     expect(inline).toMatch(/defineExpose\(\{\s*sendPrompt,\s*focusComposer,\s*focusConversation,\s*scrollToLatest\s*\}\)/)
-    expect(composer).toMatch(/defineExpose\(\{\s*focusInput,\s*focusSkillsTrigger\s*\}\)/)
+    expect(composer).toMatch(/defineExpose\(\{\s*focusInput,\s*focusSkillsTrigger,\s*setDraft\s*\}\)/)
     expect(search).toMatch(/async submitAskPrompt\(\): Promise<void>/)
   })
 
@@ -559,22 +546,11 @@ describe('inline Ask mode contract', () => {
     expect(renderedState()).toEqual({ summary: true, empty: true, emptyAsk: true })
   })
 
-  test('does not render or advertise the Search and Ask shortcut without Ask permission', () => {
-    const shortcutCondition = templateConditionFor(template, 'v-chip.search-results-shortcut')
-    const shortcutOpening = template.slice(template.indexOf('v-chip.search-results-shortcut'), template.indexOf(') Ctrl/⌘ + Shift + A'))
-    const renderedShortcut = canAsk =>
-      evaluateTemplateCondition(shortcutCondition, { canAsk })
-        ? {
-            title: shortcutOpening.match(/title='([^']+)'/)?.[1],
-            ariaLabel: shortcutOpening.match(/aria-label='([^']+)'/)?.[1]
-          }
-        : null
-
-    expect(renderedShortcut(false)).toBeNull()
-    expect(renderedShortcut(true)).toEqual({
-      title: 'Shortcut to switch between Search and Ask mode',
-      ariaLabel: 'Shortcut to switch between Search and Ask mode: Control or Command plus Shift plus A'
-    })
+  test('only offers the search-to-agent entrance to users with Ask permission', () => {
+    const condition = templateConditionFor(template, 'v-btn.search-results-agent-entry')
+    expect(evaluateTemplateCondition(condition, { canAsk: false })).toBe(false)
+    expect(evaluateTemplateCondition(condition, { canAsk: true })).toBe(true)
+    expect(header).toMatch(/v-if='canUseAgent && !hideSearch && mode !== `edit`'/)
   })
 
   test('restores retained-response keyboard navigation without treating raw Enter as selection', async () => {
@@ -687,34 +663,10 @@ describe('inline Ask mode contract', () => {
     expect(reloadHistory).toMatch(/historyLoadError\.value = value instanceof Error/)
     expect(reloadHistory).not.toMatch(/agents\.error/)
   })
-  test('keeps overlay rails conditional and conversation measures shared', () => {
-    expect(inline).toMatch(/class="inline-agent"/)
-    expect(inline).not.toMatch(/inline-agent--(?:panel|history|memory|panels)-open/)
-    expect(inline).toMatch(/--agent-conversation-width:\s*56rem/)
-    expect(inline).toMatch(/inline-agent__composer-inner/)
-    expect(inline).toMatch(/inline-agent__composer-meta/)
+  test('shares the reading measure between transcript and composer', () => {
     expect(inline).toMatch(/agent-thread\)\s*\{[\s\S]*?max-width:\s*var\(--agent-conversation-width\)/)
     expect(inline).toMatch(/\.inline-agent__composer-inner\s*\{[\s\S]*?width:\s*min\(100%,\s*var\(--agent-conversation-width\)\)/)
     expect(inline).toMatch(/scrollbar-gutter:\s*stable both-edges/)
-
-    const baseLayout = inline.match(/\.inline-agent\s*\{([\s\S]*?)\n\}/)?.[1] ?? ''
-    expect(baseLayout).toMatch(/grid-template-columns:\s*minmax\(0,\s*68rem\)/)
-    expect(baseLayout).toMatch(/justify-content:\s*center/)
-
-    const wideLayout = inline.match(/@media \(min-width:\s*1760px\)([\s\S]*?)(?=@media|<\/style>)/)?.[1] ?? ''
-    expect(wideLayout).toMatch(/grid-template-columns:\s*19rem minmax\(0,\s*68rem\) 21rem/)
-    expect(wideLayout).toMatch(/\.inline-agent__card\s*\{[\s\S]*?grid-column:\s*2/)
-    expect(wideLayout).toMatch(/\.inline-agent__side\s*\{[\s\S]*?position:\s*relative/)
-
-    const dockedLayout = inline.match(/@media \(min-width:\s*1024px\) and \(max-width:\s*1759\.98px\)([\s\S]*?)(?=@media|<\/style>)/)?.[1] ?? ''
-    expect(dockedLayout).toMatch(/\.inline-agent\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*68rem\)[\s\S]*?justify-content:\s*center/)
-    expect(dockedLayout).toMatch(/\.inline-agent__card\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*1/)
-    const dockedSideStyle = dockedLayout.match(/\.inline-agent__side\s*\{([\s\S]*?)\n\s*\}/)?.[1] ?? ''
-    expect(dockedSideStyle).toMatch(/position:\s*absolute/)
-    expect(dockedSideStyle).toMatch(/inset-block:\s*0/)
-    expect(dockedSideStyle).not.toMatch(/grid-(?:column|row):/)
-    expect(dockedLayout).toMatch(/\.inline-agent__side--history\s*\{[\s\S]*?inset-inline-start:\s*0;[\s\S]*?width:\s*19rem/)
-    expect(dockedLayout).toMatch(/\.inline-agent__side--memory\s*\{[\s\S]*?inset-inline-end:\s*0;[\s\S]*?width:\s*21rem/)
   })
 
   test('keeps current-page locale and path identity available on narrow phones', () => {
@@ -763,18 +715,10 @@ describe('inline Ask mode contract', () => {
     expect(goalDockStyle).toMatch(/padding-block:\s*var\(--wiki-space-1\) calc\(var\(--wiki-space-3\) \/ 2\)/)
     expect(inline).toMatch(/@update:expanded="handleGoalExpanded"/)
   })
-  test('keeps welcome content flat and starters as text rows', () => {
-    const welcomeStyle = inline.match(/\.inline-agent__welcome\s*\{([\s\S]*?)\n\}/)?.[1] ?? ''
-    expect(welcomeStyle).not.toMatch(/border\s*:|background\s*:|box-shadow\s*:/)
-    expect(inline).toMatch(/class="inline-agent__starter"[\s\S]*variant=['"]text['"]/)
-    expect(inline).toMatch(/\.inline-agent__starters\s*\{[\s\S]*?grid-template-columns:\s*1fr[\s\S]*?gap:\s*0/)
-    expect(inline).toMatch(/\.inline-agent__starter\s*\{[\s\S]*?border-block-end:\s*1px[\s\S]*?border-radius:\s*0/)
-    const welcomeSpine = inline.match(/\.inline-agent__welcome::before\s*\{([\s\S]*?)\n\}/)?.[1] ?? ''
-    expect(welcomeSpine).not.toMatch(/border-radius\s*:/)
-    expect(welcomeSpine).toMatch(/border-start-start-radius:\s*0/)
-    expect(welcomeSpine).toMatch(/border-start-end-radius:\s*var\(--wiki-radius-pill\)/)
-    expect(welcomeSpine).toMatch(/border-end-end-radius:\s*var\(--wiki-radius-pill\)/)
-    expect(welcomeSpine).toMatch(/border-end-start-radius:\s*0/)
+  test('prepares editable starter prompts before sending', () => {
+    expect(inline).toContain('@click="preparePrompt(starter.prompt)"')
+    expect(inline).toContain('await composer.value?.setDraft(prompt)')
+    expect(composer).toMatch(/const setDraft = async[\s\S]*draft.value = value[\s\S]*await focusInput\(\)/)
   })
 
   test('keeps the wand, product, and session identity vertically intact at every toolbar density', () => {
@@ -782,17 +726,17 @@ describe('inline Ask mode contract', () => {
     const mobile = inline.match(/@media \(max-width:\s*639\.98px\)([\s\S]*?)(?=@media|<\/style>)/)?.[1] ?? ''
     const shortViewport = inline.match(/@media \(max-height:\s*500px\)([\s\S]*?)(?=@media|<\/style>)/)?.[1] ?? ''
     expect(tablet).toMatch(/\.inline-agent__toolbar\s*\{[\s\S]*?min-height:/)
-    expect(tablet).not.toMatch(/\.inline-agent__(?:avatar|session-title)[\s\S]*?display:\s*none/)
-    expect(mobile).not.toMatch(/\.inline-agent__(?:avatar|session-title)[\s\S]*?display:\s*none/)
-    expect(shortViewport).not.toMatch(/\.inline-agent__(?:avatar|session-title)[\s\S]*?display:\s*none/)
+    expect(tablet).not.toMatch(/\.inline-agent__(?:avatar|session-title)[^}]*?display:\s*none/)
+    expect(mobile).not.toMatch(/\.inline-agent__(?:avatar|session-title)[^}]*?display:\s*none/)
+    expect(shortViewport).not.toMatch(/\.inline-agent__(?:avatar|session-title)[^}]*?display:\s*none/)
     expect(inline).toMatch(/\.inline-agent__identity\s*\{\s*display:\s*flex[\s\S]*align-items:\s*center/)
   })
 
-  test('makes autocomplete semantics conditional on the skills popup feature', () => {
-    expect(composer).toMatch(/:role="skillsEnabled\s*\?\s*['"]combobox['"]\s*:\s*undefined"/)
+  test('keeps native multiline textbox semantics with conditional skill suggestions', () => {
+    expect(composer).not.toContain(':role="skillsEnabled')
+    expect(composer).not.toContain(':aria-expanded="skillsEnabled')
     expect(composer).toMatch(/:aria-autocomplete="skillsEnabled\s*\?\s*['"]list['"]\s*:\s*undefined"/)
     expect(composer).toMatch(/:aria-haspopup="skillsEnabled\s*\?\s*['"]listbox['"]\s*:\s*undefined"/)
-    expect(composer).toMatch(/:aria-expanded="skillsEnabled\s*\?\s*skillCommandOpen\s*:\s*undefined"/)
     expect(composer).toMatch(/:aria-controls="skillsEnabled\s*&&\s*skillCommandOpen\s*\?[\s\S]*?:\s*undefined"/)
     expect(composer).toMatch(/:aria-activedescendant="skillsEnabled\s*&&\s*skillCommandOpen\s*&&\s*activeCommandSkill\s*\?[\s\S]*?:\s*undefined"/)
   })

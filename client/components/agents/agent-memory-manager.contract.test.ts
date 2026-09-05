@@ -14,8 +14,8 @@ const occurrences = (value: string, fragment: string): number => value.split(fra
 describe('Agent memory manager concise surface contract', () => {
   test('frames memory once with terse, icon-led sections and one saved-record count', () => {
     expect(errors).toEqual([])
-    expect(template).toContain('A deliberate snapshot, not hidden learning.')
-    expect(occurrences(template, 'A deliberate snapshot, not hidden learning.')).toBe(1)
+    expect(template).toContain('Preferences and facts carried into your conversations.')
+    expect(occurrences(template, 'Preferences and facts carried into your conversations.')).toBe(1)
     expect(occurrences(template, '{{ memoryCountLabel }}')).toBe(1)
     expect(template).toContain('class="agent-memory__count"')
     expect(template).toContain('aria-live="polite"')
