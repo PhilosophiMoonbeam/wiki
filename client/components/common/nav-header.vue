@@ -94,7 +94,7 @@
           v-btn.nav-header-agent(
             v-if='canUseAgent && !hideSearch && mode !== `edit`'
             :prepend-icon='$vuetify.display.mdAndUp ? `mdi-book-open-page-variant-outline` : undefined'
-            :icon='$vuetify.display.smAndDown ? `mdi-book-open-page-variant-outline` : undefined'
+            :icon='$vuetify.display.smAndDown'
             aria-label='Open Wiki Agent'
             title='Wiki Agent · Ctrl/⌘ + Shift + A'
             variant='tonal'
@@ -103,7 +103,8 @@
             data-search-modal-action
             @click='openAgent'
           )
-            span(v-if='$vuetify.display.mdAndUp') Wiki Agent
+            v-icon(v-if='$vuetify.display.smAndDown' icon='mdi-book-open-page-variant-outline')
+            span(v-else) Wiki Agent
           //- LANGUAGES
 
           template(v-if='mode === `view` && locales.length > 0 && $vuetify.display.mdAndUp')
@@ -1225,6 +1226,11 @@ export default defineComponent({
 
 @media (max-width: 959px) {
   .nav-header {
+    .nav-header-layout { flex-wrap: nowrap; }
+    .nav-header-brand-col { flex: 1 1 0; width: auto; max-width: none; }
+    .nav-header-actions-col { flex: 0 0 auto; width: auto; max-width: none; }
+    .nav-header-agent { margin-inline: 0; }
+
     .nav-header-brand {
       padding-inline: var(--wiki-space-3) var(--wiki-space-2);
     }

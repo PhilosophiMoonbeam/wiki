@@ -690,6 +690,15 @@ test.describe('responsive UI quality matrix', () => {
 
   test('keeps Agent Chat readable and operable', async ({ page }) => {
     await openAuthenticatedPage(page, '/', '.page-header-section')
+    const entrance = page.locator('.nav-header-agent')
+    await expectLocatorWithinViewport(entrance, 'Wiki Agent entrance')
+    await expect(entrance.locator('.v-icon')).toBeVisible()
+    await expect.poll(() => page.locator('.nav-header').evaluate(header =>
+      Array.from(header.querySelectorAll('button')).filter(button => {
+        const bounds = button.getBoundingClientRect()
+        return bounds.width > 0 && (bounds.left < 0 || bounds.right > window.innerWidth)
+      }).length
+    )).toBe(0)
     await openSearch(page)
     await expect(page.locator('.search-results-agent-entry')).toBeVisible()
     await page.locator('.search-results-agent-entry').click()
