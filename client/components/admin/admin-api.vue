@@ -88,8 +88,8 @@
                   v-chip(label, size="x-small", :color='key.isRevoked ? `error` : `success`') {{ key.isRevoked ? 'Revoked' : 'Active' }}
                 .admin-mobile-record-meta Key ending {{ key.keyShort }}
                 .text-body-small.text-medium-emphasis.mt-2 Expires {{ $helpers.formatMoment(key.expiration, 'LL') }}
-                .text-body-small.text-grey Created {{ $helpers.formatMoment(key.createdAt, 'calendar') }}
-                .text-body-small.text-grey Updated {{ $helpers.formatMoment(key.updatedAt, 'calendar') }}
+                .text-body-small.text-medium-emphasis Created {{ $helpers.formatMoment(key.createdAt, 'calendar') }}
+                .text-body-small.text-medium-emphasis Updated {{ $helpers.formatMoment(key.updatedAt, 'calendar') }}
                 v-btn.mt-2(v-if='!key.isRevoked', variant="outlined", size="small", color='error', @click='revoke(key)', :disabled='adminApiBusy', :aria-label='`Revoke ${key.name}`')
                   v-icon(start) mdi-cancel
                   span {{$t('admin:api.revoke')}}
