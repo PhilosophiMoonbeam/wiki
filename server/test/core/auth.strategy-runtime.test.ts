@@ -22,7 +22,7 @@ const row = (key = 'local', overrides = {}) => ({
 beforeEach(() => {
   initialize.mockReset()
   getStrategies.mockReset()
-  use.mockClear()
+  use.mockReset()
   unuse.mockClear()
   globalThis.WIKI = {
     config: { host: 'https://wiki.example.invalid', auth: { audience: 'workspace' }, certs: { public: 'fixture-public-key' } },
@@ -42,12 +42,22 @@ describe('authentication runtime observations', () => {
     getStrategies.mockResolvedValue([row(), row('disabled', { strategyKey: 'missing-disabled-module', isEnabled: false, config: { secret: 'private-value' } })])
     await auth.activateStrategies()
     expect(initialize).toHaveBeenCalledOnce()
+    expect(auth.jwtAudience).toBe('workspace')
     expect(auth.strategyStatus.local).toMatchObject({ state: 'ready', revision: 'review-one' })
     expect(auth.strategyStatus.disabled?.state).toBe('disabled')
     expect(auth.strategies.disabled).toBeUndefined()
     expect(JSON.stringify(auth.strategyStatus)).not.toContain('private-value')
     expect(unuse).toHaveBeenCalledWith('old')
     expect(unuse).not.toHaveBeenCalledWith('session')
+  })
+  it('clears the observed JWT audience when registration fails', async () => {
+    getStrategies.mockResolvedValue([row()])
+    await auth.activateStrategies()
+    use.mockImplementationOnce(() => {
+      throw new Error('Cannot register JWT validation')
+    })
+    await auth.activateStrategies()
+    expect(auth.jwtAudience).toBeNull()
   })
   it('records failed initialization separately from saved enablement and removes partial registrations', async () => {
     getStrategies.mockResolvedValue([row('broken')])

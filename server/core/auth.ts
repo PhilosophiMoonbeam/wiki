@@ -231,6 +231,7 @@ interface AuthService {
   revocationList: NodeCache
   revokeUserTokens(request: RevokeRequest): void
   strategies: Record<string, ActiveStrategy>
+  jwtAudience: string | null
   strategyStatus: Record<string, AuthenticationRuntime>
   subscribeToEvents(): void
   validApiKeys: number[]
@@ -345,6 +346,7 @@ let activationQueue: Promise<void> = Promise.resolve()
 const auth: AuthService = {
   strategies: {},
   strategyStatus: {},
+  jwtAudience: null,
   passport,
   guest: { cacheExpiration: DateTime.utc().minus({ days: 1 }) },
   groups: {},
@@ -374,6 +376,7 @@ const auth: AuthService = {
       try {
         this.strategies = {}
         this.strategyStatus = {}
+        this.jwtAudience = null
         for (const strategyName of getPassportStrategyNames()) {
           if (strategyName !== 'session') passport.unuse(strategyName)
         }
@@ -392,6 +395,7 @@ const auth: AuthService = {
           )
         )
 
+        this.jwtAudience = wiki.config.auth.audience
         const records = await wiki.models.authentication.getStrategies()
         for (const strategyRecord of records) {
           const observed = { checkedAt: new Date().toISOString(), revision: strategyRecord.adminRevision ?? '' }
@@ -458,18 +462,27 @@ const auth: AuthService = {
       }
       if (claims) {
         try {
-          const account = Number.isSafeInteger(claims.id) && claims.id > 0 && claims.id <= 2147483647 ? await wiki.models.users.query().findById(claims.id) : undefined
-          if (!accountSessionIsCurrent(claims, account)) { claims = null; user = false; mustRevalidate = false }
-        } catch (stateError) { return next(asError(stateError)) }
+          const account =
+            Number.isSafeInteger(claims.id) && claims.id > 0 && claims.id <= 2147483647 ? await wiki.models.users.query().findById(claims.id) : undefined
+          if (!accountSessionIsCurrent(claims, account)) {
+            claims = null
+            user = false
+            mustRevalidate = false
+          }
+        } catch (stateError) {
+          return next(asError(stateError))
+        }
       } else if (mustRevalidate) {
         // Renewal must have a verified user token, including its session version.
-        user = false; mustRevalidate = false
+        user = false
+        mustRevalidate = false
       } else if (user && !isApiPrincipal(user)) {
         user = false
       }
 
       if (mustRevalidate && claims) {
-        const userId = claims.id, expectedAuthVersion = sessionVersion(claims.authVersion)!
+        const userId = claims.id,
+          expectedAuthVersion = sessionVersion(claims.authVersion)!
         try {
           const refreshed = await wiki.models.users.refreshToken(userId, { expectedAuthVersion })
           user = refreshed.user

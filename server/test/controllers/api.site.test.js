@@ -1,3 +1,5 @@
+const legacySecurity = vi.fn().mockResolvedValue(undefined)
+vi.mockModule('../../operations/security-administration.ts', import.meta.url, () => ({ legacySecurityKeys: ['securityTrustProxy', 'authAutoLogin', 'securityHSTSDuration', 'uploadMaxFileSize', 'uploadMaxFiles', 'uploadForceDownload'], patchLegacySecurityConfiguration: legacySecurity, getSecurityAdministrationStore: vi.fn() }))
 const patchFeatures = vi.fn(async features => { global.WIKI.config.features = { ...global.WIKI.config.features, ...features } })
 vi.mockModule('../../operations/discussion-settings.ts', import.meta.url, () => ({ patchSiteFeatures: patchFeatures }))
 vi.mockModule('../../operations/editors.ts', import.meta.url, () => ({ updateEditorAvailability: async available => { global.WIKI.config.editors = { ...global.WIKI.config.editors, available } } }))
@@ -8,7 +10,7 @@ vi.mockModule('express', import.meta.url, () => {
     Router: () => {
       const router = {
         get: vi.fn(),
-        put: vi.fn()
+        put: vi.fn(), post: vi.fn()
       }
       routers.push(router)
       return router
@@ -120,8 +122,8 @@ describe('controllers/api site endpoints', () => {
   it('registers site config routes', async () => {
     const router = await loadRouter()
 
-    expect(router.get.mock.calls.map(([path]) => path)).toEqual(['/config'])
-    expect(router.put.mock.calls.map(([path]) => path)).toEqual(['/config'])
+    expect(router.get.mock.calls.map(([path]) => path)).toEqual(['/config', '/security'])
+    expect(router.put.mock.calls.map(([path]) => path)).toEqual(['/config', '/security'])
   })
 
   it.each([
@@ -191,8 +193,6 @@ describe('controllers/api site endpoints', () => {
       body: {
         host: ' http://wiki.example.com/ ',
         title: 'Must not be applied',
-        authJwtAudience: 'urn:stale-oauth-state',
-        securityTrustProxy: true
       }
     }, res)
 
@@ -263,14 +263,8 @@ describe('controllers/api site endpoints', () => {
         robots: ['noindex'],
         analyticsService: '',
         analyticsId: '',
-        authAutoLogin: true,
         editFab: false,
         featurePageComments: true,
-        securityTrustProxy: true,
-        securityHSTSDuration: 31536000,
-        uploadMaxFileSize: 2097152,
-        uploadMaxFiles: 20,
-        uploadForceDownload: true
       }
     }, res)
 
@@ -292,7 +286,7 @@ describe('controllers/api site endpoints', () => {
       analyticsId: ''
     })
     expect(global.WIKI.config.auth).toEqual({
-      autoLogin: true,
+      autoLogin: false,
       enforce2FA: true,
       hideLocal: false,
       loginBgUrl: '/login.jpg',
@@ -305,13 +299,13 @@ describe('controllers/api site endpoints', () => {
     expect(global.WIKI.config.features.featurePageComments).toBe(true)
     expect(patchFeatures).toHaveBeenCalledWith({ featurePageComments: true })
     expect(global.WIKI.config.features.featurePageRatings).toBe(true)
-    expect(global.WIKI.config.security.securityTrustProxy).toBe(true)
-    expect(global.WIKI.config.security.securityHSTSDuration).toBe(31536000)
-    expect(global.WIKI.config.uploads.maxFileSize).toBe(2097152)
-    expect(global.WIKI.config.uploads.maxFiles).toBe(20)
-    expect(global.WIKI.config.uploads.forceDownload).toBe(true)
-    expect(global.WIKI.configSvc.saveToDb).toHaveBeenCalledWith(['host', 'title', 'company', 'contentLicense', 'footerOverride', 'banner', 'seo', 'pageExtensions', 'auth', 'editShortcuts', 'security', 'uploads'])
-    expect(global.WIKI.app.set.mock.calls).toEqual([['trust proxy', 1]])
+    expect(global.WIKI.config.security.securityTrustProxy).toBe(false)
+    expect(global.WIKI.config.security.securityHSTSDuration).toBe(300)
+    expect(global.WIKI.config.uploads.maxFileSize).toBe(1048576)
+    expect(global.WIKI.config.uploads.maxFiles).toBe(10)
+    expect(global.WIKI.config.uploads.forceDownload).toBe(false)
+    expect(global.WIKI.configSvc.saveToDb).toHaveBeenCalledWith(['host', 'title', 'company', 'contentLicense', 'footerOverride', 'banner', 'seo', 'pageExtensions', 'editShortcuts'])
+    expect(global.WIKI.app.set.mock.calls).toEqual([['trust proxy', false]])
     expect(res.status).not.toHaveBeenCalled()
     expect(res.json).toHaveBeenCalledWith({ message: 'Site configuration updated successfully' })
   })
@@ -321,20 +315,19 @@ describe('controllers/api site endpoints', () => {
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn() }
     delete global.WIKI.config.banner
 
-    await handler({ user: {}, body: { securityTrustProxy: false } }, res)
+    await handler({ user: {}, body: { title: 'Updated title' } }, res)
 
     expect(global.WIKI.config.banner).toEqual({ isEnabled: false, title: '', content: '' })
     expect(global.WIKI.configSvc.saveToDb).toHaveBeenCalled()
     expect(res.status).not.toHaveBeenCalled()
   })
 
-  it('clears trust proxy when the saved config sets securityTrustProxy false', async () => {
-    const handler = await loadPutConfigHandler()
-    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() }
-
-    await handler({ user: {}, body: { securityTrustProxy: false } }, res)
-
-    expect(global.WIKI.app.set.mock.calls).toEqual([['trust proxy', false]])
+  it('delegates legacy security writes with the authenticated actor without changing unrelated configuration', async () => {
+    const handler = await loadPutConfigHandler(), user = { id: 1, authVersion: 2 }, res = { status: vi.fn().mockReturnThis(), json: vi.fn() }
+    await handler({ user, body: { securityTrustProxy: true } }, res)
+    expect(legacySecurity).toHaveBeenCalledWith(user, { securityTrustProxy: true })
+    expect(global.WIKI.config.security.securityTrustProxy).toBe(false)
+    expect(global.WIKI.configSvc.saveToDb).not.toHaveBeenCalled()
   })
 
   it('does not report a failed persistence result as a successful save', async () => {
@@ -354,7 +347,7 @@ describe('controllers/api site endpoints', () => {
     global.WIKI.app = initializedApp
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn() }
 
-    await handler({ user: {}, body: { securityTrustProxy: false } }, res)
+    await handler({ user: {}, body: { title: 'Updated title' } }, res)
 
     expect(initializedApp.set.mock.calls).toEqual([['trust proxy', false]])
     expect(res.status).not.toHaveBeenCalled()

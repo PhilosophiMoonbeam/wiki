@@ -153,7 +153,7 @@ const postMultipart = async parts => {
   return request({ port, ...makeMultipartBody(parts) })
 }
 
-const uploadDirectoryFiles = () => fs.readdirSync(path.join(tempRoot, 'data', 'uploads'))
+const uploadDirectoryFiles = () => { const directory = path.join(tempRoot, 'data', 'uploads'); return fs.existsSync(directory) ? fs.readdirSync(directory) : [] }
 
 afterEach(async () => {
   if (server) {
@@ -282,6 +282,27 @@ describe('controllers/upload real multipart integration', () => {
     expect(uploadDirectoryFiles()).toEqual([])
   })
 
+  it('applies changed file limits to new requests without recreating the controller', async () => {
+    const { wiki } = await setupServer({ maxFileSize: 4 })
+    const payload = [{ value: JSON.stringify({ folderId: 0 }) }, { filename: 'policy.txt', value: Buffer.from('five!'), type: 'text/plain' }]
+    const rejected = await postMultipart(payload)
+    expect(rejected.status).toBe(413)
+    expect(wiki.models.assets.upload).not.toHaveBeenCalled()
+    wiki.config.uploads.maxFileSize = 100
+    const accepted = await postMultipart(payload)
+    expect(accepted.status).toBe(200)
+    expect(wiki.models.assets.upload).toHaveBeenCalledOnce()
+  })
+
+  it('blocks new uploads when file capacity is zero', async () => {
+    const { wiki } = await setupServer({ maxFileSize: 0 })
+    const res = await postMultipart([{ value: JSON.stringify({ folderId: 0 }) }, { filename: 'empty.txt', value: Buffer.alloc(0), type: 'text/plain' }])
+    expect(res.status).toBe(403)
+    expect(res.json.message).toBe('File uploads are disabled by workspace policy.')
+    expect(wiki.models.assets.upload).not.toHaveBeenCalled()
+    expect(uploadDirectoryFiles()).toEqual([])
+  })
+
   it('rejects multiple files at the controller level when maxFiles allows them', async () => {
     const { wiki } = await setupServer({ maxFiles: 3 })
 
@@ -360,7 +381,7 @@ describe('controllers/upload real multipart integration', () => {
     expect(uploadDirectoryFiles()).toEqual([])
   })
 
-  it('surfaces multer file-size limit errors through the test error middleware', async () => {
+  it('reports the workspace file-size limit and removes incomplete files', async () => {
     const { wiki } = await setupServer({ maxFileSize: 4 })
 
     const res = await postMultipart([
@@ -368,12 +389,8 @@ describe('controllers/upload real multipart integration', () => {
       { filename: 'too-big.png', value: Buffer.from('hello upload'), type: 'image/png' }
     ])
 
-    expect(res.status).toBe(599)
-    expect(res.json).toEqual(expect.objectContaining({
-      name: 'MulterError',
-      code: 'LIMIT_FILE_SIZE',
-      field: 'mediaUpload'
-    }))
+    expect(res.status).toBe(413)
+    expect(res.json).toEqual({ succeeded: false, message: 'This file exceeds the workspace upload limit.' })
     expect(wiki.models.assets.upload).not.toHaveBeenCalled()
     expect(uploadDirectoryFiles()).toEqual([])
   })

@@ -51,14 +51,15 @@ export default function createUploadController(wiki: UploadWiki): express.Router
   /**
    * Upload files
    */
-  const persistUpload = multer({
-    dest: path.resolve(wiki.ROOTPATH, wiki.config.dataPath, 'uploads'),
-    limits: {
-      fileSize: wiki.config.uploads.maxFileSize,
-      files: wiki.config.uploads.maxFiles
-    },
-    defParamCharset: 'utf8'
-  }).array('mediaUpload')
+  const persistUpload = () =>
+    multer({
+      dest: path.resolve(wiki.ROOTPATH, wiki.config.dataPath, 'uploads'),
+      limits: {
+        fileSize: wiki.config.uploads.maxFileSize,
+        files: wiki.config.uploads.maxFiles
+      },
+      defParamCharset: 'utf8'
+    }).array('mediaUpload')
 
   router.post(
     '/u',
@@ -70,12 +71,19 @@ export default function createUploadController(wiki: UploadWiki): express.Router
         })
       }
 
-      persistUpload(req, res, err => {
+      if (!Number.isSafeInteger(wiki.config.uploads.maxFileSize) || wiki.config.uploads.maxFileSize <= 0) {
+        return res.status(403).json({ succeeded: false, message: 'File uploads are disabled by workspace policy.' })
+      }
+      // Capture current limits for each new request, rather than at server startup.
+      persistUpload()(req, res, err => {
         if (!err) {
           return next()
         }
 
-        cleanupUploadedFiles(req).then(() => next(err), next)
+        cleanupUploadedFiles(req).then(() => {
+          if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ succeeded: false, message: 'This file exceeds the workspace upload limit.' })
+          next(err)
+        }, next)
       })
     },
     async (req, res) => {

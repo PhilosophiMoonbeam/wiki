@@ -37,6 +37,7 @@ interface WikiApplication {
 
 interface WikiContext {
   app?: WikiApplication
+  auth?: { jwtAudience: string | null; activateStrategies(): Promise<void> }
   ROOTPATH: string
   SERVERPATH: string
   config: AppConfig
@@ -212,6 +213,8 @@ const configService: ConfigService = {
       await wiki.configSvc.loadFromDb()
       await wiki.configSvc.applyFlags()
       wiki.app?.set('trust proxy', wiki.config.security?.securityTrustProxy === true ? 1 : false)
+      const audience = isRecord(wiki.config.auth) ? wiki.config.auth.audience : undefined
+      if (wiki.auth && typeof audience === 'string' && wiki.auth.jwtAudience !== audience) await wiki.auth.activateStrategies()
     })
   }
 }

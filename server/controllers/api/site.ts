@@ -2,6 +2,8 @@ import express from 'express'
 import { type Request, type Response, getWikiAuth } from '../_types.ts'
 
 import siteOperations from '../../operations/site.ts'
+import { getSecurityAdministrationStore } from '../../operations/security-administration.ts'
+import { errorStatus, objectValue } from '../_types.ts'
 
 const router = express.Router()
 
@@ -30,7 +32,7 @@ router.put('/config', async (req, res) => {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       return res.status(400).json({ error: 'Site configuration must be an object' })
     }
-    await siteOperations.updateConfig(body)
+    await siteOperations.updateConfig(body, req.user)
     res.json({ message: 'Site configuration updated successfully' })
   } catch (err) {
     const status = typeof err === 'object' && err !== null && 'status' in err && typeof err.status === 'number' ? err.status : 500
@@ -40,4 +42,45 @@ router.put('/config', async (req, res) => {
   }
 })
 
+const securityError = (res: Response, error: unknown) => {
+  const status = errorStatus(error),
+    expected = status && [400, 403, 409].includes(status)
+  res
+    .status(expected ? status : 500)
+    .json({ error: expected && error instanceof Error ? error.message : 'Security administration is temporarily unavailable.' })
+}
+router.get('/security', async (req, res) => {
+  if (!requireSystemAccess(req, res)) return
+  res.set('Cache-Control', 'no-store')
+  try {
+    res.json(await getSecurityAdministrationStore().inspect(req.user))
+  } catch (error) {
+    securityError(res, error)
+  }
+})
+router.put('/security', async (req, res) => {
+  if (!requireSystemAccess(req, res)) return
+  res.set('Cache-Control', 'no-store')
+  try {
+    res.json(
+      await getSecurityAdministrationStore().save(req.user, {
+        policy: objectValue(req.body, 'policy'),
+        fingerprint: objectValue(req.body, 'fingerprint'),
+        reason: objectValue(req.body, 'reason'),
+        endSessions: objectValue(req.body, 'endSessions')
+      })
+    )
+  } catch (error) {
+    securityError(res, error)
+  }
+})
+router.post('/security/activate', async (req, res) => {
+  if (!requireSystemAccess(req, res)) return
+  res.set('Cache-Control', 'no-store')
+  try {
+    res.json(await getSecurityAdministrationStore().initialize(req.user, objectValue(req.body, 'fingerprint')))
+  } catch (error) {
+    securityError(res, error)
+  }
+})
 export default router

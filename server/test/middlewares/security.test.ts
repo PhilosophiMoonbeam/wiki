@@ -6,8 +6,10 @@ interface SecurityConfig {
   securityReferrerPolicy: boolean
   securityHSTS: boolean
   securityHSTSDuration: number
+  securityHSTSIncludeSubDomains?: boolean
   securityOpenRedirect: boolean
   securityCSP: boolean
+  securityCSPReportOnly?: boolean
   securityCSPDirectives: string
 }
 
@@ -37,6 +39,8 @@ beforeEach(() => {
     securityHSTSDuration: 300,
     securityOpenRedirect: false,
     securityCSP: false,
+    securityCSPReportOnly: false,
+    securityHSTSIncludeSubDomains: true,
     securityCSPDirectives: ''
   })
 })
@@ -85,6 +89,16 @@ describe('security header middleware', () => {
     expect(headerValues(headers, 'Content-Security-Policy')).toEqual(["default-src 'self'; img-src 'self' data:"])
     expectExistingSecurityHeaders(headers)
     expect(nextCalls).toBe(1)
+  })
+
+  it('emits report-only CSP without enforcement and allows HSTS to exclude subdomains', () => {
+    security.securityCSPReportOnly = true
+    security.securityCSPDirectives = "default-src 'self'"
+    security.securityHSTSIncludeSubDomains = false
+    const { headers } = invokeMiddleware()
+    expect(headerValues(headers, 'Content-Security-Policy')).toEqual([])
+    expect(headerValues(headers, 'Content-Security-Policy-Report-Only')).toEqual(["default-src 'self'"])
+    expect(headerValues(headers, 'Strict-Transport-Security')).toEqual(['max-age=300'])
   })
 
   it('does not emit a CSP header when disabled', () => {

@@ -1,3 +1,5 @@
+import { legacySecurityKeys, patchLegacySecurityConfiguration } from './security-administration.ts'
+import type { PagePrincipal } from '../helpers/page-access.ts'
 import { patchSiteFeatures } from './discussion-settings.ts'
 import type { Knex } from 'knex'
 import _ from 'lodash'
@@ -9,20 +11,7 @@ import errors from './errors.ts'
 
 const { ApplicationError } = errors
 
-const saveKeys = [
-  'host',
-  'title',
-  'company',
-  'contentLicense',
-  'footerOverride',
-  'banner',
-  'seo',
-  'pageExtensions',
-  'auth',
-  'editShortcuts',
-  'security',
-  'uploads'
-]
+const saveKeys = ['host', 'title', 'company', 'contentLicense', 'footerOverride', 'banner', 'seo', 'pageExtensions', 'editShortcuts']
 
 interface SiteConfig extends Record<string, unknown> {
   banner?: unknown
@@ -87,13 +76,20 @@ const getConfig = () => ({
   uploadForceDownload: config.uploads.forceDownload
 })
 
-const updateConfig = async (input: unknown): Promise<void> => {
+const updateConfig = async (input: unknown, requester?: PagePrincipal): Promise<void> => {
   if (!_.isPlainObject(input)) {
     throw new ApplicationError('Site configuration payload must be an object.', { code: 'INVALID_SITE_CONFIGURATION' })
   }
   const args = input as Record<string, unknown>
-  const featurePatch = Object.fromEntries(['featurePageRatings', 'featurePageComments', 'featurePersonalWikis'].filter(key => Object.hasOwn(args, key)).map(key => [key, args[key]]))
-  if (Object.values(featurePatch).some(value => typeof value !== 'boolean')) throw new ApplicationError('Feature availability must use boolean values.', { status: 400 })
+  if (Object.keys(args).some(key => legacySecurityKeys.includes(key))) {
+    await patchLegacySecurityConfiguration(requester, args)
+    return
+  }
+  const featurePatch = Object.fromEntries(
+    ['featurePageRatings', 'featurePageComments', 'featurePersonalWikis'].filter(key => Object.hasOwn(args, key)).map(key => [key, args[key]])
+  )
+  if (Object.values(featurePatch).some(value => typeof value !== 'boolean'))
+    throw new ApplicationError('Feature availability must use boolean values.', { status: 400 })
   await rejectManagedLogoWrite(args)
   const requestedHost = Object.hasOwn(args, 'host') ? _.trim(args.host as string).replace(/\/$/, '') : null
   const currentHostProtocol = URL.canParse(config.host) ? new URL(config.host).protocol : null
@@ -140,15 +136,6 @@ const updateConfig = async (input: unknown): Promise<void> => {
     analyticsService: _.get(args, 'analyticsService', config.seo.analyticsService),
     analyticsId: _.get(args, 'analyticsId', config.seo.analyticsId)
   }
-  config.auth = {
-    autoLogin: _.get(args, 'authAutoLogin', config.auth.autoLogin),
-    enforce2FA: _.get(args, 'authEnforce2FA', config.auth.enforce2FA),
-    hideLocal: _.get(args, 'authHideLocal', config.auth.hideLocal),
-    loginBgUrl: _.get(args, 'authLoginBgUrl', config.auth.loginBgUrl),
-    audience: _.get(args, 'authJwtAudience', config.auth.audience),
-    tokenExpiration: _.get(args, 'authJwtExpiration', config.auth.tokenExpiration),
-    tokenRenewal: _.get(args, 'authJwtRenewablePeriod', config.auth.tokenRenewal)
-  }
   config.editShortcuts = {
     editFab: _.get(args, 'editFab', config.editShortcuts.editFab),
     editMenuBar: _.get(args, 'editMenuBar', config.editShortcuts.editMenuBar),
@@ -159,25 +146,8 @@ const updateConfig = async (input: unknown): Promise<void> => {
     editMenuExternalUrl: _.get(args, 'editMenuExternalUrl', config.editShortcuts.editMenuExternalUrl)
   }
 
-  config.security = {
-    securityOpenRedirect: _.get(args, 'securityOpenRedirect', config.security.securityOpenRedirect),
-    securityIframe: _.get(args, 'securityIframe', config.security.securityIframe),
-    securityReferrerPolicy: _.get(args, 'securityReferrerPolicy', config.security.securityReferrerPolicy),
-    securityTrustProxy: _.get(args, 'securityTrustProxy', config.security.securityTrustProxy),
-    securitySRI: _.get(args, 'securitySRI', config.security.securitySRI),
-    securityHSTS: _.get(args, 'securityHSTS', config.security.securityHSTS),
-    securityHSTSDuration: _.get(args, 'securityHSTSDuration', config.security.securityHSTSDuration),
-    securityCSP: _.get(args, 'securityCSP', config.security.securityCSP),
-    securityCSPDirectives: _.get(args, 'securityCSPDirectives', config.security.securityCSPDirectives)
-  }
-  config.uploads = {
-    maxFileSize: _.get(args, 'uploadMaxFileSize', config.uploads.maxFileSize),
-    maxFiles: _.get(args, 'uploadMaxFiles', config.uploads.maxFiles),
-    scanSVG: _.get(args, 'uploadScanSVG', config.uploads.scanSVG),
-    forceDownload: _.get(args, 'uploadForceDownload', config.uploads.forceDownload)
-  }
-
-  if (await configService.saveToDb(saveKeys) === false) throw new ApplicationError('Site configuration could not be persisted. Reload before retrying.', { status: 500 })
+  if ((await configService.saveToDb(saveKeys)) === false)
+    throw new ApplicationError('Site configuration could not be persisted. Reload before retrying.', { status: 500 })
   if (Object.keys(featurePatch).length) await patchSiteFeatures(featurePatch)
   const app = WIKI.app as { set(setting: string, value: number | false): void }
   app.set('trust proxy', config.security.securityTrustProxy ? 1 : false)

@@ -20,7 +20,8 @@ describe('distributed config reload', () => {
       flags: { sqllog: false },
       security: { securityTrustProxy: !securityTrustProxy },
       port: 3000,
-      title: 'Before reload'
+      title: 'Before reload',
+      auth: { audience: 'old-audience' }
     }
     const appLocals = { config: canonicalConfig }
     const setAppSetting = vi.fn()
@@ -30,10 +31,18 @@ describe('distributed config reload', () => {
       flags: { sqllog: true },
       security: { securityTrustProxy },
       port: 4000,
-      title: 'After reload'
+      title: 'After reload',
+      auth: { audience: 'new-audience' }
     })
 
+    const auth = {
+      jwtAudience: 'old-audience',
+      activateStrategies: vi.fn(async () => {
+        auth.jwtAudience = 'new-audience'
+      })
+    }
     globalThis.WIKI = {
+      auth,
       app: { locals: appLocals, set: setAppSetting },
       config: canonicalConfig,
       events: {
@@ -70,5 +79,8 @@ describe('distributed config reload', () => {
     })
     expect(knexConfig.debug).toBe(true)
     expect(setAppSetting.mock.calls).toEqual([['trust proxy', expectedTrustProxy]])
+    expect(auth.activateStrategies).toHaveBeenCalledOnce()
+    await reloadListener()
+    expect(auth.activateStrategies).toHaveBeenCalledOnce()
   })
 })

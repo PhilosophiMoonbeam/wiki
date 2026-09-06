@@ -8,8 +8,10 @@ interface SecurityWikiContext {
       securityReferrerPolicy: boolean
       securityHSTS: boolean
       securityHSTSDuration: number
+      securityHSTSIncludeSubDomains?: boolean
       securityOpenRedirect: boolean
       securityCSP: boolean
+      securityCSPReportOnly?: boolean
       securityCSPDirectives: string
     }
   }
@@ -42,11 +44,14 @@ export default function securityMiddleware(req: Request, res: Response, next: Ne
 
   // -> Enforce HSTS
   if (wiki.config.security.securityHSTS) {
-    res.set('Strict-Transport-Security', `max-age=${wiki.config.security.securityHSTSDuration}; includeSubDomains`)
+    res.set(
+      'Strict-Transport-Security',
+      `max-age=${wiki.config.security.securityHSTSDuration}${wiki.config.security.securityHSTSIncludeSubDomains === false ? '' : '; includeSubDomains'}`
+    )
   }
 
   // -> Enforce Content Security Policy
-  if (wiki.config.security.securityCSP) {
+  if (wiki.config.security.securityCSP || wiki.config.security.securityCSPReportOnly) {
     const directives = wiki.config.security.securityCSPDirectives
     let validDirectives = true
     try {
@@ -55,7 +60,7 @@ export default function securityMiddleware(req: Request, res: Response, next: Ne
       validDirectives = false
     }
     if (validDirectives) {
-      res.set('Content-Security-Policy', directives)
+      res.set(wiki.config.security.securityCSP ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only', directives)
     }
   }
 
