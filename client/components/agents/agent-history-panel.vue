@@ -5,33 +5,9 @@
     rounded="xl"
     :aria-busy="loading || refreshingHistory || sessionsReloading || sessionsLoadingMore || savingFolder || deleting || sessionMutationBusy || openingSessionIds.size > 0 || movingSessionIds.size > 0"
   >
-    <header class="agent-history__header">
-      <div class="agent-history__mark" aria-hidden="true">
-        <v-icon icon="mdi-history" size="21" />
-      </div>
-      <div class="agent-history__heading">
-        <h2>Conversations</h2>
-        <p class="agent-history__intro">{{ displaySessions.length }} {{ displaySessions.length === 1 ? 'conversation' : 'conversations' }} in this workspace</p>
-      </div>
-      <v-btn ref="historyCloseButton" icon="mdi-close" size="small" variant="text" aria-label="Close chat history" @click="closeHistory" />
-    </header>
-
-    <div class="agent-history__actions">
-      <v-btn class="agent-history__new-folder" color="primary" prepend-icon="mdi-folder-plus-outline" variant="tonal" :disabled="loading || refreshingHistory || sessionsReloading || savingFolder || deleting" @click="beginCreateFolder">
-        New folder
-      </v-btn>
-      <v-btn
-        class="agent-history__clear"
-        icon="mdi-delete-sweep-outline"
-        size="small"
-        variant="text"
-        aria-label="Clear Recent history; saved folders are preserved"
-        :disabled="clearHistoryDisabled"
-        @click="requestClear"
-      >
-        <v-tooltip activator="parent" location="bottom">Clears only Recent, unfiled conversations. Saved folders and their conversations are preserved.</v-tooltip>
-      </v-btn>
-    </div>
+    <AgentPanelHeader ref="historyCloseButton" title="Conversations" icon="mdi-history" close-label="Close chat history" @close="closeHistory">
+      {{ displaySessions.length }} {{ sessionsNextCursor ? 'loaded' : 'saved' }} {{ displaySessions.length === 1 ? 'conversation' : 'conversations' }}
+    </AgentPanelHeader>
 
     <div class="agent-history__search">
       <v-text-field
@@ -93,7 +69,7 @@
           <div class="agent-history__section-heading">
             <div>
               <h3 id="agent-history-recent-title" class="agent-history__section-title">Recent</h3>
-              <div class="agent-history__section-copy">Unfiled conversations · retained for 90 days</div>
+              <div class="agent-history__section-copy">Your recent, unfiled conversations</div>
             </div>
             <span class="agent-history__count" :aria-label="`${filteredRecentSessions.length} recent conversations`">{{ filteredRecentSessions.length }}</span>
           </div>
@@ -178,9 +154,9 @@
           <div class="agent-history__section-heading agent-history__section-heading--folders">
             <div>
               <h3 id="agent-history-folders-title" class="agent-history__section-title">Saved folders</h3>
-              <div class="agent-history__section-copy">Filed conversations do not expire</div>
+              <div class="agent-history__section-copy">Kept without expiry</div>
             </div>
-            <span class="agent-history__retained"><v-icon icon="mdi-archive-check-outline" size="14" /> Kept</span>
+            <v-btn class="agent-history__new-folder" prepend-icon="mdi-folder-plus-outline" size="small" variant="text" aria-label="Create a conversation folder" :disabled="loading || refreshingHistory || sessionsReloading || savingFolder || deleting" @click="beginCreateFolder">New folder</v-btn>
           </div>
 
           <div class="agent-history__folders-scroll">
@@ -202,7 +178,7 @@
             >
               <div class="agent-history__folder-row">
                 <v-expansion-panel-title class="agent-history__folder-title">
-                  <v-icon class="me-2" color="primary" icon="mdi-folder-outline" size="19" />
+                  <v-icon class="me-2 agent-history__folder-icon" icon="mdi-folder-outline" size="19" />
                   <span class="agent-history__folder-name">{{ group.folder.name }}</span>
                   <span class="agent-history__folder-count" :aria-label="`${group.sessions.length} conversations`">{{ group.sessions.length }}</span>
                 </v-expansion-panel-title>
@@ -267,6 +243,13 @@
       </template>
 
     </div>
+    <footer class="agent-history__footer">
+      <p>Keep a temporary chat to find it here.</p>
+      <v-menu content-class="agent-owned-overlay" location="top end">
+        <template #activator="{ props: menuProps }"><v-btn v-bind="menuProps" icon="mdi-dots-horizontal" size="small" variant="text" aria-label="Conversation history options" /></template>
+        <v-list density="compact"><v-list-item link prepend-icon="mdi-delete-sweep-outline" title="Clear Recent history" subtitle="Saved folders are preserved" :disabled="clearHistoryDisabled" @click="requestClear" /></v-list>
+      </v-menu>
+    </footer>
   </v-card>
 
   <v-dialog content-class="agent-owned-overlay" v-model="folderEditorOpen" max-width="28rem" aria-labelledby="agent-history-folder-editor-title" :persistent="savingFolder">
@@ -278,7 +261,7 @@
       <v-card-text class="px-5 pt-4">
         <v-alert v-if="dialogError" class="mb-3" type="error" variant="tonal" density="compact">{{ dialogError }}</v-alert>
         <v-text-field ref="folderInput" v-model="folderName" autofocus counter="64" label="Folder name" maxlength="64" variant="outlined" @keydown.enter.prevent="saveFolder" />
-        <p class="text-body-small text-medium-emphasis mb-0">Chats in a folder are exempt from the 90-day history window.</p>
+        <p class="text-body-small text-medium-emphasis mb-0">Folders keep conversations beyond the history window.</p>
       </v-card-text>
       <v-card-actions class="px-5 pb-4">
         <v-spacer />
@@ -337,7 +320,7 @@
       <v-card-text class="px-5">
         <v-alert v-if="dialogError" class="mb-3" type="error" variant="tonal" density="compact">{{ dialogError }}</v-alert>
         <p class="mb-2"><strong>{{ removingFolder?.name }}</strong> will be removed.</p>
-        <p class="mb-0">Its conversations return to Recent and each starts a fresh 90-day timer. No conversations are deleted.</p>
+        <p class="mb-0">Its conversations return to Recent and each starts a fresh history retention window. No conversations are deleted.</p>
       </v-card-text>
       <v-card-actions class="px-5 pb-4">
         <v-spacer />
@@ -349,6 +332,7 @@
 </template>
 
 <script setup lang="ts">
+import AgentPanelHeader from './agent-panel-header.vue'
 import { computed, nextTick, onBeforeUnmount, onWatcherCleanup, ref, shallowRef, useTemplateRef, watch, type ComponentPublicInstance } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { AgentConversationFolderView } from '../../../shared/agents/contracts.ts'
@@ -905,48 +889,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
 }
-.agent-history__header {
-  align-items: center;
-  display: flex;
-  flex: 0 0 auto;
-  gap: var(--wiki-space-3);
-  padding: var(--wiki-space-4) var(--wiki-space-4) var(--wiki-space-3);
-}
-.agent-history__mark {
-  align-items: center;
-  background: color-mix(in srgb, rgb(var(--v-theme-primary)) 12%, transparent);
-  border: 1px solid color-mix(in srgb, rgb(var(--v-theme-primary)) 24%, transparent);
-  border-radius: var(--wiki-control-radius);
-  color: rgb(var(--v-theme-primary));
-  display: flex;
-  height: 2rem;
-  flex: 0 0 2rem;
-  justify-content: center;
-  width: 2rem;
-}
-.agent-history__heading { flex: 1; min-width: 0; }
-.agent-history__kicker {
-  color: rgb(var(--v-theme-primary));
-  font-size: var(--wiki-label-size);
-  font-weight: var(--wiki-label-weight);
-  letter-spacing: .08em;
-  margin: 0 0 var(--wiki-space-1);
-  text-transform: uppercase;
-}
-.agent-history__heading h2 { font-size: 1rem; font-weight: 700; line-height: 1.2; margin: 0; }
-.agent-history__intro { color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 62%, transparent); font-size: .72rem; margin: var(--wiki-space-1) 0 0; }
-.agent-history__actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: var(--wiki-space-2);
-  padding: 0 var(--wiki-space-4) var(--wiki-space-3);
-}
-.agent-history__new-folder { flex: 1; }
-.agent-history__clear {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-.agent-history__search { flex: 0 0 auto; padding: 0 var(--wiki-space-4) var(--wiki-space-3); position: relative; }
+.agent-history__search { flex: 0 0 auto; padding: 1rem 1.25rem .75rem; position: relative; }
 .agent-history__search :deep(.v-field) { border-radius: var(--wiki-control-radius); }
 .agent-history__search-status {
   clip: rect(0, 0, 0, 0);
@@ -974,6 +917,10 @@ onBeforeUnmount(() => {
   padding: var(--wiki-space-8);
   text-align: center;
 }
+.agent-history__footer { display: flex; align-items: center; gap: .5rem; padding: .65rem 1.25rem; border-top: 1px solid var(--wiki-surface-border); }
+.agent-history__footer p { flex: 1; margin: 0; font-size: .7rem; line-height: 1.5; color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 72%, transparent); }
+.agent-history__folder-icon { color: color-mix(in srgb, rgb(var(--v-theme-primary)) 35%, rgb(var(--v-theme-on-surface))); }
+.agent-history__new-folder { flex: 0 0 auto; color: color-mix(in srgb, rgb(var(--v-theme-primary)) 35%, rgb(var(--v-theme-on-surface))); }
 .agent-history__body {
   display: flex;
   flex: 1 1 auto;
@@ -1047,7 +994,7 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, rgb(var(--v-theme-primary)) 10%, transparent);
   border: 1px solid color-mix(in srgb, rgb(var(--v-theme-primary)) 20%, transparent);
   border-radius: var(--wiki-radius-pill);
-  color: rgb(var(--v-theme-primary));
+  color: color-mix(in srgb, rgb(var(--v-theme-primary)) 35%, rgb(var(--v-theme-on-surface)));
   display: inline-flex;
   font-size: var(--wiki-type-micro, .75rem);
   font-weight: 700;
@@ -1095,9 +1042,10 @@ onBeforeUnmount(() => {
   border-color: color-mix(in srgb, rgb(var(--v-theme-primary)) 25%, transparent);
 }
 .agent-history__session.v-list-item--active::before { opacity: 1; }
-.agent-history__session :deep(.v-list-item-title) { font-size: .79rem; font-weight: 600; line-height: 1.35; }
-.agent-history__session :deep(.v-list-item-subtitle) { font-size: .67rem; opacity: .62; }
-.agent-history__session :deep(.v-list-item__prepend) { margin-inline-end: var(--wiki-space-2); }
+.agent-history__session :deep(.v-list-item-title) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; font-size: .82rem; font-weight: 550; line-height: 1.4; }
+.agent-history__session :deep(.v-list-item-subtitle) { font-size: .68rem; opacity: .75; }
+.agent-history__session :deep(.v-list-item__prepend) { margin-inline-end: .65rem; }
+.agent-history__session :deep(.v-list-item__prepend > .v-list-item__spacer) { width: 0; }
 .agent-history__session :deep(.v-list-item__append) { margin-inline-start: var(--wiki-space-1); }
 .agent-history__empty {
   align-items: center;
@@ -1170,9 +1118,6 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 599.98px) {
   .agent-history { border-radius: 0 !important; border-width: 0; border-inline-end-width: 1px; }
-  .agent-history__header { padding-block-start: max(var(--wiki-space-4), env(safe-area-inset-top)); }
-  .agent-history__header,
-  .agent-history__actions,
   .agent-history__search { padding-inline: var(--wiki-space-3); }
   .agent-history__body { padding-inline: var(--wiki-space-2); }
   .agent-history__session { min-height: var(--wiki-control-height); }

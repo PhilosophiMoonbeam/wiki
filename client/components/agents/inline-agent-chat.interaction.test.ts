@@ -622,8 +622,8 @@ describe('Inline Agent clear-unfiled confirmation', () => {
 describe('Inline Agent desktop layout', () => {
   it('allocates columns only to open panels and keeps them beside the conversation', () => {
     const desktop = componentStyles.match(/@media \(min-width:\s*1024px\)([\s\S]*?)(?=@media|$)/)?.[1] ?? ''
-    expect(desktop).toContain('.inline-agent--history { grid-template-columns: 18rem minmax(0, 1fr); }')
-    expect(desktop).toContain('.inline-agent--memory { grid-template-columns: minmax(0, 1fr) 21rem; }')
+    expect(desktop).toContain('.inline-agent--history { grid-template-columns: 20rem minmax(0, 1fr); }')
+    expect(desktop).toContain('.inline-agent--memory { grid-template-columns: minmax(0, 1fr) 22rem; }')
     expect(desktop).toMatch(/\.inline-agent__side \{\s*position: relative;/)
     expect(componentSource).toContain("'inline-agent--history': historyOpen")
     expect(componentSource).toContain("'inline-agent--memory': memoryOpen")

@@ -158,23 +158,18 @@ describe('Agent history folder actions', () => {
   })
 
   it('keeps clear-history scope, retention, and folder-exemption copy truthful', () => {
-    expect(panelTemplate).toContain('aria-label="Clear Recent history; saved folders are preserved"')
     expect(panelTemplate).toContain('@click="requestClear"')
-    expect(panelTemplate).toContain('Clears only Recent, unfiled conversations. Saved folders and their conversations are preserved.')
     expect(panelTemplate).toContain(':disabled="clearHistoryDisabled"')
-    expect(panelTemplate).toContain('class="agent-history__clear"')
-    expect(panelTemplate).toContain('icon="mdi-delete-sweep-outline"')
-    expect(panelTemplate).toContain('size="small"')
-    expect(panelTemplate).toContain('variant="tonal"')
-    expect(panelTemplate.indexOf('class="agent-history__new-folder"')).toBeLessThan(
-      panelTemplate.indexOf('class="agent-history__clear"')
-    )
+    expect(panelTemplate).toContain('aria-label="Conversation history options"')
+    expect(panelTemplate).toContain('title="Clear Recent history"')
+    expect(panelTemplate).toContain('subtitle="Saved folders are preserved"')
+    expect(panelTemplate.indexOf('class="agent-history__new-folder"')).toBeLessThan(panelTemplate.indexOf('title="Clear Recent history"'))
     expect(panelScript).toContain("defineEmits<{ close: []; clear: [] }>()")
     expect(panelScript).not.toContain('reset')
-    expect(panelTemplate).toContain('Unfiled conversations · retained for 90 days')
-    expect(panelTemplate).toContain('Filed conversations do not expire')
-    expect(panelTemplate).toContain('Chats in a folder are exempt from the 90-day history window.')
-    expect(panelTemplate).toContain('each starts a fresh 90-day timer. No conversations are deleted.')
+    expect(panelTemplate).toContain('Your recent, unfiled conversations')
+    expect(panelTemplate).toContain('Kept without expiry')
+    expect(panelTemplate).toContain('Folders keep conversations beyond the history window.')
+    expect(panelTemplate).toContain('each starts a fresh history retention window. No conversations are deleted.')
   })
 
   it('keeps Recent and Saved folders in independently scrolling regions', () => {

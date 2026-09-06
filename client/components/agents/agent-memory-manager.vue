@@ -1,33 +1,21 @@
 <template>
   <v-card class="agent-memory" elevation="0" rounded="xl" :aria-busy="loading || Boolean(actionBusy)">
-    <header class="agent-memory__hero">
-      <div class="agent-memory__mark" aria-hidden="true">
-        <v-icon icon="mdi-archive-outline" size="21" />
-      </div>
-      <div class="agent-memory__heading">
-        <div class="agent-memory__title-row">
-          <h2 ref="memoryHeading" class="text-title-medium" tabindex="-1">Agent memory</h2>
-          <span
-            v-if="loaded"
-            class="agent-memory__count"
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-          >{{ memoryCountLabel }}</span>
-        </div>
-        <p class="agent-memory__intro">Preferences and facts carried into your conversations.</p>
-      </div>
-      <v-btn class="agent-memory__close" icon="mdi-close" variant="text" aria-label="Close agent memory" :disabled="Boolean(actionBusy)" :title="actionBusy ? 'Wait for the memory change to finish' : undefined" @click="requestClose" />
-    </header>
+    <AgentPanelHeader ref="memoryHeading" title="Agent memory" icon="mdi-brain" close-label="Close agent memory" :busy="Boolean(actionBusy)" @close="requestClose">
+      <p class="agent-memory__intro">Preferences and facts carried into your conversations.</p>
+      <span v-if="loaded" class="agent-memory__count" role="status" aria-live="polite" aria-atomic="true">{{ memoryCountLabel }}</span>
+    </AgentPanelHeader>
+    <div v-if="loaded && memoryCount > 0" class="agent-memory__search">
+      <v-text-field v-model="searchQuery" label="Find a memory" aria-label="Search agent memory" prepend-inner-icon="mdi-magnify" variant="outlined" density="compact" clearable hide-details />
+      <span class="sr-only" role="status" aria-live="polite">{{ memorySearchStatus }}</span>
+    </div>
 
-    <v-divider />
     <v-progress-linear v-if="loading" indeterminate color="primary" aria-label="Loading agent memory" />
 
     <v-card-text class="agent-memory__body">
       <v-alert v-if="error" class="agent-memory__error" type="error" variant="tonal" :closable="!stale" role="alert" @click:close="error = ''">
         <div class="agent-memory__error-content">
           <span>{{ error }}</span>
-          <v-btn v-if="!loading" variant="text" size="small" @click="load()">Refresh archive</v-btn>
+          <v-btn v-if="!loading" variant="text" size="small" @click="load()">Refresh memory</v-btn>
         </div>
       </v-alert>
 
@@ -43,7 +31,7 @@
         </p>
 
         <v-expand-transition>
-          <section v-if="editing" class="agent-memory__editor" aria-labelledby="agent-memory-editor-title" :aria-busy="saving">
+          <section v-if="editing" class="agent-memory__editor" aria-labelledby="agent-memory-editor-title" :aria-busy="saving" @keydown.esc.stop="saving ? undefined : cancelEdit()">
             <header class="agent-memory__editor-header">
               <div>
                 <p class="agent-memory__eyebrow">{{ editing.id ? 'Revise record' : 'New record' }}</p>
@@ -54,17 +42,18 @@
 
             <fieldset class="agent-memory__target" :disabled="saving">
               <legend>Save under</legend>
-              <v-btn-toggle v-model="draftTarget" color="primary" divided mandatory variant="outlined">
+              <v-btn-toggle v-model="draftTarget" class="agent-memory__target-toggle" divided mandatory variant="outlined">
                 <v-btn value="user" prepend-icon="mdi-account-outline">You</v-btn>
                 <v-btn value="agent" prepend-icon="mdi-notebook-outline">Agent</v-btn>
               </v-btn-toggle>
             </fieldset>
 
             <v-textarea
+              ref="memoryEditor"
               v-model="draftContent"
               :counter="targetLimit"
               :maxlength="targetLimit"
-              :label="draftTarget === 'user' ? 'Preference or personal detail' : 'Project, environment, or workflow fact'"
+              :label="draftTarget === 'user' ? 'Personal detail' : 'Project or workflow fact'"
               :hint="draftCapacityLabel"
               persistent-hint
               rows="3"
@@ -72,7 +61,6 @@
               autofocus
               :disabled="saving"
               variant="outlined"
-              @keydown.esc="saving ? undefined : cancelEdit()"
               @keydown.meta.enter.prevent="save"
               @keydown.ctrl.enter.prevent="save"
             />
@@ -87,8 +75,13 @@
           </section>
         </v-expand-transition>
 
+        <div v-if="searchTerm && visibleSections.length === 0" class="agent-memory__no-results" role="status">
+          <v-icon icon="mdi-text-search" size="24" aria-hidden="true" />
+          <strong>No matching memories</strong><p>Try a different word or return to all your notes.</p>
+          <v-btn size="small" variant="text" @click="searchQuery = ''">Clear search</v-btn>
+        </div>
         <section
-          v-for="section in sections"
+          v-for="section in visibleSections"
           :key="section.target"
           class="agent-memory__section"
           :aria-labelledby="`agent-memory-${section.target}`"
@@ -97,26 +90,26 @@
             <div class="agent-memory__section-mark" :class="`agent-memory__section-mark--${section.target}`" aria-hidden="true">
               <v-icon :icon="section.icon" size="18" />
             </div>
-            <h3 :id="`agent-memory-${section.target}`" class="text-title-small">{{ section.title }}</h3>
+            <h3 :id="`agent-memory-${section.target}`" class="text-title-small">{{ section.title }}<span class="agent-memory__section-count">{{ section.entries.length }}</span></h3>
           </header>
 
-          <div v-if="section.store.entries.length" class="agent-memory__entries">
-            <article v-for="(entry, index) in section.store.entries" :key="entry.id" class="agent-memory__entry">
+          <div v-if="section.entries.length" class="agent-memory__entries">
+            <article v-for="(entry, index) in section.entries" :key="entry.id" class="agent-memory__entry">
               <div class="agent-memory__entry-index" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</div>
               <div class="agent-memory__entry-content">
                 <div class="agent-memory__entry-meta">{{ memoryDateLabel(entry) }}</div>
                 <p>{{ entry.content }}</p>
               </div>
               <div class="agent-memory__entry-actions" role="group" :aria-label="`Actions for memory ${index + 1}`">
-                <v-btn prepend-icon="mdi-pencil-outline" size="small" variant="text" :aria-label="`Edit memory: ${entry.content}`" :disabled="Boolean(actionBusy) || stale || loading" @click="beginEdit(entry)">Edit</v-btn>
-                <v-btn prepend-icon="mdi-delete-outline" size="small" variant="text" color="error" :aria-label="`Remove memory: ${entry.content}`" :disabled="Boolean(actionBusy) || stale || loading" @click="beginRemove(entry, $event)">Remove</v-btn>
+                <v-btn prepend-icon="mdi-pencil-outline" size="small" variant="text" :aria-label="`Edit memory: ${entry.content}`" :disabled="Boolean(editing) || Boolean(actionBusy) || stale || loading" @click="beginEdit(entry)">Edit</v-btn>
+                <v-btn prepend-icon="mdi-delete-outline" size="small" variant="text" color="error" :aria-label="`Remove memory: ${entry.content}`" :disabled="Boolean(editing) || Boolean(actionBusy) || stale || loading" @click="beginRemove(entry, $event)">Remove</v-btn>
               </div>
             </article>
           </div>
           <div v-else class="agent-memory__empty">
             <v-icon :icon="section.icon" size="20" aria-hidden="true" />
             <p>{{ section.empty }}</p>
-            <v-btn color="primary" variant="tonal" prepend-icon="mdi-plus" :aria-label="`Add ${section.target === 'user' ? 'personal detail' : 'Agent note'} to ${section.title}`" :disabled="Boolean(actionBusy) || stale || loading || !canAddTo(section.target)" @click="beginAdd(section.target)">
+            <v-btn class="agent-memory__accent-action" variant="tonal" prepend-icon="mdi-plus" :aria-label="`Add ${section.target === 'user' ? 'personal detail' : 'Agent note'} to ${section.title}`" :disabled="Boolean(editing) || Boolean(actionBusy) || stale || loading || !canAddTo(section.target)" @click="beginAdd(section.target)">
               {{ section.target === 'user' ? 'Add detail' : 'Add note' }}
             </v-btn>
           </div>
@@ -134,9 +127,10 @@
 
     <v-divider />
     <v-card-actions class="agent-memory__footer">
-      <v-btn color="error" prepend-icon="mdi-delete-sweep-outline" variant="text" :disabled="Boolean(clearMemoryDisabledReason) || Boolean(actionBusy)" :title="clearMemoryDisabledReason" @click="beginClear($event)">
-        Clear archive
-      </v-btn>
+      <v-menu content-class="agent-owned-overlay" location="top start">
+        <template #activator="{ props: menuProps }"><v-btn v-bind="menuProps" icon="mdi-dots-horizontal" variant="text" aria-label="Memory options" :disabled="Boolean(actionBusy)" /></template>
+        <v-list density="compact"><v-list-item link prepend-icon="mdi-delete-sweep-outline" title="Clear all memory" :disabled="Boolean(clearMemoryDisabledReason) || Boolean(actionBusy)" @click="beginClear($event)" /></v-list>
+      </v-menu>
       <v-spacer />
       <v-btn color="primary" prepend-icon="mdi-plus" variant="flat" :disabled="!canAddMemory || Boolean(actionBusy)" :title="addMemoryDisabledReason" @click="beginAdd()">
         Add memory
@@ -167,7 +161,7 @@
     <v-card ref="clearDialogCard" class="agent-memory__dialog" rounded="xl">
       <v-card-title class="agent-memory__dialog-title">
         <v-avatar color="error" size="38" variant="tonal"><v-icon icon="mdi-delete-sweep-outline" aria-hidden="true" /></v-avatar>
-        <span>Clear the memory archive?</span>
+        <span>Clear all memory?</span>
       </v-card-title>
       <v-card-text>
         <v-alert v-if="clearError" class="agent-memory__dialog-error" type="error" variant="tonal" density="compact">{{ clearError }}</v-alert>
@@ -175,14 +169,15 @@
       </v-card-text>
       <v-card-actions>
         <v-spacer />
-        <v-btn variant="text" :disabled="Boolean(actionBusy)" @click="cancelClear">Keep archive</v-btn>
-        <v-btn color="error" :loading="actionBusy === 'clear'" :disabled="Boolean(actionBusy)" @click="clear">Clear archive</v-btn>
+        <v-btn variant="text" :disabled="Boolean(actionBusy)" @click="cancelClear">Keep memories</v-btn>
+        <v-btn color="error" :loading="actionBusy === 'clear'" :disabled="Boolean(actionBusy)" @click="clear">Clear memory</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
 </template>
 
 <script setup lang="ts">
+import AgentPanelHeader from './agent-panel-header.vue'
 import { computed, nextTick, onBeforeUnmount, onWatcherCleanup, ref, shallowRef, useTemplateRef, watch, type ComponentPublicInstance } from 'vue'
 import { clearAgentMemories, createAgentMemory, getAgentMemories, removeAgentMemory, updateAgentMemory, type AgentMemoryEntry, type AgentMemoryTarget, type AgentMemoryView } from '../../helpers/agents-api.ts'
 import { createModalFocusScope, type ModalFocusScope } from '../common/modal-focus-scope'
@@ -205,6 +200,9 @@ const removing = shallowRef<AgentMemoryEntry | null>(null)
 const clearing = ref(false)
 const draftTarget = ref<AgentMemoryTarget>('user')
 const draftContent = ref('')
+const searchQuery = ref('')
+const searchTerm = computed(() => (searchQuery.value ?? '').trim().toLocaleLowerCase())
+const memoryEditor = useTemplateRef<{ focus: () => void; $el: HTMLElement }>('memoryEditor')
 type MemoryStore = AgentMemoryView[AgentMemoryTarget]
 type ComponentRoot = ComponentPublicInstance | HTMLElement
 const memoryHeading = useTemplateRef<ComponentRoot>('memoryHeading')
@@ -248,6 +246,7 @@ const canAddTo = (target: AgentMemoryTarget): boolean => {
   return remainingCharacters(store) >= requiredCharacters
 }
 const addMemoryDisabledReason = computed<string | undefined>(() => {
+  if (editing.value) return 'Finish the current memory edit first'
   if (loading.value || !loaded.value) return 'Loading Agent memory'
   if (stale.value) return 'Refresh Agent memory before adding'
   if (!canAddTo('user') && !canAddTo('agent')) return 'Memory is at capacity'
@@ -282,6 +281,15 @@ const sections = computed(() => [
     store: memories.value.agent
   }
 ])
+const visibleSections = computed(() => sections.value.map(section => ({
+  ...section, entries: section.store.entries.filter(entry => !searchTerm.value || entry.content.toLocaleLowerCase().includes(searchTerm.value))
+})).filter(section => !searchTerm.value || section.entries.length > 0))
+const memorySearchStatus = computed(() => searchTerm.value ? `${visibleSections.value.reduce((sum, section) => sum + section.entries.length, 0)} matching memories` : 'All saved memories')
+const focusEditor = async (): Promise<void> => {
+  await nextTick()
+  memoryEditor.value?.$el.scrollIntoView({ block: 'nearest' })
+  memoryEditor.value?.focus()
+}
 const message = (value: unknown, fallback: string): string => value instanceof Error ? value.message : fallback
 const load = async (committedMessage?: string): Promise<boolean> => {
   if (disposed) return false
@@ -303,7 +311,7 @@ const load = async (committedMessage?: string): Promise<boolean> => {
     stale.value = loaded.value
     const reason = message(value, loaded.value ? 'Agent memory could not be refreshed.' : 'Agent memory could not be loaded.')
     error.value = loaded.value
-      ? `${committedMessage ? `${committedMessage}, but the archive could not be refreshed. ` : ''}Showing last-loaded memory. ${reason}`
+      ? `${committedMessage ? `${committedMessage}, but memory could not be refreshed. ` : ''}Showing last-loaded memory. ${reason}`
       : reason
     return false
   } finally {
@@ -326,18 +334,20 @@ const beginAdd = (target?: AgentMemoryTarget): void => {
   editing.value = { id: '', version: 0 }
   draftTarget.value = target ?? (canAddTo('user') ? 'user' : 'agent')
   draftContent.value = ''
+  void focusEditor()
 }
 const beginEdit = (entry: AgentMemoryEntry): void => {
   editing.value = { id: entry.id, version: entry.version }
   draftTarget.value = entry.target
   draftContent.value = entry.content
+  void focusEditor()
 }
 const beginRemove = (entry: AgentMemoryEntry, event: MouseEvent): void => {
   dialogError.value = ''
   destructiveRestoreTarget.value = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
   removing.value = entry
 }
-const beginClear = (event: MouseEvent): void => {
+const beginClear = (event: Event): void => {
   clearError.value = ''
   destructiveRestoreTarget.value = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
   clearing.value = true
@@ -489,88 +499,22 @@ onBeforeUnmount(() => {
   color: rgb(var(--v-theme-on-surface));
 }
 
-.agent-memory__hero {
-  display: grid;
-  flex: 0 0 auto;
-  grid-template-columns: calc(var(--wiki-control-height) - var(--wiki-space-1)) minmax(0, 1fr) var(--wiki-control-height);
-  gap: var(--wiki-space-2);
-  align-items: center;
-  padding: var(--wiki-space-3) var(--wiki-space-4);
-  background: var(--wiki-surface-raised);
-}
-
-.agent-memory__mark,
-.agent-memory__section-mark {
-  display: grid;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--wiki-accent-warm) 28%, var(--wiki-surface-border));
-  border-radius: var(--wiki-control-radius);
-  background: color-mix(in srgb, var(--wiki-accent-warm) 11%, var(--wiki-surface-raised));
-  color: var(--wiki-accent-warm);
-  box-shadow: var(--wiki-shadow-xs), var(--wiki-shadow-inset);
-}
-
-.agent-memory__mark {
-  width: calc(var(--wiki-control-height) - var(--wiki-space-1));
-  height: calc(var(--wiki-control-height) - var(--wiki-space-1));
-}
-
-.agent-memory__heading {
-  min-width: 0;
-}
-
-.agent-memory__eyebrow {
-  margin: 0 0 var(--wiki-space-1);
-  color: var(--wiki-accent-warm);
-  font-size: var(--wiki-label-size);
-  font-weight: var(--wiki-label-weight);
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
-
-.agent-memory__title-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--wiki-space-2);
-  align-items: center;
-}
-
-.agent-memory__title-row h2,
-.agent-memory__editor-header h3,
-.agent-memory__section-header h3 {
-  margin: 0;
-  color: rgb(var(--v-theme-on-surface));
-  font-family: var(--wiki-font-heading);
-  line-height: var(--wiki-leading-heading);
-}
-
-.agent-memory__count {
-  padding: var(--wiki-space-1) var(--wiki-space-2);
-  border: 1px solid color-mix(in srgb, var(--wiki-accent-warm) 24%, var(--wiki-surface-border));
-  border-radius: var(--wiki-radius-pill);
-  background: color-mix(in srgb, var(--wiki-accent-warm) 9%, transparent);
-  color: var(--wiki-accent-warm);
-  font-size: var(--wiki-label-size);
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--wiki-label-weight);
-  line-height: 1;
-}
-
-.agent-memory__intro {
-  margin: var(--wiki-space-1) 0 0;
-  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 64%, transparent);
-  font-size: .75rem;
-  line-height: 1.35;
-}
-
-.agent-memory__close {
-  align-self: start;
-}
-
+/* Reading and editing use the same quiet panel hierarchy as conversation history. */
+.agent-memory__accent-action, .agent-memory__target-toggle :deep(.v-btn--active) { color: color-mix(in srgb, rgb(var(--v-theme-primary)) 35%, rgb(var(--v-theme-on-surface))); }
+.agent-memory__intro { margin: 0; }
+.agent-memory__count { display: inline-block; margin-top: .3rem; font-size: .7rem; font-variant-numeric: tabular-nums; }
+.agent-memory__search { flex: 0 0 auto; padding: 1rem 1.25rem 0; }
+.agent-memory__search :deep(.v-field) { border-radius: var(--wiki-control-radius); }
+.agent-memory__eyebrow { margin: 0 0 .35rem; color: color-mix(in srgb, rgb(var(--v-theme-primary)) 35%, rgb(var(--v-theme-on-surface))); font-size: .68rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.agent-memory__editor-header h3, .agent-memory__section-header h3 { margin: 0; font-size: .9rem; font-weight: 600; }
+.agent-memory__section-count { margin-inline-start: .5rem; font-size: .72rem; font-variant-numeric: tabular-nums; opacity: .65; }
+.agent-memory__no-results { display: grid; gap: .65rem; justify-items: start; padding: 1.25rem .25rem; }
+.agent-memory__no-results p { margin: 0; font-size: .8rem; line-height: 1.5; opacity: .75; }
+.agent-memory__entry-meta { font-size: .68rem; line-height: 1.4; color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 68%, transparent); }
 .agent-memory__body {
   flex: 1 1 auto;
   min-height: 0;
-  padding: var(--wiki-space-4) !important;
+  padding: 1.25rem !important;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -691,6 +635,9 @@ onBeforeUnmount(() => {
 }
 
 .agent-memory__shortcut {
+  font-size: .67rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 72%, transparent);
   margin-inline-end: auto;
 }
 
@@ -712,15 +659,14 @@ onBeforeUnmount(() => {
 }
 
 .agent-memory__section-mark {
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, rgb(var(--v-theme-primary)) 35%, rgb(var(--v-theme-on-surface)));
   width: calc(var(--wiki-control-height) - var(--wiki-space-2));
   height: calc(var(--wiki-control-height) - var(--wiki-space-2));
 }
 
-.agent-memory__section-mark--agent {
-  border-color: color-mix(in srgb, var(--wiki-accent-spectral) 28%, var(--wiki-surface-border));
-  background: color-mix(in srgb, var(--wiki-accent-spectral) 10%, var(--wiki-surface-raised));
-  color: var(--wiki-accent-spectral);
-}
+
 
 
 .agent-memory__limit-alert {
@@ -730,9 +676,8 @@ onBeforeUnmount(() => {
 .agent-memory__entries {
   overflow: hidden;
   border: 1px solid var(--wiki-surface-border);
-  border-radius: var(--wiki-panel-radius);
-  background: var(--wiki-surface-raised);
-  box-shadow: var(--wiki-shadow-xs), var(--wiki-shadow-inset);
+  border-radius: .75rem;
+  background: color-mix(in srgb, var(--wiki-surface-sunken) 45%, var(--wiki-surface-raised));
 }
 
 .agent-memory__entry {
@@ -740,8 +685,8 @@ onBeforeUnmount(() => {
   min-width: 0;
   content-visibility: auto;
   contain-intrinsic-size: auto 6rem;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--wiki-space-2);
+  grid-template-columns: 1.2rem minmax(0, 1fr);
+  gap: .6rem;
   align-items: start;
   padding: var(--wiki-space-3);
 }
@@ -753,7 +698,7 @@ onBeforeUnmount(() => {
 .agent-memory__entry-index {
   min-width: var(--wiki-space-6);
   padding-top: var(--wiki-space-1);
-  color: var(--wiki-accent-warm);
+  color: color-mix(in srgb, rgb(var(--v-theme-primary)) 35%, rgb(var(--v-theme-on-surface)));
   font-family: var(--wiki-font-mono);
   font-size: var(--wiki-label-size);
   font-weight: 700;
@@ -764,7 +709,9 @@ onBeforeUnmount(() => {
 }
 
 .agent-memory__entry-content p {
-  margin: var(--wiki-space-1) 0 0;
+  margin: .6rem 0 0;
+  font-size: .9rem;
+  line-height: 1.6;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -773,7 +720,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 0 0 auto;
   gap: var(--wiki-space-1);
-  opacity: .7;
+  grid-column: 2;
+  justify-content: flex-end;
+  opacity: .8;
   transition: opacity var(--wiki-motion-fast) var(--wiki-motion-ease);
 }
 
@@ -810,17 +759,18 @@ onBeforeUnmount(() => {
   gap: var(--wiki-space-2);
   align-items: center;
   padding: var(--wiki-space-2) var(--wiki-space-3);
-  border-inline-start: var(--wiki-space-1) solid rgb(var(--v-theme-info));
+  border: 1px solid var(--wiki-surface-border);
   border-radius: var(--wiki-control-radius);
-  background: color-mix(in srgb, rgb(var(--v-theme-info)) 8%, var(--wiki-surface-sunken));
+  background: transparent;
 }
 
 .agent-memory__safety > .v-icon {
   flex: 0 0 auto;
-  color: rgb(var(--v-theme-info));
+  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 72%, transparent);
 }
 
 .agent-memory__footer {
+  justify-content: space-between;
   flex: 0 0 auto;
   gap: var(--wiki-space-2);
   padding: var(--wiki-space-3) var(--wiki-space-4);
@@ -870,15 +820,12 @@ onBeforeUnmount(() => {
     border-radius: 0 !important;
   }
 
-  .agent-memory__hero,
   .agent-memory__body,
   .agent-memory__footer {
     padding-inline: var(--wiki-space-4) !important;
   }
 
-  .agent-memory__hero {
-    grid-template-columns: var(--wiki-control-height) minmax(0, 1fr) var(--wiki-control-height);
-  }
+
 
   .agent-memory__empty {
     grid-template-columns: auto minmax(0, 1fr);
@@ -916,9 +863,7 @@ onBeforeUnmount(() => {
     display: none;
   }
 
-  .agent-memory__footer .v-btn {
-    flex: 1 1 calc(50% - var(--wiki-space-1));
-  }
+
 }
 
 @media (forced-colors: active) {

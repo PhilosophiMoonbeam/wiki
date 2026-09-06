@@ -97,7 +97,7 @@ const loadManager = (view, overrides = {}) => {
     'createModalFocusScope',
     'window',
     'HTMLElement',
-    `${executableScript}\nreturn { loaded, memories, sections, memoryCountLabel, canAddMemory, addMemoryDisabledReason, clearMemoryDisabledReason, open, actionBusy, removing, clearing, beginRemove, beginClear, remove, clear, requestClose }`
+    `${executableScript}\nreturn { loaded, memories, sections, searchQuery, visibleSections, memorySearchStatus, memoryCountLabel, canAddMemory, addMemoryDisabledReason, clearMemoryDisabledReason, open, actionBusy, removing, clearing, beginRemove, beginClear, remove, clear, requestClose }`
   )
   const manager = evaluate(
     getter => ({
@@ -345,5 +345,28 @@ describe('Agent memory manager destructive dialog lifetime', () => {
     expect(clearHarness.manager.actionBusy.value).toBe('clear')
     expect(clearHarness.getAgentMemories).toHaveBeenCalledTimes(1)
     expect(clearHarness.emittedBusy).toEqual([false, true])
+  })
+})
+
+
+describe('Agent memory filtering', () => {
+  it('finds notes across both stores without changing stored entries or capacity', async () => {
+    const view = {
+      user: { entries: [{ id: 'user-note', target: 'user', content: 'Prefer concise SOURCES', version: 1 }], characters: 22, limit: 1375 },
+      agent: { entries: [{ id: 'agent-note', target: 'agent', content: 'Project sources live in the Wiki', version: 1 }], characters: 31, limit: 2200 }
+    }
+    const { manager } = loadManager(view)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    manager.searchQuery.value = ' sources '
+    expect(manager.visibleSections.value.map(section => section.entries[0].id)).toEqual(['user-note', 'agent-note'])
+    expect(manager.memorySearchStatus.value).toBe('2 matching memories')
+    manager.searchQuery.value = 'project'
+    expect(manager.visibleSections.value.map(section => section.target)).toEqual(['agent'])
+    manager.searchQuery.value = 'no matching phrase'
+    expect(manager.visibleSections.value).toEqual([])
+    expect(manager.memories.value).toEqual(view)
+    expect(manager.canAddMemory.value).toBe(true)
+    manager.searchQuery.value = null
+    expect(manager.visibleSections.value).toHaveLength(2)
   })
 })

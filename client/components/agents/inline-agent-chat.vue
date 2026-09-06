@@ -1538,8 +1538,8 @@ defineExpose({ sendPrompt, preparePrompt, focusComposer, focusConversation, scro
 /* Panels occupy their own columns so reading and writing remain unobstructed. */
 @media (min-width: 1024px) {
   .inline-agent { grid-template-columns: minmax(0, 1fr); }
-  .inline-agent--history { grid-template-columns: 18rem minmax(0, 1fr); }
-  .inline-agent--memory { grid-template-columns: minmax(0, 1fr) 21rem; }
+  .inline-agent--history { grid-template-columns: 20rem minmax(0, 1fr); }
+  .inline-agent--memory { grid-template-columns: minmax(0, 1fr) 22rem; }
   .inline-agent__card { grid-column: 1; grid-row: 1; }
   .inline-agent--history .inline-agent__card { grid-column: 2; }
   .inline-agent__side {
@@ -1558,7 +1558,7 @@ defineExpose({ sendPrompt, preparePrompt, focusComposer, focusConversation, scro
   .inline-agent__side :deep(.agent-memory) { border: 0; border-radius: 0 !important; box-shadow: none; }
 }
 @media (min-width: 1760px) {
-  .inline-agent--history.inline-agent--memory { grid-template-columns: 18rem minmax(0, 1fr) 21rem; }
+  .inline-agent--history.inline-agent--memory { grid-template-columns: 20rem minmax(0, 1fr) 22rem; }
   .inline-agent--history .inline-agent__side--memory { grid-column: 3; }
 }
 
