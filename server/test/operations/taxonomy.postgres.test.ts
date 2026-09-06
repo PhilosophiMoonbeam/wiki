@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import knexModule, { type Knex } from 'knex'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from '../bun-test.mts'
 import { createTaxonomyService, type TaxonomyActor } from '../../operations/taxonomy.ts'
-import { up as migrateTaxonomy, down as rollbackTaxonomy } from '../../db/migrations/tsfranki-000013-taxonomy-lifecycle.ts'
+import { up as migrateTaxonomy, down as rollbackTaxonomy } from '../../db/migrations/tsepistle-000015-taxonomy-lifecycle.ts'
 const database = process.env.WIKI_TEST_POSTGRES_DATABASE ?? ''
 const password = process.env.WIKI_TEST_POSTGRES_PASSWORD_FILE ? fs.readFileSync(process.env.WIKI_TEST_POSTGRES_PASSWORD_FILE, 'utf8').trim() : process.env.WIKI_TEST_POSTGRES_PASSWORD
 const connection = database.endsWith('_taxonomy_test') && password ? { host: process.env.WIKI_TEST_POSTGRES_HOST ?? '127.0.0.1', port: Number(process.env.WIKI_TEST_POSTGRES_PORT ?? 5432), user: process.env.WIKI_TEST_POSTGRES_USER ?? 'wiki', database, password } : null

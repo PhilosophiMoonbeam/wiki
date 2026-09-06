@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import knexModule, { type Knex } from 'knex'
-import { up as migrateTaxonomy } from '../../db/migrations/tsfranki-000013-taxonomy-lifecycle.ts'
+import { up as migrateTaxonomy } from '../../db/migrations/tsepistle-000015-taxonomy-lifecycle.ts'
 import type PageModel from '../../models/pages.ts'
 import type TagModel from '../../models/tags.ts'
 import { afterAll, beforeAll, describe, expect, it, vi } from '../bun-test.mts'
