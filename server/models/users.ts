@@ -1,3 +1,5 @@
+import { assertSavedPassword } from '../helpers/password-policy.ts'
+import { newPasswordIssue } from '../../shared/security-policy.ts'
 import { loadEnrollmentPolicy } from '../helpers/authentication-provisioning.ts'
 /* global WIKI */
 
@@ -844,9 +846,8 @@ export default class User extends Model {
     { continuationToken, newPassword }: ChangePasswordOptions,
     context: AuthenticationContext
   ): Promise<{ jwt: string; userId: number }> {
-    if (!newPassword || newPassword.length < 6) {
-      throw new wiki.Error.InputInvalid('Password must be at least 6 characters!')
-    }
+    const passwordIssue = newPasswordIssue(newPassword)
+    if (passwordIssue) throw new wiki.Error.InputInvalid(passwordIssue)
     const usr = await wiki.models.knex.transaction(async trx => {
       const tokenUser = await wiki.models.userKeys.validateToken(
         {
@@ -858,10 +859,11 @@ export default class User extends Model {
       if (!tokenUser.isActive) {
         throw new wiki.Error.AuthAccountBanned()
       }
+      await assertSavedPassword(trx, newPassword)
       await wiki.models.users
         .query(trx)
         .patch({
-          password: newPassword,
+          password: await bcrypt.hash(newPassword, 12),
           authVersion: wiki.models.knex.raw('?? + 1', ['authVersion']),
           sessionsRevokedAt: new Date().toISOString(),
           mustChangePwd: false
@@ -941,18 +943,18 @@ export default class User extends Model {
    * the valid link usable.
    */
   static async resetPassword({ token, newPassword }: ResetPasswordOptions): Promise<number> {
-    if (!newPassword || newPassword.length < 6) {
-      throw new wiki.Error.InputInvalid('Password must be at least 6 characters!')
-    }
+    const passwordIssue = newPasswordIssue(newPassword)
+    if (passwordIssue) throw new wiki.Error.InputInvalid(passwordIssue)
     return wiki.models.knex.transaction(async trx => {
       const usr = await wiki.models.userKeys.validateToken({ kind: 'resetPwd', token }, trx)
       if (!usr.isActive) {
         throw new wiki.Error.AuthAccountBanned()
       }
+      await assertSavedPassword(trx, newPassword)
       await wiki.models.users
         .query(trx)
         .patch({
-          password: newPassword,
+          password: await bcrypt.hash(newPassword, 12),
           authVersion: wiki.models.knex.raw('?? + 1', ['authVersion']),
           sessionsRevokedAt: new Date().toISOString(),
           mustChangePwd: false,
@@ -1026,7 +1028,7 @@ export default class User extends Model {
               allowEmpty: false
             },
             length: {
-              minimum: 6
+              minimum: 12
             }
           },
           name: {
@@ -1074,6 +1076,8 @@ export default class User extends Model {
     }
 
     const newUsr = await wiki.models.knex.transaction(async trx => {
+      // The legacy importer may carry an existing bcrypt credential. New plaintext passwords use the current policy.
+      if (providerKey === 'local' && !(typeof passwordRaw === 'string' && bcryptRegexp.test(passwordRaw))) await assertSavedPassword(trx, passwordRaw)
       const usr = await wiki.models.users.query(trx).findOne({ email, providerKey })
       if (usr) {
         throw new wiki.Error.AuthAccountAlreadyExists()
@@ -1155,10 +1159,9 @@ export default class User extends Model {
         usrData.name = _.trim(name)
       }
       if (typeof newPassword === 'string' && !_.isEmpty(newPassword)) {
-        if (newPassword.length < 6) {
-          throw new wiki.Error.InputInvalid('Password must be at least 6 characters!')
-        }
-        usrData.password = newPassword
+        if (usr.providerKey !== 'local') throw new wiki.Error.InputInvalid('This password belongs to the account’s identity provider.')
+        await assertSavedPassword(trx, newPassword)
+        usrData.password = await bcrypt.hash(newPassword, 12)
         usrData.authVersion = (usr.authVersion ?? 0) + 1
         usrData.sessionsRevokedAt = new Date().toISOString()
         authorizationChanged = true
@@ -1268,7 +1271,7 @@ export default class User extends Model {
               allowEmpty: false
             },
             length: {
-              minimum: 6
+              minimum: 12
             }
           },
           name: {
@@ -1298,11 +1301,13 @@ export default class User extends Model {
           throw new wiki.Error.AuthAccountAlreadyExists()
         }
 
+        await assertSavedPassword(trx, password)
+        const passwordHash = await bcrypt.hash(password, 12)
         const newUsr = await wiki.models.users.query(trx).insert({
           providerKey: 'local',
           email,
           name,
-          password,
+          password: passwordHash,
           localeCode: wiki.config.lang.code,
           defaultEditor: 'markdown',
           ...initialUserPresentation(),

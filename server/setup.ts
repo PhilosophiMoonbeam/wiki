@@ -10,6 +10,8 @@ import fs from 'fs-extra'
 import _ from 'lodash'
 import pemJwk from 'pem-jwk'
 import semver from 'semver'
+import bcrypt from 'bcryptjs-then'
+import { newPasswordIssue } from '../shared/security-policy.ts'
 
 import viteAssets from './helpers/vite-assets.ts'
 import system from './core/system.ts'
@@ -163,6 +165,12 @@ export default function startSetup(): Promise<void> {
       const siteUrl = requiredString(body, 'siteUrl')
       const adminEmail = requiredString(body, 'adminEmail')
       const adminPassword = requiredString(body, 'adminPassword')
+      const passwordIssue = newPasswordIssue(adminPassword)
+      if (passwordIssue) {
+        res.json({ ok: false, error: passwordIssue })
+        return
+      }
+      const adminPasswordHash = await bcrypt.hash(adminPassword, 12)
 
       _.set(wiki.config, 'auth', {
         audience: 'urn:wiki.js',
@@ -319,7 +327,7 @@ export default function startSetup(): Promise<void> {
       const adminUser = await wiki.models.users.query().insert({
         email: adminEmail.toLowerCase(),
         provider: 'local',
-        password: adminPassword,
+        password: adminPasswordHash,
         name: 'Administrator',
         locale: 'en',
         defaultEditor: 'markdown',

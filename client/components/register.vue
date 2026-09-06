@@ -61,6 +61,8 @@
                       :placeholder='$t("auth:fields.password")'
                       autocomplete='new-password'
                       :error-messages='fieldErrors.password'
+                      :hint='passwordHint'
+                      persistent-hint
                       :disabled='isLoading'
                       color='primary'
                       loading
@@ -132,6 +134,8 @@
 </template>
 
 <script lang='ts'>
+import { passwordPolicyMixin } from '../helpers/password-policy.ts'
+import { newPasswordIssue } from '../../shared/security-policy.ts'
 /* global siteConfig */
 
 import validateValues from '../../shared/validation'
@@ -146,6 +150,7 @@ function focusComponent (ref: unknown): void {
 }
 
 export default {
+  mixins: [passwordPolicyMixin],
   i18nOptions: { namespaces: 'auth' },
   components: {
     PasswordStrength
@@ -236,8 +241,8 @@ export default {
             allowEmpty: false
           },
           length: {
-            minimum: 6,
-            tooShort: this.$t('auth:passwordTooShort')
+            minimum: this.passwordMinimum,
+            tooShort: this.passwordHint
           }
         },
         verifyPassword: {
@@ -260,6 +265,8 @@ export default {
         }
       }, { fullMessages: false })
 
+      const passwordIssue = newPasswordIssue(this.password, this.passwordMinimum)
+      if (passwordIssue) { this.fieldErrors.password = passwordIssue; this.errorMessage = passwordIssue; this.errorShown = true; focusComponent(this.$refs.iptPassword); return }
       if (validation) {
         const fields = ['email', 'password', 'verifyPassword', 'name'] as const
         const field = fields.find(key => validation[key])

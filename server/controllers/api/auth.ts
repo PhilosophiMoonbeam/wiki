@@ -1,3 +1,4 @@
+import { readPasswordMinimum } from '../../helpers/password-policy.ts'
 import express from 'express'
 import { errorStatus, objectValue, type Request, type Response, getTransportRuntime, getWikiAuth } from '../_types.ts'
 import { createAuthRateLimiter, setAuthRateLimitHeaders, type AuthRateLimiter } from '../../helpers/auth-rate-limiter.ts'
@@ -148,6 +149,15 @@ router.get('/admin/active-strategies', async (req, res, next) => {
     res.json(await authenticationOperations.listActive(_.get(req, 'query.enabledOnly') === 'true'))
   } catch (err) {
     next(err)
+  }
+})
+
+router.get('/password-policy', async (_req, res) => {
+  res.set('Cache-Control', 'no-store')
+  try {
+    res.json({ minimum: await readPasswordMinimum(getTransportRuntime<AuthApiRuntime>().models.knex), maximumBytes: 72 })
+  } catch {
+    res.status(503).json({ error: 'Password requirements are temporarily unavailable.' })
   }
 })
 

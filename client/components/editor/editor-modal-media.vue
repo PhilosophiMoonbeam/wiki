@@ -865,6 +865,11 @@ export default defineComponent({
     margin-bottom: 0;
   }
 
+  .filepond--credits {
+    color: rgb(var(--v-theme-on-surface));
+    opacity: 1;
+  }
+
   .filepond--drop-label {
     cursor: pointer;
 

@@ -60,12 +60,12 @@
                   v-text-field(
                     variant='outlined'
                     ref='adminPassword'
-                    counter='255'
+                    counter
                     v-model='conf.adminPassword'
                     label='Password'
                     :type="pwdMode ? 'password' : 'text'"
                     autocomplete='new-password'
-                    hint='At least 8 characters long.'
+                    hint='At least 12 characters; no more than 72 UTF-8 bytes.'
                     persistent-hint
                     required
                     :error-messages='fieldErrors.adminPassword'
@@ -79,7 +79,7 @@
                   v-text-field(
                     variant='outlined'
                     ref='adminPasswordConfirm'
-                    counter='255'
+                    counter
                     v-model='conf.adminPasswordConfirm'
                     label='Confirm Password'
                     :type="pwdConfirmMode ? 'password' : 'text'"
@@ -179,6 +179,7 @@
 
 <script lang='ts'>
 import validateValues from '../../shared/validation'
+import { newPasswordIssue } from '../../shared/security-policy.ts'
 import { BreedingRhombusSpinner } from 'epic-spinners'
 import confetti from 'canvas-confetti'
 import { getErrorMessage } from '../helpers/root-ui-store'
@@ -279,7 +280,7 @@ export default {
       }
       this.error = false
 
-      const validationResults = validateValues(this.conf, {
+      let validationResults = validateValues(this.conf, {
         adminEmail: {
           presence: {
             allowEmpty: false
@@ -291,8 +292,7 @@ export default {
             allowEmpty: false
           },
           length: {
-            minimum: 8,
-            maximum: 255
+            minimum: 12
           }
         },
         adminPasswordConfirm: {
@@ -316,6 +316,8 @@ export default {
       }, {
         fullMessages: false
       })
+      const passwordIssue = newPasswordIssue(this.conf.adminPassword)
+      if (passwordIssue) validationResults = { ...validationResults, adminPassword: [passwordIssue] }
       if (validationResults) {
         for (const field of SETUP_FIELD_NAMES) {
           this.fieldErrors[field] = validationResults[field]?.[0] ?? ''

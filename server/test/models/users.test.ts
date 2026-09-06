@@ -1,3 +1,5 @@
+import bcrypt from 'bcryptjs-then'
+import { newPasswordIssue } from '../../../shared/security-policy.ts'
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 
 const ModelStub = Object.assign(function ModelStub() {}, {
@@ -6,6 +8,12 @@ const ModelStub = Object.assign(function ModelStub() {}, {
 
 class RelatedModelStub {}
 
+mock.module('../../helpers/password-policy.ts', () => ({
+  assertSavedPassword: async (_tx: unknown, value: unknown) => {
+    const issue = newPasswordIssue(value)
+    if (issue) throw new Error(issue)
+  }
+}))
 mock.module('objection', () => ({ Model: ModelStub }))
 mock.module('../../models/groups.ts', () => ({ default: RelatedModelStub }))
 mock.module('../../models/authentication.ts', () => ({ default: RelatedModelStub }))
@@ -501,7 +509,7 @@ describe('User aggregate transactions', () => {
         User.createNewUser({
           providerKey: 'local',
           email: 'new@example.test',
-          passwordRaw: 'secret1',
+          passwordRaw: 'a-valid-secret1',
           name: 'New User',
           groups: [5]
         })
@@ -520,7 +528,7 @@ describe('User aggregate transactions', () => {
         User.register(
           {
             email: 'new@example.test',
-            password: 'secret1',
+            password: 'a-valid-secret1',
             name: 'New User'
           },
           {} as never
@@ -546,7 +554,7 @@ describe('User aggregate transactions', () => {
         User.createNewUser({
           providerKey: 'local',
           email: 'new@example.test',
-          passwordRaw: 'secret1',
+          passwordRaw: 'a-valid-secret1',
           name: 'New User',
           groups: [5]
         })
@@ -567,7 +575,7 @@ describe('User aggregate transactions', () => {
         User.register(
           {
             email: 'new@example.test',
-            password: 'secret1',
+            password: 'a-valid-secret1',
             name: 'New User'
           },
           {} as never
@@ -616,6 +624,18 @@ describe('User aggregate transactions', () => {
     expect(database.commits).toBe(0)
   })
 
+  test('treats a bcrypt-shaped replacement as a literal new password', async () => {
+    const literal = await bcrypt.hash('an-unrelated-password', 4)
+    const database = createAggregateDatabase([{ id: 10, isActive: true, providerKey: 'local', password: 'old-password' }])
+    database.state.tokens = [{ id: 1, userId: 10, kind: 'resetPwd', token: 'reset-token' }]
+    installAggregateDatabase(database)
+    await User.resetPassword({ token: 'reset-token', newPassword: literal })
+    const stored = String(database.state.users[0]?.password)
+    expect(stored).not.toBe(literal)
+    expect(await bcrypt.compare(literal, stored)).toBe(true)
+    expect(await bcrypt.compare('an-unrelated-password', stored)).toBe(false)
+  })
+
   test('commits token consumption and password mutation together on success', async () => {
     const database = createAggregateDatabase([{ id: 10, isActive: true, password: 'old-password' }])
     database.state.tokens = [{ id: 1, userId: 10, kind: 'resetPwd', token: 'reset-token' }]
@@ -623,7 +643,7 @@ describe('User aggregate transactions', () => {
 
     await expect(User.resetPassword({ token: 'reset-token', newPassword: 'new-password' })).resolves.toBe(10)
 
-    expect(database.state.users[0]?.password).toBe('new-password')
+    expect(await bcrypt.compare('new-password', String(database.state.users[0]?.password))).toBe(true)
     expect(database.state.tokens).toEqual([])
     expect(database.commits).toBe(1)
   })

@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs-then'
 import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
@@ -130,11 +131,12 @@ const startSetupHarness = async (configSaved: boolean) => {
     searchPatch,
     searchRefresh,
     server,
-    settingsTruncate
+    settingsTruncate,
+    userInsert
   }
 }
 
-const finalize = async (server: Server): Promise<Record<string, unknown>> => {
+const finalize = async (server: Server, adminPassword = 'correct horse battery staple'): Promise<Record<string, unknown>> => {
   const address = server.address() as AddressInfo
   const response = await fetch(`http://127.0.0.1:${address.port}/finalize`, {
     method: 'POST',
@@ -142,7 +144,7 @@ const finalize = async (server: Server): Promise<Record<string, unknown>> => {
     body: JSON.stringify({
       siteUrl: 'https://wiki.example.com',
       adminEmail: 'admin@example.com',
-      adminPassword: 'correct horse battery staple',
+      adminPassword,
       telemetry: false
     })
   })
@@ -155,6 +157,29 @@ describe('setup finalization', () => {
   afterEach(() => {
     globalThis.WIKI = previousWiki
     vi.restoreAllMocks()
+  })
+
+  it('rejects short and oversized passwords before changing setup state', async () => {
+    const harness = await startSetupHarness(true)
+    for (const password of ['short', '🔐'.repeat(19)]) {
+      expect(await finalize(harness.server, password)).toMatchObject({ ok: false })
+    }
+    expect(harness.saveToDb).not.toHaveBeenCalled()
+    expect(harness.settingsTruncate).not.toHaveBeenCalled()
+    for (const mutation of harness.domainMutations) expect(mutation).not.toHaveBeenCalled()
+    harness.controller.abort(new DOMException('test shutdown', 'AbortError'))
+    await expect(harness.completion).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('hashes a bcrypt-shaped administrator password as the literal credential', async () => {
+    const harness = await startSetupHarness(true)
+    const password = await bcrypt.hash('unrelated credential', 4)
+    expect(await finalize(harness.server, password)).toMatchObject({ ok: true })
+    await harness.completion
+    const stored = harness.userInsert.mock.calls[0]?.[0].password
+    expect(stored).not.toBe(password)
+    expect(await bcrypt.compare(password, stored)).toBe(true)
+    expect(await bcrypt.compare('unrelated credential', stored)).toBe(false)
   })
 
   it('keeps setup active and domain data untouched when config persistence returns false', async () => {

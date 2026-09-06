@@ -1,3 +1,4 @@
+import { assertSavedPassword } from '../../helpers/password-policy.ts'
 import knexModule, { type Knex } from 'knex'
 import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from '../bun-test.mts'
 import {
@@ -277,6 +278,18 @@ suite('PostgreSQL reviewed workspace security', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+  it('rechecks saved password requirements after a concurrent policy writer completes', async () => {
+    const writer = await db.transaction()
+    await writer('settings').where('key', 'auth').forUpdate().first()
+    const pending = db.transaction(tx => assertSavedPassword(tx, 'eighteen-characters'))
+    await writer('settings')
+      .where('key', 'auth')
+      .update({ value: JSON.stringify({ passwordMinLength: 24 }) })
+    await writer.commit()
+    await expect(Promise.resolve(pending)).rejects.toThrow('24 characters')
+    await expect(Promise.resolve(db.transaction(tx => assertSavedPassword(tx, 'a'.repeat(24))))).resolves.toBeUndefined()
+    await expect(Promise.resolve(db.transaction(tx => assertSavedPassword(tx, '😀'.repeat(24))))).rejects.toThrow('72 UTF-8 bytes')
   })
   it('guards migration reversal after policy history exists', async () => {
     await down(db)

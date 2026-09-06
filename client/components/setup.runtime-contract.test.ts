@@ -1,3 +1,4 @@
+import { newPasswordIssue } from '../../shared/security-policy.ts'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from '@vue/compiler-sfc'
@@ -28,6 +29,7 @@ const compileInstall = (sameOriginJsonFetch: (...args: unknown[]) => Promise<unk
     .replace(/ as 'adminEmail' \| 'adminPassword' \| 'adminPasswordConfirm' \| 'siteUrl'/, '')
 
   return new Function(
+    'newPasswordIssue',
     'validateValues',
     'sameOriginJsonFetch',
     'normalizeFinalizeResponse',
@@ -38,6 +40,7 @@ const compileInstall = (sameOriginJsonFetch: (...args: unknown[]) => Promise<unk
     'window',
     `return (${installSource})`
   )(
+    newPasswordIssue,
     () => undefined,
     sameOriginJsonFetch,
     (payload: unknown) => payload,

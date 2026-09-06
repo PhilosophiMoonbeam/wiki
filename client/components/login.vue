@@ -178,6 +178,8 @@
               :label='$t(`auth:changePwd.newPasswordPlaceholder`)'
               autocomplete='new-password'
               :error-messages='fieldErrors.newPassword'
+              :hint='passwordHint'
+              persistent-hint
               :disabled='isLoading'
               required
               )
@@ -228,6 +230,8 @@
               :label='$t(`auth:changePwd.newPasswordPlaceholder`)'
               autocomplete='new-password'
               :error-messages='fieldErrors.newPassword'
+              :hint='passwordHint'
+              persistent-hint
               :disabled='isLoading'
               required
               )
@@ -346,6 +350,8 @@
 
 
 <script lang='ts'>
+import { passwordPolicyMixin } from '../helpers/password-policy.ts'
+import { newPasswordIssue } from '../../shared/security-policy.ts'
 /* global siteConfig */
 
 // <span>Photo by <a href="https://unsplash.com/@isaacquesada?utm_source=unsplash&amp;utm_medium=referral&amp;utm_content=creditCopyText">Isaac Quesada</a> on <a href="/t/textures-patterns?utm_source=unsplash&amp;utm_medium=referral&amp;utm_content=creditCopyText">Unsplash</a></span>
@@ -369,6 +375,7 @@ function focusComponent (ref: unknown): void {
 
 
 export default defineComponent({
+  mixins: [passwordPolicyMixin],
   i18nOptions: { namespaces: 'auth' },
   components: {
     LoginParticleLogo
@@ -618,8 +625,9 @@ export default defineComponent({
       }
     },
     validatePasswordPair () {
-      if (this.newPassword.length < 6) {
-        this.errorMessage = this.$t('auth:passwordTooShort')
+      const passwordIssue = newPasswordIssue(this.newPassword, this.passwordMinimum)
+      if (passwordIssue) {
+        this.errorMessage = passwordIssue
         this.fieldErrors.newPassword = this.errorMessage
         this.errorShown = true
         this.$nextTick(() => focusComponent(this.$refs.iptNewPassword))
