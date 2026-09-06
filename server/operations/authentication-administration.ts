@@ -276,6 +276,17 @@ export const createAuthenticationAdministrationStore = ({ db, reviewKey, definit
   }
   return {
     inspect: (requester: PagePrincipal) => read(tx => inspect(tx, requester)),
+    async initialize(requester: PagePrincipal, fingerprintValue: unknown): Promise<AuthenticationWriteResult> {
+      const saved = await read(tx => inspect(tx, requester))
+      if (fingerprintValue !== saved.fingerprint) return fail('The sign-in policy changed. Reload before initialization.', 409)
+      let applied = true
+      try {
+        applied = (await onCommitted?.([])) ?? true
+      } catch {
+        applied = false
+      }
+      return { sessionsEnded: 0, currentSessionEnded: false, activation: applied ? 'applied' : 'needs-attention' }
+    },
     async save(requester: PagePrincipal, input: { providers?: unknown; fingerprint?: unknown; reason?: unknown }): Promise<AuthenticationWriteResult> {
       const reason = text(input.reason, 'Administrative reason', 3, 1000)
       const result = await db.transaction(async tx => {

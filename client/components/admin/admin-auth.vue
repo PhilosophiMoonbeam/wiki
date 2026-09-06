@@ -1,642 +1,1381 @@
-<template lang='pug'>
-  v-container(fluid)
-    admin-hero(
-      icon='mdi-shield-account-outline'
-      :title='$t(`admin:auth.title`)'
-      :description='$t(`admin:auth.subtitle`)'
-    )
-      template(v-slot:status)
-        v-chip(v-if='dirty', color='warning', variant='tonal', size='small') Unsaved changes
-      template(v-slot:actions)
-        v-btn(
-          icon
-          variant="outlined"
-          color='grey'
-          href='https://docs.requarks.io/auth'
-          target='_blank'
-          rel='noopener noreferrer'
-          :aria-label='$t(`admin:auth.configReference`)'
-          title='Open authentication documentation'
-        )
-          v-icon mdi-help-circle
-        v-btn(
-          icon
-          variant="outlined"
-          color='grey'
-          @click='refresh'
-          :aria-label='$t(`common:actions.refresh`)'
-          title='Refresh authentication settings'
-          :loading='initialLoading'
-          :disabled='initialLoading || saving'
-        )
-          v-icon mdi-refresh
-        v-btn(
-          type='button'
-          color='success'
-          :loading='saving'
-          :disabled='!loaded || initialLoading || saving || !dirty'
-          @click='save'
-        )
-          v-icon(start) mdi-check
-          span {{$t('common:actions.apply')}}
-    v-alert(v-if='initialLoading', type='info', variant='tonal', class='mb-4', role='status') Loading authentication settings…
-    v-row
-      v-col(lg='3', cols='12')
-        v-card.animated.fadeInUp(v-if='loaded && !initialLoading')
-          v-toolbar(flat, color='teal', density="compact")
-            .text-body-large {{$t('admin:auth.activeStrategies')}}
-          v-list(lines="two", density="compact", :aria-label='$t(`admin:auth.activeStrategies`)').py-0
-            draggable(
-              v-model='activeStrategies'
-              handle='.is-handle:not(:disabled)'
-              )
-              transition-group
-                v-list-item(
-                  v-for='(str, idx) in activeStrategies'
-                  :key='str.key'
-                  :aria-current='selectedStrategy === str.key ? `true` : undefined'
-                  link
-                  @click='selectedStrategy = str.key'
-                )
-                  template(v-slot:prepend)
-                    v-btn.is-handle(
-                      icon
-                      size='small'
-                      variant='text'
-                      :aria-label='`Move ${str.displayName} (position ${idx + 1})`'
-                      :disabled='saving'
-                      @click.stop='selectedStrategy = str.key'
-                    )
-                      v-icon(:color='selectedStrategy === str.key ? `teal` : `grey`') mdi-drag-horizontal
-                    .d-flex.flex-column
-                      v-btn(size='x-small', icon, variant='text', :disabled='saving || idx === 0', :aria-label='`Move ${str.displayName} up`', @click.stop='moveStrategy(idx, -1)')
-                        v-icon(size='16') mdi-chevron-up
-                      v-btn(size='x-small', icon, variant='text', :disabled='saving || idx === activeStrategies.length - 1', :aria-label='`Move ${str.displayName} down`', @click.stop='moveStrategy(idx, 1)')
-                        v-icon(size='16') mdi-chevron-down
-                  v-list-item-title.text-body-medium(:class='selectedStrategy === str.key ? `text-teal` : ``') {{ str.displayName }}
-                  v-list-item-subtitle: .text-body-small(:class='selectedStrategy === str.key ? `text-teal ` : ``') {{ str.strategy.title }}
-                  template(v-slot:append)
-                    v-avatar(v-if='selectedStrategy === str.key', size='24')
-                      v-icon.animated.fadeInLeft(color='teal', size="large") mdi-chevron-right
-          v-card-chin
-            v-menu(location="bottom", min-width='250px', max-width='550px', max-height='50vh', style='flex: 1 1;')
-              template(v-slot:activator='{ props }')
-                v-btn(v-bind='props', color='primary', variant="flat", block, :disabled='saving')
-                  v-icon(start) mdi-plus
-                  span {{$t('admin:auth.addStrategy')}}
-              v-list(density="compact")
-                template(v-for='(str, idx) of strategies', :key='str.key')
-                  v-list-item(
-                    :disabled='str.isDisabled'
-                    link
-                    @click='addStrategy(str)'
-                    )
-                    template(v-slot:prepend)
-                      v-avatar(size='48', rounded='0', style='height: 24px')
-                        v-img(:src='str.logo', width='48px', height='24px', alt='', :style='str.isDisabled ? `opacity: .25;` : ``')
-                    v-list-item-title {{str.title}}
-                    v-list-item-subtitle: .text-body-small(:style='str.isDisabled ? `opacity: .4;` : ``') {{str.description}}
-                  v-divider(v-if='idx < strategies.length - 1')
-
-      v-col(cols='12', lg='9')
-        v-card.animated.fadeInUp.wait-p2s(v-if='loaded && !initialLoading && strategy.key')
-          v-toolbar(color='primary', density="compact", flat)
-            .text-body-large {{strategy.displayName}} #[em ({{strategy.strategy.title}})]
-            v-spacer
-            v-btn(size="small", variant="outlined", color='error', :disabled='strategy.key === `local` || saving', @click='deleteStrategy()')
-              v-icon(start) mdi-delete
-              span Remove strategy
-          div.v-card-info(color='info')
-            div
-              span {{strategy.strategy.description}}
-              .text-body-small: a(:href='strategy.strategy.website') {{strategy.strategy.website}}
-            v-spacer
-            .admin-providerlogo
-              img(:src='strategy.strategy.logo', :alt='strategy.strategy.title')
-          v-card.mt-3.mx-4(v-if='strategy.strategy.setup', color='info', variant='tonal')
-            v-card-text.py-3
-              .text-body-medium.font-weight-medium {{strategy.strategy.setup.title}}
-              ol.pl-4.mb-0
-                li(v-for='step in strategy.strategy.setup.steps', :key='step') {{step}}
-              a.mt-2.d-inline-block(
-                :href='strategy.strategy.setup.documentationUrl'
-                target='_blank'
-                rel='noopener noreferrer'
-                :aria-label='`Open ${strategy.strategy.setup.title} documentation — opens in a new tab`'
-              ) Open documentation
-          v-card-text
-            v-row
-              v-col(cols='12', sm='8')
-                v-text-field(
-                  ref='displayNameInput'
+<template>
+  <v-container fluid class="identity-workspace">
+    <admin-hero
+      icon="mdi-shield-account-outline"
+      :title="
+        selected
+          ? selected.displayName || 'New sign-in method'
+          : 'Authentication'
+      "
+      :description="
+        selected
+          ? selected.description ||
+            'Configure how this identity provider connects people to the workspace.'
+          : 'Manage sign-in methods and how new accounts join.'
+      "
+    >
+      <template #actions
+        ><v-btn
+          v-if="selected"
+          variant="text"
+          prepend-icon="mdi-arrow-left"
+          :disabled="busy"
+          @click="selectProvider('')"
+          >All providers</v-btn
+        ><v-btn
+          variant="text"
+          prepend-icon="mdi-refresh"
+          :disabled="busy"
+          :loading="loading"
+          @click="reload"
+          >Reload policy</v-btn
+        ><v-btn v-if="dirty" variant="text" :disabled="busy" @click="reset"
+          >Reset draft</v-btn
+        ><v-btn
+          color="primary"
+          variant="flat"
+          prepend-icon="mdi-check"
+          :disabled="!dirty || locked"
+          @click="review"
+          >Review changes</v-btn
+        ></template
+      >
+    </admin-hero>
+    <async-state
+      v-if="!saved && loading"
+      state="loading"
+      title="Loading sign-in policy"
+    /><async-state
+      v-else-if="!saved && loadError"
+      state="error"
+      title="Authentication is unavailable"
+      :message="loadError"
+      retry-label="Try again"
+      @retry="load"
+    />
+    <template v-if="saved">
+      <v-alert v-if="loadError" type="error" variant="tonal" class="mt-5"
+        >{{ loadError
+        }}<v-btn variant="text" @click="load">Try again</v-btn></v-alert
+      ><v-alert
+        v-if="notice"
+        :type="attention ? 'warning' : 'success'"
+        variant="tonal"
+        class="mt-5"
+        >{{ notice }}</v-alert
+      >
+      <div class="identity-status">
+        <span>{{
+          dirty ? 'Unsaved policy draft' : 'Showing saved sign-in policy'
+        }}</span
+        ><span>{{ enabledCount }} enabled · {{ accountCount }} accounts</span>
+      </div>
+      <nav
+        v-if="!selected"
+        class="identity-tabs"
+        aria-label="Authentication sections"
+      >
+        <button
+          v-for="item in sections"
+          :key="item.key"
+          type="button"
+          :aria-current="section === item.key ? 'page' : undefined"
+          :disabled="busy"
+          @click="setSection(item.key)"
+        >
+          {{ item.title }}
+        </button>
+      </nav>
+      <template v-if="!selected && section === 'providers'">
+        <div class="identity-heading">
+          <div>
+            <span class="identity-kicker">Identity & access</span>
+            <h2>Sign-in methods</h2>
+            <p>
+              Keep everyday access simple, with a dependable local recovery
+              route.
+            </p>
+          </div>
+          <v-btn
+            variant="outlined"
+            prepend-icon="mdi-plus"
+            :disabled="locked"
+            @click="catalog = true"
+            >Add provider</v-btn
+          >
+        </div>
+        <form class="identity-search" @submit.prevent>
+          <v-text-field
+            v-model="search"
+            label="Find a provider by name or purpose"
+            variant="outlined"
+            prepend-inner-icon="mdi-magnify"
+            hide-details
+            clearable
+          />
+        </form>
+        <ul v-if="filtered.length" class="identity-register">
+          <li v-for="provider in filtered" :key="provider.key">
+            <div class="identity-provider-icon">
+              <v-icon
+                :icon="
+                  provider.key === 'local'
+                    ? 'mdi-key-outline'
+                    : 'mdi-shield-account-outline'
+                "
+              />
+            </div>
+            <div class="identity-provider-copy">
+              <button type="button" @click="selectProvider(provider.key)">
+                {{ provider.displayName || 'Untitled provider' }}
+              </button>
+              <p>
+                {{
+                  provider.description ||
+                  definition(provider.strategyKey)?.description ||
+                  'Provider definition unavailable.'
+                }}
+              </p>
+              <div class="identity-meta">
+                <span>{{
+                  definition(provider.strategyKey)?.title ||
+                  provider.strategyKey
+                }}</span
+                ><span v-if="provider.key === 'local'">Recovery route</span
+                ><span>{{
+                  provider.selfRegistration
+                    ? 'New accounts allowed'
+                    : 'Existing accounts only'
+                }}</span>
+              </div>
+            </div>
+            <div class="identity-provider-count">
+              <strong>{{
+                savedProvider(provider.key)?.accountCount ?? 0
+              }}</strong
+              ><span>accounts</span>
+            </div>
+            <span
+              class="identity-runtime"
+              :class="'is-' + runtime(provider.key).state"
+              >{{ statusTitle(runtime(provider.key).state) }}</span
+            ><v-btn
+              variant="text"
+              icon="mdi-arrow-right"
+              :aria-label="'Configure ' + provider.displayName"
+              @click="selectProvider(provider.key)"
+            />
+          </li>
+        </ul>
+        <async-state
+          v-else
+          state="empty"
+          title="No matching providers"
+          message="Try another name or clear the search."
+        />
+        <div class="identity-boundary">
+          <v-icon icon="mdi-information-outline" size="19" />
+          <p>
+            Initialization confirms that a sign-in method loaded in this
+            application. Complete a real sign-in with your identity provider to
+            verify the full connection.
+          </p>
+          <v-btn
+            variant="text"
+            :disabled="dirty || locked"
+            :loading="initializing"
+            @click="initialize"
+            >Retry initialization</v-btn
+          >
+        </div>
+      </template>
+      <template v-else-if="!selected && section === 'order'">
+        <div class="identity-heading">
+          <div>
+            <span class="identity-kicker">The arrival experience</span>
+            <h2>Login order</h2>
+            <p>
+              Put the method most people use first. Changes remain in your
+              policy draft until reviewed.
+            </p>
+          </div>
+        </div>
+        <div class="identity-order-layout">
+          <ol class="identity-order-list">
+            <li v-for="(provider, index) in drafts" :key="provider.key">
+              <span class="identity-order-number">{{ index + 1 }}</span>
+              <div>
+                <strong>{{ provider.displayName }}</strong
+                ><small>{{
+                  provider.isEnabled
+                    ? 'Shown on the sign-in page'
+                    : 'Disabled · hidden from sign-in'
+                }}</small>
+              </div>
+              <v-btn
+                icon="mdi-arrow-up"
+                size="small"
+                variant="text"
+                :aria-label="'Move ' + provider.displayName + ' up'"
+                :disabled="locked || index === 0"
+                @click="move(index, -1)"
+              /><v-btn
+                icon="mdi-arrow-down"
+                size="small"
+                variant="text"
+                :aria-label="'Move ' + provider.displayName + ' down'"
+                :disabled="locked || index === drafts.length - 1"
+                @click="move(index, 1)"
+              />
+            </li>
+          </ol>
+          <aside class="identity-preview">
+            <span class="identity-kicker">Sign-in choices preview</span>
+            <h3>Welcome back</h3>
+            <p>Choose how to sign in.</p>
+            <div
+              v-for="provider in drafts.filter((p) => p.isEnabled)"
+              :key="provider.key"
+              class="identity-preview-choice"
+            >
+              <v-icon
+                :icon="
+                  provider.key === 'local'
+                    ? 'mdi-key-outline'
+                    : 'mdi-shield-account-outline'
+                "
+                size="19"
+              />{{ provider.displayName }}
+            </div>
+            <small
+              >A preview of enabled methods and their order. Provider forms and
+              your theme appear on the actual sign-in page.</small
+            >
+          </aside>
+        </div>
+      </template>
+      <template v-else-if="!selected && section === 'activity'">
+        <div class="identity-heading">
+          <div>
+            <span class="identity-kicker">Administrative record</span>
+            <h2>Policy activity</h2>
+            <p>
+              The latest 50 reviewed changes. Credentials are never included.
+            </p>
+          </div>
+        </div>
+        <async-state
+          v-if="!saved.history.length"
+          state="empty"
+          title="No recorded policy changes"
+          message="Reviewed saves will appear here."
+        />
+        <ol v-else class="identity-activity">
+          <li v-for="event in saved.history" :key="event.id">
+            <div>
+              <strong>{{ event.reason }}</strong
+              ><time>{{ date(event.createdAt) }}</time>
+            </div>
+            <p>
+              {{
+                event.actorId
+                  ? 'Account #' + event.actorId
+                  : 'API administrator'
+              }}
+            </p>
+            <ul>
+              <li v-for="change in event.changes" :key="change.key">
+                {{ change.name }} · {{ change.action
+                }}<span v-if="change.fields.length">
+                  ·
+                  {{
+                    change.fields
+                      .map((field) => fieldTitle(change.key, field))
+                      .join(', ')
+                  }}</span
+                ><span v-if="change.sessionsEnded">
+                  · {{ change.sessionsEnded }} account sessions ended</span
+                >
+              </li>
+            </ul>
+          </li>
+        </ol>
+      </template>
+      <template v-else-if="selected">
+        <nav class="identity-tabs" aria-label="Provider settings">
+          <button
+            v-for="item in providerSections"
+            :key="item.key"
+            type="button"
+            :aria-current="providerSection === item.key ? 'page' : undefined"
+            :disabled="busy"
+            @click="setProviderSection(item.key)"
+          >
+            {{ item.title }}
+          </button>
+        </nav>
+        <div class="identity-provider-layout">
+          <section class="identity-editor">
+            <template v-if="providerSection === 'connection'">
+              <div class="identity-heading">
+                <div>
+                  <span class="identity-kicker">{{
+                    selectedDefinition?.title || selected.strategyKey
+                  }}</span>
+                  <h2>Connection</h2>
+                  <p>
+                    {{
+                      selectedDefinition?.description ||
+                      'This provider definition is unavailable. Its stored configuration is retained.'
+                    }}
+                  </p>
+                </div>
+              </div>
+              <div class="identity-fields">
+                <v-text-field
+                  v-model="selected.displayName"
+                  label="Sign-in display name"
+                  maxlength="255"
                   variant="outlined"
-                  :label='$t(`admin:auth.displayName`)'
-                  v-model='strategy.displayName'
-                  :rules='displayNameRules'
-                  maxlength='255'
-                  prepend-icon='mdi-format-title'
-                  :hint='$t(`admin:auth.displayNameHint`)'
+                  :disabled="locked"
+                /><v-textarea
+                  v-model="selected.description"
+                  label="Purpose"
+                  maxlength="1000"
+                  rows="2"
+                  auto-grow
+                  variant="outlined"
+                  :disabled="locked"
+                  hint="Help administrators understand who this connection serves."
                   persistent-hint
-                  :disabled='saving'
-                )
-              v-col(cols='12', sm='4')
-                v-switch.mt-1(
-                  :label='$t(`admin:auth.strategyIsEnabled`)'
-                  v-model='strategy.isEnabled'
-                  color='primary'
-                  prepend-icon='mdi-power'
-                  :hint='$t(`admin:auth.strategyIsEnabledHint`)'
-                  persistent-hint
+                /><v-switch
+                  v-model="selected.isEnabled"
+                  label="Enable this sign-in method"
+                  color="primary"
                   inset
-                  :disabled='strategy.key === `local` || saving'
-                )
-            template(v-if='strategy.config && strategy.config.length > 0')
-              v-divider
-              .text-label-small.my-5 {{$t('admin:auth.strategyConfiguration')}}
-              .pr-3
-                template(v-for='cfg in strategy.config', :key='cfg.key')
-                  v-select.mb-3(
-                    v-if='cfg.value.type === "string" && cfg.value.enum'
-                    variant="outlined"
-                    :items='cfg.value.enum'
-                    :label='cfg.value.title'
-                    v-model='cfg.value.value'
-                    prepend-icon='mdi-cog-box'
-                    :hint='cfg.value.hint ? cfg.value.hint : ""'
-                    persistent-hint
-                    :class='cfg.value.hint ? "mb-2" : ""'
-                    :style='cfg.value.maxWidth > 0 ? `max-width:` + cfg.value.maxWidth + `px;` : ``'
-                    :disabled='saving'
-                  )
-                  v-switch.mb-6(
-                    v-else-if='cfg.value.type === "boolean"'
-                    :label='cfg.value.title'
-                    :model-value='cfg.value.value === true'
-                    @update:model-value='cfg.value.value = $event === true'
-                    color='primary'
-                    prepend-icon='mdi-cog-box'
-                    :hint='cfg.value.hint ? cfg.value.hint : ""'
-                    persistent-hint
-                    inset
-                    :disabled='saving'
-                    )
-                  v-textarea.mb-3(
-                    v-else-if='cfg.value.type === "string" && cfg.value.multiline'
-                    variant="outlined"
-                    :label='cfg.value.title'
-                    :model-value='cfg.value.sensitive && !isSecretRevealed(cfg.key) && cfg.value.value !== "********" ? "********" : cfg.value.value'
-                    :append-inner-icon='cfg.value.sensitive ? (isSecretRevealed(cfg.key) ? "mdi-eye-off" : "mdi-eye") : undefined'
-                    @update:model-value='updateSecret(cfg.key, $event, cfg.value)'
-                    @click:append-inner='cfg.value.sensitive && toggleSecret(cfg.key)'
-                    prepend-icon='mdi-cog-box'
-                    :hint='cfg.value.sensitive ? "Stored secret is masked; reveal to replace." : (cfg.value.hint ? cfg.value.hint : "")'
-                    persistent-hint
-                    :class='cfg.value.hint ? "mb-2" : ""'
-                    @update:focused='selectStoredSecret($event, cfg.value)'
-                    :disabled='saving'
-                  )
-                  v-text-field.mb-3(
-                    v-else
-                    variant="outlined"
-                    :label='cfg.value.title'
-                    v-model='cfg.value.value'
-                    :type='cfg.value.sensitive && !isSecretRevealed(cfg.key) ? "password" : "text"'
-                    :autocomplete='cfg.value.sensitive ? "new-password" : undefined'
-                    :append-inner-icon='cfg.value.sensitive ? (isSecretRevealed(cfg.key) ? "mdi-eye-off" : "mdi-eye") : undefined'
-                    @click:append-inner='cfg.value.sensitive && toggleSecret(cfg.key)'
-                    prepend-icon='mdi-cog-box'
-                    :hint='cfg.value.sensitive ? "Stored secret is masked; leave unchanged or reveal to replace." : (cfg.value.hint ? cfg.value.hint : "")'
-                    persistent-hint
-                    :class='cfg.value.hint ? "mb-2" : ""'
-                    :style='cfg.value.maxWidth > 0 ? `max-width:` + cfg.value.maxWidth + `px;` : ``'
-                    @update:focused='selectStoredSecret($event, cfg.value)'
-                    :disabled='saving'
-                  )
-            v-divider
-            .text-label-small.my-5 {{$t('admin:auth.registration')}}
-            .pr-3
-              v-switch.ml-3(
-                v-model='strategy.selfRegistration'
-                :label='$t(`admin:auth.selfRegistration`)'
-                color='primary'
-                :hint='$t(`admin:auth.selfRegistrationHint`)'
-                persistent-hint
+                  :disabled="
+                    locked ||
+                    selected.key === 'local' ||
+                    !selectedDefinition?.available
+                  "
+                  :hint="
+                    selected.key === 'local'
+                      ? 'Local sign-in stays enabled for recovery.'
+                      : 'Enable after configuring the connection. Saving initializes the provider.'
+                  "
+                  persistent-hint
+                />
+              </div>
+              <template v-for="group in connectionGroups" :key="group.key"
+                ><section
+                  v-if="group.fields.length"
+                  class="identity-field-group"
+                >
+                  <button
+                    v-if="group.key === 'advanced'"
+                    class="identity-disclosure"
+                    type="button"
+                    :aria-expanded="advanced"
+                    @click="advanced = !advanced"
+                  >
+                    <span
+                      ><strong>Advanced protocol settings</strong
+                      ><small
+                        >Signing, transport, assertions and provider-specific
+                        options.</small
+                      ></span
+                    ><v-icon
+                      :icon="advanced ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                    />
+                  </button>
+                  <div v-else class="identity-field-group-heading">
+                    <h3>{{ group.title }}</h3>
+                    <p>{{ group.description }}</p>
+                  </div>
+                  <auth-fields
+                    v-if="group.key !== 'advanced' || advanced"
+                    :model-value="selected"
+                    :fields="group.fields"
+                    :configured-secrets="
+                      savedProvider(selected.key)?.configuredSecrets ?? []
+                    "
+                    :disabled="locked"
+                    @update:model-value="updateProvider"
+                  /></section
+              ></template>
+            </template>
+            <template v-else-if="providerSection === 'enrollment'">
+              <div class="identity-heading">
+                <div>
+                  <span class="identity-kicker"
+                    >Who joins, and with what access</span
+                  >
+                  <h2>Account enrollment</h2>
+                  <p>
+                    These settings govern new accounts. Existing accounts retain
+                    their membership unless directory mapping is enabled.
+                  </p>
+                </div>
+              </div>
+              <v-switch
+                v-model="selected.selfRegistration"
+                label="Allow new accounts through this provider"
+                color="primary"
                 inset
-                :disabled='saving'
-              )
-              v-combobox.ml-3.mt-5(
-                :label='$t(`admin:auth.domainsWhitelist`)'
-                v-model='strategy.domainWhitelist'
-                prepend-icon='mdi-email-check-outline'
-                variant="outlined"
-                :disabled='saving || !strategy.selfRegistration'
-                :hint='$t(`admin:auth.domainsWhitelistHint`)'
+                :disabled="locked"
+                :hint="
+                  selected.key === 'local'
+                    ? 'People may register a local account. Email verification remains part of local registration.'
+                    : 'A successful provider sign-in may create a workspace account.'
+                "
                 persistent-hint
-                closable-chips
-                clearable
-                multiple
-                chips
-                )
-              v-autocomplete.mt-3.ml-3(
+              />
+              <div
+                v-if="selected.selfRegistration"
+                class="identity-fields mt-6"
+              >
+                <v-combobox
+                  v-model="selected.domainWhitelist"
+                  label="Allowed email domains"
+                  variant="outlined"
+                  multiple
+                  chips
+                  closable-chips
+                  :disabled="locked"
+                  hint="Exact domains, such as example.org. Leave empty to accept any email domain."
+                  persistent-hint
+                /><v-autocomplete
+                  v-model="selected.autoEnrollGroups"
+                  :items="enrollmentGroups"
+                  item-title="name"
+                  item-value="id"
+                  label="Initial groups"
+                  variant="outlined"
+                  multiple
+                  chips
+                  closable-chips
+                  :disabled="locked"
+                  hint="New accounts receive these groups. System identities and script authority are excluded."
+                  persistent-hint
+                />
+                <p class="identity-note">
+                  {{
+                    selected.autoEnrollGroups.length
+                      ? 'Review the permissions of each selected group before opening enrollment.'
+                      : 'New accounts will start without group permissions.'
+                  }}
+                </p>
+              </div>
+              <div
+                v-if="
+                  selectedDefinition?.fields.some(
+                    (field) => field.key === 'mapGroups'
+                  )
+                "
+                class="identity-mapping"
+              >
+                <h3>Directory group mapping</h3>
+                <v-switch
+                  v-model="selected.config.mapGroups"
+                  label="Synchronize groups from the identity provider"
+                  color="primary"
+                  inset
+                  :disabled="locked"
+                />
+                <p class="identity-note">
+                  When a group claim is present, names are matched exactly to
+                  workspace groups. Matching memberships are added and other
+                  memberships are removed at sign-in. This can include
+                  administrative groups. Missing claims leave memberships
+                  unchanged; an empty claim removes them. Older account sessions
+                  end when membership changes.
+                </p>
+                <auth-fields
+                  v-if="selected.config.mapGroups"
+                  :model-value="selected"
+                  :fields="mappingFields"
+                  :configured-secrets="
+                    savedProvider(selected.key)?.configuredSecrets ?? []
+                  "
+                  :disabled="locked"
+                  @update:model-value="updateProvider"
+                />
+              </div>
+            </template>
+            <template v-else>
+              <div class="identity-heading">
+                <div>
+                  <span class="identity-kicker"
+                    >Connect the identity service</span
+                  >
+                  <h2>Integration details</h2>
+                  <p>
+                    Use the configured public workspace address when setting up
+                    your provider.
+                  </p>
+                </div>
+              </div>
+              <dl class="identity-integration">
+                <div>
+                  <dt>Workspace origin</dt>
+                  <dd>
+                    {{ origin || 'Set the public workspace URL in General.' }}
+                  </dd>
+                </div>
+                <div v-if="!selectedDefinition?.useForm">
+                  <dt>Callback URL</dt>
+                  <dd>
+                    {{
+                      origin
+                        ? origin + '/login/' + selected.key + '/callback'
+                        : 'Workspace URL required'
+                    }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Sign-in page</dt>
+                  <dd>
+                    {{ origin ? origin + '/login' : 'Workspace URL required' }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Provider identifier</dt>
+                  <dd>{{ selected.key }}</dd>
+                </div>
+              </dl>
+              <p class="identity-note">
+                {{
+                  selectedDefinition?.useForm
+                    ? 'This provider uses a sign-in form in the workspace. A redirect callback is not required for the form.'
+                    : 'Allow this exact callback in your identity provider. Follow its protocol-specific configuration for client credentials, assertions, claims and logout behavior.'
+                }}
+              </p>
+              <v-btn
+                v-if="selectedDefinition?.website"
+                class="mt-5"
+                :href="selectedDefinition.website"
+                target="_blank"
+                rel="noopener noreferrer"
                 variant="outlined"
-                :disabled='saving || !strategy.selfRegistration'
-                :items='groups'
-                item-title='name'
-                item-value='id'
-                :label='$t(`admin:auth.autoEnrollGroups`)'
-                v-model='strategy.autoEnrollGroups'
-                prepend-icon='mdi-account-group'
-                :hint='$t(`admin:auth.autoEnrollGroupsHint`)'
-                persistent-hint
-                closable-chips
-                clearable
-                multiple
-                chips
-                )
-
-        v-card.mt-4.wiki-form.animated.fadeInUp.wait-p4s(v-if='strategy.key && selectedStrategy !== `local`')
-          v-toolbar(color='primary', density="compact", flat)
-            .text-body-large {{$t('admin:auth.configReference')}}
-          v-card-text
-            .text-body-medium {{$t('admin:auth.configReferenceSubtitle')}}
-            v-alert.mt-3.radius-7(v-if='host.length < 8', color='red', variant="outlined", :model-value='true', icon='mdi-alert')
-              i18next(path='admin:auth.siteUrlNotSetup', tag='span')
-                strong(place='siteUrl') {{$t('admin:general.siteUrl')}}
-                strong(place='general') {{$t('admin:general.title')}}
-            .pa-3.mt-3.radius-7.bg-surface-variant(v-else)
-              .text-body-medium: strong {{$t('admin:auth.allowedWebOrigins')}}
-              .text-body-medium {{host}}
-              v-divider.my-3
-              .text-body-medium: strong {{$t('admin:auth.callbackUrl')}}
-              .text-body-medium {{host}}/login/{{strategy.key}}/callback
-              v-divider.my-3
-              .text-body-medium: strong {{$t('admin:auth.loginUrl')}}
-              .text-body-medium {{host}}/login
-              v-divider.my-3
-              .text-body-medium: strong {{$t('admin:auth.logoutUrl')}}
-              .text-body-medium {{host}}
-              v-divider.my-3
-              .text-body-medium: strong {{$t('admin:auth.tokenEndpointAuthMethod')}}
-              .text-body-medium HTTP-POST
+                append-icon="mdi-open-in-new"
+                >Provider reference</v-btn
+              ><v-btn class="mt-5 ml-2" to="/general" variant="text"
+                >Workspace URL settings</v-btn
+              >
+            </template>
+          </section>
+          <aside class="identity-aside">
+            <div class="identity-panel">
+              <span class="identity-kicker">Saved provider</span>
+              <h3>{{ statusTitle(runtime(selected.key).state) }}</h3>
+              <p class="identity-note">
+                {{
+                  savedProvider(selected.key)
+                    ? 'Initialization reflects this application’s last observed saved revision.'
+                    : 'This new provider exists only in your draft.'
+                }}
+              </p>
+              <dl class="identity-facts">
+                <div>
+                  <dt>Accounts</dt>
+                  <dd>{{ savedProvider(selected.key)?.accountCount ?? 0 }}</dd>
+                </div>
+                <div>
+                  <dt>Active accounts</dt>
+                  <dd>
+                    {{ savedProvider(selected.key)?.activeAccountCount ?? 0 }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Last initialization</dt>
+                  <dd>
+                    {{
+                      runtime(selected.key).checkedAt
+                        ? date(runtime(selected.key).checkedAt!)
+                        : 'Not observed'
+                    }}
+                  </dd>
+                </div>
+              </dl>
+              <v-btn
+                variant="text"
+                :disabled="dirty || locked"
+                :loading="initializing"
+                @click="initialize"
+                >Retry initialization</v-btn
+              >
+            </div>
+            <div v-if="selected.key !== 'local'" class="identity-panel">
+              <h3>Retire this connection</h3>
+              <p class="identity-note">
+                {{
+                  savedProvider(selected.key)?.accountCount
+                    ? 'This provider has accounts. Disable sign-in or resolve those accounts before removing the provider.'
+                    : 'Removal is staged in your policy draft and takes effect after review.'
+                }}
+              </p>
+              <v-btn
+                class="mt-4"
+                color="error"
+                variant="outlined"
+                :disabled="
+                  locked || Boolean(savedProvider(selected.key)?.accountCount)
+                "
+                @click="removeProvider"
+                >Remove provider</v-btn
+              >
+            </div>
+          </aside>
+        </div>
+      </template>
+    </template>
+    <v-dialog
+      v-model="catalog"
+      max-width="820"
+      :fullscreen="$vuetify.display.smAndDown"
+      aria-labelledby="identity-catalog-title"
+      ><v-card class="identity-dialog"
+        ><div class="identity-dialog-heading">
+          <h2 id="identity-catalog-title">Add a sign-in provider</h2>
+          <p>Choose a connection, configure it, then enable it when ready.</p>
+        </div>
+        <v-card-text
+          ><v-text-field
+            v-model="catalogSearch"
+            label="Search provider catalog"
+            variant="outlined"
+            prepend-inner-icon="mdi-magnify"
+            clearable /><async-state
+            v-if="!catalogItems.length"
+            state="empty"
+            title="No matching connections"
+            message="Try a provider name or protocol, such as OpenID Connect or LDAP." />
+          <div v-else class="identity-catalog">
+            <button
+              v-for="item in catalogItems"
+              :key="item.key"
+              type="button"
+              :disabled="!item.available || locked"
+              @click="addProvider(item)"
+            >
+              <v-icon icon="mdi-shield-account-outline" /><span
+                ><strong>{{ item.title }}</strong
+                ><small>{{ item.description }}</small
+                ><em v-if="!item.available"
+                  >Unavailable in this deployment</em
+                ></span
+              ><v-icon icon="mdi-plus" size="20" />
+            </button></div></v-card-text
+        ><v-card-actions
+          ><v-spacer /><v-btn variant="text" @click="catalog = false"
+            >Cancel</v-btn
+          ></v-card-actions
+        ></v-card
+      ></v-dialog
+    >
+    <v-dialog
+      v-model="reviewing"
+      max-width="760"
+      :fullscreen="$vuetify.display.smAndDown"
+      :persistent="busy"
+      aria-labelledby="identity-review-title"
+      ><v-card class="identity-dialog"
+        ><div class="identity-dialog-heading">
+          <h2 id="identity-review-title">Review sign-in policy</h2>
+          <p>
+            Confirm the changes to connection settings, enrollment and login
+            order.
+          </p>
+        </div>
+        <v-card-text
+          ><ul class="identity-review-list">
+            <li v-for="change in reviewedChanges" :key="change.key">
+              <h3>{{ change.name }}</h3>
+              <p>{{ change.description }}</p>
+              <ul>
+                <li v-for="field in change.fields" :key="field">{{ field }}</li>
+              </ul>
+            </li>
+          </ul>
+          <v-alert
+            v-if="reviewedSessions"
+            type="warning"
+            variant="tonal"
+            class="my-5"
+            >Connection or enablement changes end existing sessions for
+            {{ reviewedSessions }} account(s). They must sign in again.</v-alert
+          ><v-textarea
+            v-model="reason"
+            label="Administrative reason"
+            variant="outlined"
+            rows="2"
+            maxlength="1000"
+            :disabled="busy"
+          /><v-alert v-if="saveError" type="error" variant="tonal"
+            >{{ saveError
+            }}<v-btn
+              v-if="conflict"
+              variant="text"
+              :disabled="busy"
+              @click="reloadReview"
+              >Reload saved policy</v-btn
+            ></v-alert
+          ></v-card-text
+        ><v-card-actions
+          ><v-btn variant="text" :disabled="busy" @click="reviewing = false"
+            >Keep editing</v-btn
+          ><v-spacer /><v-btn
+            color="primary"
+            variant="flat"
+            :disabled="reason.trim().length < 3 || conflict || stale"
+            :loading="busy"
+            @click="confirm"
+            >Save sign-in policy</v-btn
+          ></v-card-actions
+        ></v-card
+      ></v-dialog
+    >
+  </v-container>
 </template>
-
-<script lang='ts'>
-import { markRaw } from 'vue'
-
-import _ from 'lodash'
-import { fetchAdminAuthActiveStrategies, fetchAdminAuthStrategies, updateAdminAuthStrategies, type AdminActiveAuthStrategy, type AdminAuthStrategy } from '../../helpers/auth-api'
-import { fetchGroupOptions, type GroupOption } from '../../helpers/groups-api'
-import { getErrorMessage } from '../../helpers/root-ui-store'
-import { fetchSystemHost } from '../../helpers/system-api'
-
-import draggable from '@/components/common/draggable-list.vue'
-import { wikiStore } from '@/store/index.ts'
-
-type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
-
-const createAbortableFetch = (signal: AbortSignal): FetchImpl => (input, init) => (
-  window.fetch(input, { ...init, signal })
-)
-
-const createEmptyStrategy = (): AdminActiveAuthStrategy => ({
-  key: '',
-  strategy: {
-    key: '',
-    title: '',
-    description: '',
-    logo: '',
-    website: '',
-    isAvailable: false,
-    isDisabled: true,
-    props: []
-  },
-  config: [],
-  order: 0,
-  isEnabled: false,
-  displayName: '',
-  selfRegistration: false,
-  domainWhitelist: [],
-  autoEnrollGroups: []
-})
-
-const EMPTY_STRATEGY = markRaw(createEmptyStrategy())
-
+<script lang="ts">
+import AsyncState from '@/components/common/async-state.vue'
+import AuthFields from './admin-auth-fields.vue'
+import type {
+  AuthenticationWorkspace,
+  AuthenticationProviderDraft,
+  AuthenticationDefinition,
+  AuthenticationRuntime
+} from '../../../shared/authentication-policy.ts'
+import {
+  fetchAuthenticationWorkspace,
+  saveAuthenticationWorkspace,
+  retryAuthenticationInitialization,
+  authenticationDraft,
+  authenticationSignature
+} from '../../helpers/authentication-workspace-api.ts'
+import { getErrorMessage } from '../../helpers/root-ui-store.ts'
+const sections = [
+    { key: 'providers', title: 'Providers' },
+    { key: 'order', title: 'Login order' },
+    { key: 'activity', title: 'Activity' }
+  ],
+  providerSections = [
+    { key: 'connection', title: 'Connection' },
+    { key: 'enrollment', title: 'Enrollment' },
+    { key: 'integration', title: 'Integration' }
+  ]
+const labels: Record<string, string> = {
+  displayName: 'Sign-in display name',
+  description: 'Purpose',
+  isEnabled: 'Sign-in availability',
+  selfRegistration: 'New-account admission',
+  domainWhitelist: 'Allowed email domains',
+  autoEnrollGroups: 'Initial groups',
+  order: 'Login order'
+}
 export default {
-  components: {
-    draggable
-  },
+  components: { AsyncState, AuthFields },
   data() {
     return {
-      groups: [] as GroupOption[],
-      strategies: [] as AdminAuthStrategy[],
-      activeStrategies: [] as AdminActiveAuthStrategy[],
-      selectedStrategy: '',
-      host: '',
-      initialLoading: true,
-      loaded: false,
-      saving: false,
-      persistedStrategies: [] as AdminActiveAuthStrategy[],
-      revealedSecrets: {} as Record<string, boolean>,
-      loadController: null as AbortController | null,
-      saveController: null as AbortController | null,
-      isUnmounted: false
+      saved: null as AuthenticationWorkspace | null,
+      drafts: [] as AuthenticationProviderDraft[],
+      loading: false,
+      busy: false,
+      initializing: false,
+      stale: false,
+      loadError: '',
+      saveError: '',
+      notice: '',
+      attention: false,
+      sequence: 0,
+      disposed: false,
+      search: '',
+      section: 'providers',
+      selectedKey: '',
+      providerSection: 'connection',
+      sections,
+      providerSections,
+      catalog: false,
+      catalogSearch: '',
+      advanced: false,
+      reviewing: false,
+      reason: '',
+      conflict: false,
+      reviewed: [] as AuthenticationProviderDraft[],
+      reviewFingerprint: '',
+      reviewedChanges: [] as Array<{
+        key: string
+        name: string
+        description: string
+        fields: string[]
+      }>,
+      reviewedSessions: 0
     }
   },
   computed: {
-    dirty (): boolean {
-      return !_.isEqual(this.activeStrategies, this.persistedStrategies)
+    dirty(): boolean {
+      return (
+        Boolean(this.saved) &&
+        authenticationSignature(this.drafts) !==
+          authenticationSignature(this.saved!.providers)
+      )
     },
-    displayNameRules (): Array<(value: string) => true | string> {
+    locked(): boolean {
+      return this.busy || this.initializing || this.loading || this.stale
+    },
+    selected(): AuthenticationProviderDraft | undefined {
+      return this.drafts.find((p) => p.key === this.selectedKey)
+    },
+    selectedDefinition(): AuthenticationDefinition | undefined {
+      return this.definition(this.selected?.strategyKey ?? '')
+    },
+    mappingFields() {
+      return (
+        this.selectedDefinition?.fields.filter((field) =>
+          /^(groupsClaim|mappingGroups|groupSearch|groupNameField|groupDnProperty)/.test(
+            field.key
+          )
+        ) ?? []
+      )
+    },
+    connectionGroups() {
+      const fields =
+          this.selectedDefinition?.fields.filter(
+            (field) =>
+              field.key !== 'mapGroups' && !this.mappingFields.includes(field)
+          ) ?? [],
+        profile = fields.filter((field) =>
+          /^(mapping|emailClaim|displayNameClaim|pictureClaim)/.test(field.key)
+        ),
+        basic = fields.filter(
+          (field) =>
+            !profile.includes(field) &&
+            /^(client|url$|entryPoint$|issuer$|audience$|cert$|authorizationURL$|tokenURL$|userInfoURL$|bindDn$|bindCredentials$|searchBase$|searchFilter$)/.test(
+              field.key
+            )
+        )
       return [
-        (value: string) => Boolean(value?.trim()) || 'Display name is required.'
+        {
+          key: 'service',
+          title: 'Service connection',
+          description:
+            'The addresses and credentials used to establish sign-in.',
+          fields: basic
+        },
+        {
+          key: 'profile',
+          title: 'Account profile',
+          description: 'How the provider identifies and describes each person.',
+          fields: profile
+        },
+        {
+          key: 'advanced',
+          title: 'Advanced protocol settings',
+          description: '',
+          fields: fields.filter(
+            (field) => !basic.includes(field) && !profile.includes(field)
+          )
+        }
       ]
     },
-    strategy (): AdminActiveAuthStrategy {
-      return _.find(this.activeStrategies, ['key', this.selectedStrategy]) || EMPTY_STRATEGY
+    enabledCount(): number {
+      return this.drafts.filter((p) => p.isEnabled).length
+    },
+    accountCount(): number {
+      return this.saved?.providers.reduce((n, p) => n + p.accountCount, 0) ?? 0
+    },
+    filtered() {
+      const query = (this.search || '').toLowerCase()
+      return this.drafts.filter((p) =>
+        (
+          p.displayName +
+          ' ' +
+          p.description +
+          ' ' +
+          this.definition(p.strategyKey)?.title
+        )
+          .toLowerCase()
+          .includes(query)
+      )
+    },
+    catalogItems() {
+      const query = (this.catalogSearch || '').toLowerCase()
+      return (
+        this.saved?.definitions.filter(
+          (d) =>
+            d.key !== 'local' &&
+            (d.title + ' ' + d.description).toLowerCase().includes(query)
+        ) ?? []
+      )
+    },
+    enrollmentGroups() {
+      return this.saved?.groups.filter((g) => !g.system) ?? []
+    },
+    origin(): string {
+      try {
+        const url = new URL(this.saved?.host ?? '')
+        return ['http:', 'https:'].includes(url.protocol) ? url.origin : ''
+      } catch {
+        return ''
+      }
     }
   },
   watch: {
-    selectedStrategy() {
-      this.revealedSecrets = {}
-    }
-  },
-  methods: {
-    async loadGroups(fetchImpl: FetchImpl, signal: AbortSignal) {
-      wikiStore.startLoading('admin-auth-groups-refresh')
-      try {
-        const groups = await fetchGroupOptions(fetchImpl, 'Groups response is invalid')
-        if (!signal.aborted && !this.isUnmounted) {
-          this.groups = groups
-        }
-      } catch (err) {
-        if (!signal.aborted && !this.isUnmounted) {
-          wikiStore.showNotification({
-            style: 'red',
-            message: getErrorMessage(err),
-            icon: 'alert'
-          })
-        }
-      } finally {
-        wikiStore.stopLoading('admin-auth-groups-refresh')
-      }
-    },
-    async loadHost(fetchImpl: FetchImpl, signal: AbortSignal, { notifyError = true }: { notifyError?: boolean } = {}) {
-      wikiStore.startLoading('admin-auth-host-refresh')
-      try {
-        const response = await fetchSystemHost(fetchImpl, 'Site host response is invalid')
-        if (signal.aborted || this.isUnmounted) {
-          return
-        }
-        this.host = response.host
-        return response
-      } catch (err) {
-        if (!signal.aborted && !this.isUnmounted) {
-          this.host = ''
-          if (notifyError) {
-            wikiStore.showNotification({
-              style: 'red',
-              message: getErrorMessage(err),
-              icon: 'alert'
-            })
-          }
-        }
-        throw err
-      } finally {
-        wikiStore.stopLoading('admin-auth-host-refresh')
-      }
-    },
-    async loadStrategies(fetchImpl: FetchImpl, signal: AbortSignal) {
-      wikiStore.startLoading('admin-auth-strategies-refresh')
-      try {
-        const strategies = await fetchAdminAuthStrategies(fetchImpl, 'Authentication strategies response is invalid')
-        if (!signal.aborted && !this.isUnmounted) {
-          this.strategies = strategies
-        }
-      } catch (err) {
-        if (!signal.aborted && !this.isUnmounted) {
-          wikiStore.showNotification({
-            style: 'red',
-            message: getErrorMessage(err),
-            icon: 'alert'
-          })
-        }
-        throw err
-      } finally {
-        wikiStore.stopLoading('admin-auth-strategies-refresh')
-      }
-    },
-    async loadActiveStrategies(fetchImpl: FetchImpl, signal: AbortSignal) {
-      wikiStore.startLoading('admin-auth-activestrategies-refresh')
-      try {
-        const activeStrategies = await fetchAdminAuthActiveStrategies(fetchImpl, 'Active authentication strategies response is invalid')
-        if (!signal.aborted && !this.isUnmounted) {
-          this.activeStrategies = activeStrategies
-        }
-      } catch (err) {
-        if (!signal.aborted && !this.isUnmounted) {
-          wikiStore.showNotification({
-            style: 'red',
-            message: getErrorMessage(err),
-            icon: 'alert'
-          })
-        }
-        throw err
-      } finally {
-        wikiStore.stopLoading('admin-auth-activestrategies-refresh')
-      }
-    },
-    async loadInitial() {
-      if (this.isUnmounted) return
-      this.loadController?.abort()
-      const controller = new AbortController()
-      this.loadController = controller
-      const fetchImpl = createAbortableFetch(controller.signal)
-      this.initialLoading = true
-      this.revealedSecrets = {}
-      this.loaded = false
-      try {
-        await Promise.all([
-          this.loadGroups(fetchImpl, controller.signal),
-          this.loadHost(fetchImpl, controller.signal),
-          this.loadStrategies(fetchImpl, controller.signal),
-          this.loadActiveStrategies(fetchImpl, controller.signal)
-        ])
-        if (controller.signal.aborted || this.isUnmounted) {
-          return
-        }
-        this.persistedStrategies = _.cloneDeep(this.activeStrategies)
-        this.selectedStrategy = this.activeStrategies.find(str => str.key === 'local')?.key || this.activeStrategies[0]?.key || ''
-        this.loaded = true
-      } catch {
-        controller.abort()
-        return
-      } finally {
-        if (this.loadController === controller) {
-          this.loadController = null
-          if (!this.isUnmounted) {
-            this.initialLoading = false
-          }
-        }
-      }
-    },
-    async refresh() {
-      if (this.initialLoading || this.saving) return
-      if (this.dirty && !window.confirm('Discard unsaved authentication changes and refresh?')) return
-      await this.loadInitial()
-      if (!this.isUnmounted && this.loaded) {
-        wikiStore.showNotification({
-          message: this.$t('admin:auth.refreshSuccess'),
-          style: 'success',
-          icon: 'cached'
-        })
-      }
-    },
-    moveStrategy (index: number, offset: number) {
-      const target = index + offset
-      if (target < 0 || target >= this.activeStrategies.length) return
-      const next = [...this.activeStrategies]
-      const [moved] = next.splice(index, 1)
-      next.splice(target, 0, moved)
-      this.activeStrategies = next
-    },
-    addStrategy (str: AdminAuthStrategy) {
-      const newStr = {
-        key: crypto.randomUUID(),
-        strategy: str,
-        config: str.props.map(c => ({
-          key: c.key,
-          value: {
-            ...c,
-            value: c.default
-          }
-        })),
-        order: this.activeStrategies.length,
-        isEnabled: true,
-        displayName: str.title,
-        selfRegistration: false,
-        domainWhitelist: [],
-        autoEnrollGroups: []
-      } satisfies AdminActiveAuthStrategy
-      this.activeStrategies = [...this.activeStrategies, newStr]
-      this.$nextTick(() => {
-        this.selectedStrategy = newStr.key
-      })
-    },
-    deleteStrategy () {
-      if (this.strategy.key === 'local') return
-      if (!window.confirm(`Remove ${this.strategy.displayName}? This change will be pending until Apply.`)) return
-      this.activeStrategies = _.reject(this.activeStrategies, ['key', this.strategy.key])
-      this.selectedStrategy = this.activeStrategies[0]?.key || ''
-    },
-    isSecretRevealed (key: string): boolean {
-      return Boolean(this.revealedSecrets[key])
-    },
-    toggleSecret (key: string) {
-      this.revealedSecrets = { ...this.revealedSecrets, [key]: !this.revealedSecrets[key] }
-    },
-    updateSecret (key: string, value: unknown, config: { value?: unknown }) {
-      const item = _.find(this.strategy.config, ['key', key])
-      if (item) item.value.value = value
-      else config.value = value
-    },
-    selectStoredSecret(focused: boolean, config: { sensitive?: boolean, value?: unknown }) {
-      if (!focused || !config.sensitive || config.value !== '********') return
-      const input = document.activeElement
-      if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)) return
-      requestAnimationFrame(() => {
-        if (document.activeElement === input) input.select()
-      })
-    },
-    async save() {
-      if (!this.loaded || this.initialLoading || this.saving || !this.dirty || this.isUnmounted) return
-      const invalidStrategy = this.activeStrategies.find(str => !str.displayName.trim())
-      if (invalidStrategy) {
-        this.selectedStrategy = invalidStrategy.key
-        wikiStore.showNotification({
-          style: 'red',
-          message: 'Every authentication strategy must have a display name.',
-          icon: 'alert'
-        })
-        this.$nextTick(() => {
-          ;(this.$refs.displayNameInput as { focus?: () => void } | undefined)?.focus?.()
-        })
-        return
-      }
-      for (const strategy of this.activeStrategies) {
-        strategy.displayName = strategy.displayName.trim()
-        strategy.domainWhitelist = [...new Set(
-          strategy.domainWhitelist
-            .map(domain => domain.trim().toLowerCase())
-            .filter(Boolean)
-        )]
-      }
-      if (!this.dirty) return
-      const controller = new AbortController()
-      this.saveController = controller
-      this.saving = true
-      wikiStore.startLoading('admin-auth-savestrategies')
-      try {
-        await updateAdminAuthStrategies(createAbortableFetch(controller.signal), this.activeStrategies.map((str, idx) => ({
-          key: str.key,
-          strategyKey: str.strategy.key,
-          displayName: str.displayName,
-          order: idx,
-          isEnabled: str.isEnabled,
-          config: str.config.map(cfg => ({ ...cfg, value: JSON.stringify({ v: cfg.value.value }) })),
-          selfRegistration: str.selfRegistration,
-          domainWhitelist: str.domainWhitelist,
-          autoEnrollGroups: str.autoEnrollGroups
-        })))
-        if (controller.signal.aborted || this.isUnmounted) {
-          return
-        }
-        this.persistedStrategies = _.cloneDeep(this.activeStrategies)
-        wikiStore.showNotification({
-          message: this.$t('admin:auth.saveSuccess'),
-          style: 'success',
-          icon: 'check'
-        })
-      } catch (err) {
-        if (!controller.signal.aborted && !this.isUnmounted) {
-          wikiStore.showError(err)
-        }
-      } finally {
-        if (this.saveController === controller) {
-          this.saveController = null
-          if (!this.isUnmounted) {
-            this.saving = false
-          }
-        }
-        wikiStore.stopLoading('admin-auth-savestrategies')
+    '$route.hash': {
+      immediate: true,
+      handler(value: string) {
+        const q = new URLSearchParams(value.slice(1))
+        this.selectedKey = q.get('provider') ?? ''
+        this.providerSection = providerSections.some(
+          (t) => t.key === q.get('tab')
+        )
+          ? q.get('tab')!
+          : 'connection'
+        this.section = sections.some((t) => t.key === q.get('section'))
+          ? q.get('section')!
+          : 'providers'
       }
     }
   },
   created() {
-    void this.loadInitial()
+    void this.load()
+  },
+  mounted() {
+    window.addEventListener('beforeunload', this.beforeUnload)
   },
   beforeUnmount() {
-    this.isUnmounted = true
-    this.loadController?.abort()
-    this.saveController?.abort()
+    this.disposed = true
+    this.sequence++
+    window.removeEventListener('beforeunload', this.beforeUnload)
   },
+  beforeRouteLeave(): boolean {
+    return this.canLeave()
+  },
+  beforeRouteUpdate(to, from): boolean {
+    return (
+      !this.busy &&
+      !this.initializing &&
+      (to.path === from.path || this.canLeave())
+    )
+  },
+  methods: {
+    definition(key: string) {
+      return this.saved?.definitions.find((d) => d.key === key)
+    },
+    savedProvider(key: string) {
+      return this.saved?.providers.find((p) => p.key === key)
+    },
+    runtime(key: string): AuthenticationRuntime {
+      return (
+        this.savedProvider(key)?.runtime ?? {
+          state: 'pending',
+          checkedAt: null,
+          revision: ''
+        }
+      )
+    },
+    statusTitle(state: string) {
+      return (
+        (
+          {
+            ready: 'Initialized',
+            failed: 'Needs attention',
+            disabled: 'Disabled',
+            unavailable: 'Unavailable',
+            pending: 'Not initialized'
+          } as Record<string, string>
+        )[state] ?? state
+      )
+    },
+    date(value: string) {
+      return new Date(value).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      })
+    },
+    fieldTitle(key: string, field: string) {
+      const provider =
+        this.savedProvider(key) ?? this.drafts.find((p) => p.key === key)
+      return field.startsWith('config.')
+        ? (this.definition(provider?.strategyKey ?? '')?.fields.find(
+            (p) => p.key === field.slice(7)
+          )?.title ?? field.slice(7))
+        : (labels[field] ?? field)
+    },
+    async load() {
+      if (this.busy) return
+      const sequence = ++this.sequence
+      this.loading = true
+      this.loadError = ''
+      try {
+        const result = await fetchAuthenticationWorkspace()
+        if (!this.disposed && sequence === this.sequence) {
+          this.saved = result
+          this.drafts = result.providers.map(authenticationDraft)
+          this.stale = false
+        }
+      } catch (error) {
+        if (!this.disposed && sequence === this.sequence) {
+          this.loadError = getErrorMessage(error)
+          this.stale = true
+        }
+      } finally {
+        if (!this.disposed && sequence === this.sequence) this.loading = false
+      }
+    },
+    async reload() {
+      if (this.locked && !this.stale) return
+      if (
+        this.dirty &&
+        !window.confirm('Discard unsaved sign-in policy changes?')
+      )
+        return
+      await this.load()
+    },
+    reset() {
+      if (this.locked || !this.saved) return
+      this.drafts = this.saved.providers.map(authenticationDraft)
+      if (!this.selected) this.selectProvider('')
+    },
+    updateHash() {
+      const q = new URLSearchParams()
+      if (this.selectedKey) {
+        q.set('provider', this.selectedKey)
+        q.set('tab', this.providerSection)
+      } else if (this.section !== 'providers') q.set('section', this.section)
+      void this.$router.replace({
+        query: this.$route.query,
+        hash: q.size ? '#' + q : ''
+      })
+    },
+    selectProvider(key: string) {
+      if (this.busy) return
+      this.selectedKey = key
+      this.advanced = false
+      this.providerSection = 'connection'
+      this.section = 'providers'
+      this.updateHash()
+    },
+    setSection(key: string) {
+      this.section = key
+      this.updateHash()
+    },
+    setProviderSection(key: string) {
+      this.providerSection = key
+      this.updateHash()
+    },
+    move(index: number, offset: number) {
+      if (this.locked) return
+      const rows = [...this.drafts],
+        item = rows.splice(index, 1)[0]!
+      rows.splice(index + offset, 0, item)
+      this.drafts = rows
+    },
+    updateProvider(provider: AuthenticationProviderDraft) {
+      if (!this.locked)
+        this.drafts = this.drafts.map((item) =>
+          item.key === provider.key ? provider : item
+        )
+    },
+    addProvider(definition: AuthenticationDefinition) {
+      if (this.locked || !definition.available) return
+      const provider: AuthenticationProviderDraft = {
+        key: crypto.randomUUID(),
+        strategyKey: definition.key,
+        displayName: definition.title,
+        description: '',
+        isEnabled: false,
+        selfRegistration: false,
+        domainWhitelist: [],
+        autoEnrollGroups: [],
+        config: {},
+        secrets: {}
+      }
+      for (const field of definition.fields) {
+        if (field.sensitive) provider.secrets[field.key] = { action: 'keep' }
+        else provider.config[field.key] = field.default
+      }
+      this.drafts.push(provider)
+      this.catalog = false
+      this.selectProvider(provider.key)
+    },
+    removeProvider() {
+      if (
+        !this.selected ||
+        this.locked ||
+        this.selected.key === 'local' ||
+        this.savedProvider(this.selected.key)?.accountCount
+      )
+        return
+      const key = this.selected.key
+      this.drafts = this.drafts.filter((p) => p.key !== key)
+      this.selectProvider('')
+    },
 
+    reviewValue(provider: AuthenticationProviderDraft, key: string): string {
+      if (key === 'isEnabled')
+        return provider.isEnabled ? 'Enabled' : 'Disabled'
+      if (key === 'selfRegistration')
+        return provider.selfRegistration
+          ? 'New accounts allowed'
+          : 'Existing accounts only'
+      if (key === 'domainWhitelist')
+        return provider.domainWhitelist.length
+          ? provider.domainWhitelist.join(', ')
+          : 'Any email domain'
+      if (key === 'autoEnrollGroups')
+        return provider.autoEnrollGroups.length
+          ? provider.autoEnrollGroups
+              .map(
+                (id) =>
+                  this.saved?.groups.find((g) => g.id === id)?.name ??
+                  'Group #' + id
+              )
+              .join(', ')
+          : 'No initial groups'
+      if (key === 'displayName') return provider.displayName
+      return provider.description || 'No purpose specified'
+    },
+    review() {
+      if (this.locked || !this.dirty || !this.saved) return
+      const invalid = this.drafts.find(
+        (p) =>
+          !p.displayName.trim() ||
+          p.displayName.trim().length > 255 ||
+          p.description.length > 1000 ||
+          Object.values(p.secrets).some(
+            (secret) => secret.action === 'replace' && !secret.value
+          )
+      )
+      if (invalid) {
+        this.notice =
+          'Complete the provider name and any replacement credentials before reviewing.'
+        this.attention = true
+        this.selectProvider(invalid.key)
+        return
+      }
+      this.reviewed = this.drafts.map(authenticationDraft)
+      this.reviewFingerprint = this.saved.fingerprint
+      this.reviewedChanges = []
+      this.reviewedSessions = 0
+      for (const [index, p] of this.reviewed.entries()) {
+        const current = this.savedProvider(p.key),
+          fields: string[] = []
+        if (!current) {
+          fields.push(
+            p.isEnabled ? 'Sign-in will be enabled' : 'Starts disabled',
+            p.selfRegistration
+              ? 'New accounts allowed'
+              : 'Existing accounts only'
+          )
+          if (p.selfRegistration)
+            fields.push(
+              'Allowed email domains · ' +
+                this.reviewValue(p, 'domainWhitelist'),
+              'Initial groups · ' + this.reviewValue(p, 'autoEnrollGroups')
+            )
+          for (const [key, secret] of Object.entries(p.secrets))
+            if (secret.action === 'replace')
+              fields.push(
+                this.fieldTitle(p.key, 'config.' + key) + ' · new credential'
+              )
+        } else {
+          for (const key of Object.keys(labels) as Array<
+            keyof AuthenticationProviderDraft | 'order'
+          >) {
+            if (key === 'order') {
+              if (
+                this.saved.providers.findIndex((row) => row.key === p.key) !==
+                index
+              )
+                fields.push(labels[key]! + ' · position ' + (index + 1))
+            } else if (JSON.stringify(current[key]) !== JSON.stringify(p[key]))
+              fields.push(
+                labels[key] +
+                  ' · ' +
+                  this.reviewValue(current, key) +
+                  ' → ' +
+                  this.reviewValue(p, key)
+              )
+          }
+          for (const [key, value] of Object.entries(p.config))
+            if (JSON.stringify(current.config[key]) !== JSON.stringify(value))
+              fields.push(this.fieldTitle(p.key, 'config.' + key))
+          for (const [key, secret] of Object.entries(p.secrets))
+            if (secret.action !== 'keep')
+              fields.push(
+                this.fieldTitle(p.key, 'config.' + key) +
+                  ' · ' +
+                  (secret.action === 'clear'
+                    ? 'clear credential'
+                    : 'replace credential')
+              )
+          if (
+            current.isEnabled !== p.isEnabled ||
+            JSON.stringify(current.config) !== JSON.stringify(p.config) ||
+            Object.values(p.secrets).some((s) => s.action !== 'keep')
+          )
+            this.reviewedSessions += current.accountCount
+        }
+        if (fields.length)
+          this.reviewedChanges.push({
+            key: p.key,
+            name: p.displayName,
+            description: current ? 'Update saved provider' : 'Create provider',
+            fields
+          })
+      }
+      for (const p of this.saved.providers)
+        if (!this.reviewed.some((row) => row.key === p.key))
+          this.reviewedChanges.push({
+            key: p.key,
+            name: p.displayName,
+            description: 'Remove provider',
+            fields: []
+          })
+      this.reason = ''
+      this.saveError = ''
+      this.conflict = false
+      this.notice = ''
+      this.reviewing = true
+    },
+    async confirm() {
+      if (
+        !this.reviewing ||
+        this.busy ||
+        this.loading ||
+        this.initializing ||
+        this.conflict ||
+        this.stale ||
+        this.reason.trim().length < 3
+      )
+        return
+      this.busy = true
+      this.saveError = ''
+      try {
+        const result = await saveAuthenticationWorkspace(
+          this.reviewed,
+          this.reason.trim(),
+          this.reviewFingerprint
+        )
+        if (this.disposed) return
+        this.reviewing = false
+        this.reason = ''
+        const providers = this.reviewed.map((p) => ({
+          ...this.savedProvider(p.key),
+          ...authenticationDraft(p),
+          accountCount: this.savedProvider(p.key)?.accountCount ?? 0,
+          activeAccountCount:
+            this.savedProvider(p.key)?.activeAccountCount ?? 0,
+          configuredSecrets: Object.entries(p.secrets)
+            .filter(
+              ([key, secret]) =>
+                secret.action === 'replace' ||
+                (secret.action === 'keep' &&
+                  this.savedProvider(p.key)?.configuredSecrets.includes(key))
+            )
+            .map(([key]) => key),
+          secrets: Object.fromEntries(
+            Object.keys(p.secrets).map((key) => [
+              key,
+              { action: 'keep' as const }
+            ])
+          ),
+          runtime: { state: 'pending' as const, checkedAt: null, revision: '' }
+        }))
+        this.saved = { ...this.saved!, providers }
+        this.drafts = providers.map(authenticationDraft)
+        this.reviewed = []
+        this.notice =
+          'Sign-in policy saved.' +
+          (result.sessionsEnded
+            ? ` Existing sessions ended for ${result.sessionsEnded} account(s).`
+            : '') +
+          (result.activation === 'needs-attention'
+            ? ' Some sign-in methods need initialization attention.'
+            : '')
+        this.attention = result.activation === 'needs-attention'
+        if (result.currentSessionEnded) {
+          window.location.assign('/login')
+          return
+        }
+        this.busy = false
+        this.stale = true
+        await this.load()
+      } catch (error) {
+        if (!this.disposed) {
+          const status =
+            error && typeof error === 'object'
+              ? Reflect.get(error, 'status')
+              : 0
+          this.conflict = !status || [401, 403, 409].includes(status)
+          if (this.conflict) {
+            this.stale = true
+            this.notice =
+              'Reload the saved policy before reviewing another change. Your draft is retained.'
+            this.attention = true
+          }
+          this.saveError =
+            getErrorMessage(error) +
+            (!status
+              ? ' The outcome is unconfirmed. Reload before repeating this save.'
+              : '')
+        }
+      } finally {
+        if (!this.disposed) this.busy = false
+      }
+    },
+    async reloadReview() {
+      if (
+        this.busy ||
+        !window.confirm(
+          'Discard this draft and load the current sign-in policy?'
+        )
+      )
+        return
+      this.reviewing = false
+      await this.load()
+    },
+    async initialize() {
+      if (this.dirty || this.locked || !this.saved) return
+      this.initializing = true
+      try {
+        const result = await retryAuthenticationInitialization(
+          this.saved.fingerprint
+        )
+        this.notice =
+          result.activation === 'applied'
+            ? 'Enabled sign-in methods initialized.'
+            : 'Initialization needs attention. Review the provider states and server diagnostics.'
+        this.attention = result.activation !== 'applied'
+        await this.load()
+      } catch (error) {
+        this.notice = getErrorMessage(error)
+        this.attention = true
+      } finally {
+        this.initializing = false
+      }
+    },
+    canLeave(): boolean {
+      return (
+        !this.busy &&
+        !this.initializing &&
+        ((!this.dirty && !(this.reviewing && this.reason)) ||
+          window.confirm('Discard unsaved sign-in policy changes?'))
+      )
+    },
+    beforeUnload(event: BeforeUnloadEvent) {
+      if (
+        this.busy ||
+        this.initializing ||
+        this.dirty ||
+        (this.reviewing && this.reason)
+      ) {
+        event.preventDefault()
+        event.returnValue = ''
+      }
+    }
+  }
 }
 </script>
-
-<style scoped>
-.admin-providerlogo {
-  display: flex;
-  flex: 0 0 96px;
-  align-items: center;
-  justify-content: center;
-  width: 96px;
-  height: 48px;
-  overflow: hidden;
-}
-
-.admin-providerlogo img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-</style>
+<style lang="scss" src="./authentication-workspace.scss"></style>

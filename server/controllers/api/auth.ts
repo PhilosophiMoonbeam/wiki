@@ -93,18 +93,44 @@ const requireSystemAccess = (req: Request, res: Response): boolean => {
 
 const workspaceError = (res: Response, error: unknown) => {
   const status = errorStatus(error)
-  const expected = status && [400,403,404,409].includes(status)
-  return res.status(expected ? status : 500).json({ error: expected && error instanceof Error ? error.message : 'Authentication administration is temporarily unavailable.' })
+  const expected = status && [400, 403, 404, 409].includes(status)
+  return res
+    .status(expected ? status : 500)
+    .json({ error: expected && error instanceof Error ? error.message : 'Authentication administration is temporarily unavailable.' })
 }
 router.get('/admin/workspace', async (req, res) => {
-  if (!requireSystemAccess(req,res)) return
-  res.set('Cache-Control','no-store')
-  try { res.json(await getAuthenticationAdministrationStore().inspect(req.user)) } catch (error) { workspaceError(res,error) }
+  if (!requireSystemAccess(req, res)) return
+  res.set('Cache-Control', 'no-store')
+  try {
+    res.json(await getAuthenticationAdministrationStore().inspect(req.user))
+  } catch (error) {
+    workspaceError(res, error)
+  }
 })
 router.put('/admin/workspace', async (req, res) => {
-  if (!requireSystemAccess(req,res)) return
-  res.set('Cache-Control','no-store')
-  try { res.json(await getAuthenticationAdministrationStore().save(req.user, { providers:objectValue(req.body,'providers'),fingerprint:objectValue(req.body,'fingerprint'),reason:objectValue(req.body,'reason') })) } catch (error) { workspaceError(res,error) }
+  if (!requireSystemAccess(req, res)) return
+  res.set('Cache-Control', 'no-store')
+  try {
+    res.json(
+      await getAuthenticationAdministrationStore().save(req.user, {
+        providers: objectValue(req.body, 'providers'),
+        fingerprint: objectValue(req.body, 'fingerprint'),
+        reason: objectValue(req.body, 'reason')
+      })
+    )
+  } catch (error) {
+    workspaceError(res, error)
+  }
+})
+
+router.post('/admin/workspace/activate', async (req, res) => {
+  if (!requireSystemAccess(req, res)) return
+  res.set('Cache-Control', 'no-store')
+  try {
+    res.json(await getAuthenticationAdministrationStore().initialize(req.user, objectValue(req.body, 'fingerprint')))
+  } catch (error) {
+    workspaceError(res, error)
+  }
 })
 
 router.get('/admin/strategies', (req, res, next) => {
@@ -135,12 +161,10 @@ router.get('/strategies', async (req, res, next) => {
 router.post('/strategies', async (req, res) => {
   if (!requireSystemAccess(req, res)) return
   try {
-    await authenticationOperations.updateStrategies(objectValue(req.body, 'strategies'))
+    await authenticationOperations.updateStrategies(objectValue(req.body, 'strategies'), req.user)
     res.json({ message: 'Strategies updated successfully' })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    const status = objectValue(err, 'name') === 'INVALID_AUTHENTICATION_STRATEGIES' ? (errorStatus(err) ?? 500) : 500
-    res.status(status).json({ error: message || 'Authentication strategies update failed' })
+    workspaceError(res, err)
   }
 })
 
@@ -155,7 +179,10 @@ router.get('/providers', async (req, res, next) => {
   }
 })
 
-router.use('/api', (_req, res, next) => { res.set('Cache-Control', 'private, no-store'); next() })
+router.use('/api', (_req, res, next) => {
+  res.set('Cache-Control', 'private, no-store')
+  next()
+})
 
 router.get('/api', async (req, res, next) => {
   if (!requireAdminApiAccess(req, res)) return
@@ -169,7 +196,11 @@ router.get('/api', async (req, res, next) => {
 router.get('/api/connections', async (req, res, next) => {
   if (!requireAdminApiAccess(req, res)) return
   res.set('Cache-Control', 'private, no-store')
-  try { res.json(await describeApiConnections()) } catch (error) { next(error) }
+  try {
+    res.json(await describeApiConnections())
+  } catch (error) {
+    next(error)
+  }
 })
 
 router.post('/api/state', async (req, res) => {

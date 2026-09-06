@@ -1,3 +1,4 @@
+import { loadEnrollmentPolicy } from '../helpers/authentication-provisioning.ts'
 /* global WIKI */
 
 import { randomUUID } from 'node:crypto'
@@ -551,6 +552,10 @@ export default class User extends Model {
       }
 
       user = await wiki.models.knex.transaction(async trx => {
+        const admission = await loadEnrollmentPolicy(trx, providerKey)
+        if (!admission.isEnabled || !admission.selfRegistration) throw new wiki.Error.AuthRegistrationDisabled()
+        if (admission.domainWhitelist.length && !admission.domainWhitelist.includes(primaryEmail.split('@').at(-1)!.toLowerCase()))
+          throw new wiki.Error.AuthRegistrationDomainUnauthorized()
         const newUser = await wiki.models.users.query(trx).insertAndFetch({
           providerKey: providerKey,
           providerId: _.toString(profile.id),
@@ -566,8 +571,8 @@ export default class User extends Model {
           isVerified: true
         })
 
-        if (provider.autoEnrollGroups.length > 0) {
-          await newUser.$relatedQuery<Group>('groups', trx).relate(provider.autoEnrollGroups)
+        if (admission.autoEnrollGroups.length > 0) {
+          await newUser.$relatedQuery<Group>('groups', trx).relate(admission.autoEnrollGroups)
         }
         return newUser
       })
@@ -732,7 +737,10 @@ export default class User extends Model {
   /**
    * Generate a new token for a user
    */
-  static async refreshToken(user: number | User, options: { audience?: NonNullable<SignOptions['audience']>; expectedAuthVersion?: number } = {}): Promise<{ token: string; user: User }> {
+  static async refreshToken(
+    user: number | User,
+    options: { audience?: NonNullable<SignOptions['audience']>; expectedAuthVersion?: number } = {}
+  ): Promise<{ token: string; user: User }> {
     let currentUser: User
     if (typeof user === 'number') {
       if (!Number.isSafeInteger(user)) {
@@ -762,8 +770,12 @@ export default class User extends Model {
       }
     }
 
+    const signInProvider = await wiki.models.authentication.getStrategy(currentUser.providerKey)
+    if (!signInProvider?.isEnabled) throw new wiki.Error.AuthLoginFailed()
+
     const authVersion = sessionVersion(currentUser.authVersion)
-    if (authVersion === null || (options.expectedAuthVersion !== undefined && options.expectedAuthVersion !== authVersion)) throw new wiki.Error.AuthLoginFailed()
+    if (authVersion === null || (options.expectedAuthVersion !== undefined && options.expectedAuthVersion !== authVersion))
+      throw new wiki.Error.AuthLoginFailed()
 
     // Update Last Login Date
     // -> Bypass Objection.js to avoid updating the updatedAt field
@@ -959,7 +971,8 @@ export default class User extends Model {
     if (!usr) {
       throw new wiki.Error.UserNotFound()
     }
-    if (expectedEmail !== undefined && usr.email !== expectedEmail) throw new wiki.Error.InputInvalid('The account email changed. Reload before sending a welcome message.')
+    if (expectedEmail !== undefined && usr.email !== expectedEmail)
+      throw new wiki.Error.InputInvalid('The account email changed. Reload before sending a welcome message.')
     await wiki.mail.send({
       template: 'accountWelcome',
       to: usr.email,
@@ -1275,26 +1288,22 @@ export default class User extends Model {
         throw new wiki.Error.InputInvalid(validationError)
       }
 
-      // Check if email domain is whitelisted
-      const domainWhitelist = Array.isArray(localStrg.domainWhitelist) ? [] : (localStrg.domainWhitelist.v ?? [])
-      if (domainWhitelist.length > 0 && !bypassChecks) {
-        const emailDomain = _.last(email.split('@'))
-        if (!_.includes(domainWhitelist, emailDomain)) {
-          throw new wiki.Error.AuthRegistrationDomainUnauthorized()
-        }
-      }
       const registration = await wiki.models.knex.transaction(async trx => {
+        const admission = await loadEnrollmentPolicy(trx, 'local')
+        if (!admission.isEnabled || (!admission.selfRegistration && !bypassChecks)) throw new wiki.Error.AuthRegistrationDisabled()
+        if (!bypassChecks && admission.domainWhitelist.length && !admission.domainWhitelist.includes(email.split('@').at(-1)!))
+          throw new wiki.Error.AuthRegistrationDomainUnauthorized()
         const usr = await wiki.models.users.query(trx).findOne({ email, providerKey: 'local' })
         if (usr) {
           throw new wiki.Error.AuthAccountAlreadyExists()
         }
 
         const newUsr = await wiki.models.users.query(trx).insert({
-          provider: 'local',
+          providerKey: 'local',
           email,
           name,
           password,
-          locale: 'en',
+          localeCode: wiki.config.lang.code,
           defaultEditor: 'markdown',
           ...initialUserPresentation(),
           tfaIsActive: false,
@@ -1302,7 +1311,7 @@ export default class User extends Model {
           isActive: true,
           isVerified: false
         })
-        const autoEnrollGroups = Array.isArray(localStrg.autoEnrollGroups) ? [] : (localStrg.autoEnrollGroups.v ?? [])
+        const autoEnrollGroups = admission.autoEnrollGroups
         if (autoEnrollGroups.length > 0) {
           await newUsr.$relatedQuery<Group>('groups', trx).relate(autoEnrollGroups)
         }

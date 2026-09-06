@@ -9,6 +9,13 @@ class RelatedModelStub {}
 mock.module('objection', () => ({ Model: ModelStub }))
 mock.module('../../models/groups.ts', () => ({ default: RelatedModelStub }))
 mock.module('../../models/authentication.ts', () => ({ default: RelatedModelStub }))
+const enrollmentPolicy = mock(async (_tx: unknown, key: string) => ({
+  isEnabled: true,
+  selfRegistration: true,
+  domainWhitelist: [] as string[],
+  autoEnrollGroups: key === 'local' ? [7] : [9]
+}))
+mock.module('../../helpers/authentication-provisioning.ts', () => ({ loadEnrollmentPolicy: enrollmentPolicy }))
 mock.module('../../models/editors.ts', () => ({ default: RelatedModelStub }))
 mock.module('../../models/locales.ts', () => ({ default: RelatedModelStub }))
 const signJwt = mock((_payload: Record<string, unknown>) => 'signed-jwt')
@@ -376,7 +383,11 @@ const installAggregateDatabase = (database: AggregateDatabase): void => {
       })
     },
     knex: {
-      raw: (sql: string, bindings: string[]) => { expect(sql).toBe('?? + 1'); expect(bindings).toEqual(['authVersion']); return { accountVersionIncrement: true } },
+      raw: (sql: string, bindings: string[]) => {
+        expect(sql).toBe('?? + 1')
+        expect(bindings).toEqual(['authVersion'])
+        return { accountVersionIncrement: true }
+      },
       transaction: async <T>(operation: (trx: AggregateTransaction) => Promise<T>): Promise<T> => {
         const trx = { state: structuredClone(database.state) }
         const result = await operation(trx)
@@ -569,6 +580,7 @@ describe('User aggregate transactions', () => {
     await create()
 
     expect(database.state.users).toHaveLength(1)
+    if (_label === 'local self-registration') expect(database.state.users[0]).toMatchObject({ providerKey: 'local', localeCode: 'en' })
     expect(database.state.memberships.map(membership => membership.groupId)).toEqual(expectedGroups)
     expect(database.commits).toBe(1)
     expect(database.state.users[0]).toMatchObject({
@@ -618,6 +630,14 @@ describe('User aggregate transactions', () => {
 })
 
 describe('User.refreshToken', () => {
+  test('does not issue a fresh token after the sign-in provider has been disabled', async () => {
+    wiki.models = { authentication: { getStrategy: async () => ({ isEnabled: false }) } }
+    const user = Object.assign(new User(), { id: 10, providerKey: 'oidc', groups: [] })
+    const previousCalls = signJwt.mock.calls.length
+    await expect(User.refreshToken(user)).rejects.toBeInstanceOf(Error)
+    expect(signJwt.mock.calls.length).toBe(previousCalls)
+  })
+
   test('issues the font-family JWT claim without a removed gutter claim', async () => {
     const updateLastLogin = mock(async () => 1)
     const knex = (_table: string) => ({
@@ -630,7 +650,7 @@ describe('User.refreshToken', () => {
         sessionSecret: 'secret'
       }
     })
-    wiki.models = { knex }
+    wiki.models = { knex, authentication: { getStrategy: async () => ({ isEnabled: true }) } }
     const user = Object.assign(new User(), {
       id: 10,
       email: 'user@example.test',

@@ -1,6 +1,7 @@
 import knexModule, { type Knex } from 'knex'
 import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from '../bun-test.mts'
 import { createAuthenticationAdministrationStore, normalizeAuthenticationDomains } from '../../operations/authentication-administration.ts'
+import { createProviderGroupSynchronizer, loadEnrollmentPolicy } from '../../helpers/authentication-provisioning.ts'
 import { up, down } from '../../db/migrations/tsepistle-000019-authentication-administration.ts'
 import type { AuthenticationDefinition, AuthenticationProviderDraft } from '../../../shared/authentication-policy.ts'
 const database = process.env.WIKI_TEST_POSTGRES_DATABASE ?? '',
@@ -68,6 +69,7 @@ suite('PostgreSQL reviewed authentication administration', () => {
       t.integer('id').primary()
       t.string('providerKey').references('authentication.key')
       t.boolean('isActive').defaultTo(true)
+      t.boolean('isSystem').defaultTo(false)
       t.integer('authVersion').defaultTo(0)
       t.string('adminRevision').defaultTo('')
       t.timestamp('sessionsRevokedAt')
@@ -86,6 +88,15 @@ suite('PostgreSQL reviewed authentication administration', () => {
       t.jsonb('details')
       t.timestamp('createdAt')
     })
+    await db.schema.createTable('groupAdministrationEvents', t => {
+      t.increments('id')
+      t.integer('groupId')
+      t.integer('actorId')
+      t.string('action')
+      t.text('reason')
+      t.jsonb('details')
+      t.timestamp('createdAt')
+    })
     await up(db)
     store = createAuthenticationAdministrationStore({
       db,
@@ -96,12 +107,28 @@ suite('PostgreSQL reviewed authentication administration', () => {
   })
   afterAll(async () => {
     if (!db) return
-    for (const table of ['authenticationAdministrationEvents', 'userAdministrationEvents', 'userGroups', 'users', 'groups', 'authentication'])
+    for (const table of [
+      'authenticationAdministrationEvents',
+      'groupAdministrationEvents',
+      'userAdministrationEvents',
+      'userGroups',
+      'users',
+      'groups',
+      'authentication'
+    ])
       await db.schema.dropTableIfExists(table)
     await db.destroy()
   })
   beforeEach(async () => {
-    for (const table of ['authenticationAdministrationEvents', 'userAdministrationEvents', 'userGroups', 'users', 'groups', 'authentication'])
+    for (const table of [
+      'authenticationAdministrationEvents',
+      'groupAdministrationEvents',
+      'userAdministrationEvents',
+      'userGroups',
+      'users',
+      'groups',
+      'authentication'
+    ])
       await db(table).delete()
     await db('authentication').insert(
       [draft(), draft('org')].map((p, order) => ({
@@ -301,6 +328,89 @@ suite('PostgreSQL reviewed authentication administration', () => {
     expect(result.activation).toBe('needs-attention')
     expect(onCommitted).toHaveBeenCalledWith([3])
     expect((await db('authentication').where('key', 'org').first()).isEnabled).toBe(false)
+  })
+  it('retries saved initialization without policy writes and rejects stale or unauthorized requests', async () => {
+    const onCommitted = vi.fn().mockResolvedValue(true),
+      runtime = createAuthenticationAdministrationStore({ db, reviewKey: 'fixture-review-key', definitions: () => definitions, host: () => '', onCommitted }),
+      fingerprint = (await runtime.inspect(admin)).fingerprint
+    await expect(runtime.initialize({ id: 4, authVersion: 0 } as never, fingerprint)).rejects.toMatchObject({ status: 403 })
+    await expect(runtime.initialize(admin, 'stale')).rejects.toMatchObject({ status: 409 })
+    expect(onCommitted).not.toHaveBeenCalled()
+    expect(await runtime.initialize(admin, fingerprint)).toEqual({ sessionsEnded: 0, currentSessionEnded: false, activation: 'applied' })
+    expect(onCommitted).toHaveBeenCalledWith([])
+    onCommitted.mockRejectedValue(new Error('Provider unavailable'))
+    expect((await runtime.initialize(admin, fingerprint)).activation).toBe('needs-attention')
+    expect(await db('authenticationAdministrationEvents')).toHaveLength(0)
+    expect((await db('users').where('id', 3).first()).authVersion).toBe(0)
+  })
+  it('reads both enrollment representations under the current provider and group locks', async () => {
+    for (const wrapped of [true, false]) {
+      await db('authentication')
+        .where('key', 'org')
+        .update({
+          domainWhitelist: JSON.stringify(wrapped ? { v: ['example.com'] } : ['example.com']),
+          autoEnrollGroups: JSON.stringify(wrapped ? { v: [3] } : [3])
+        })
+      expect(await db.transaction(tx => loadEnrollmentPolicy(tx, 'org'))).toMatchObject({ domainWhitelist: ['example.com'], autoEnrollGroups: [3] })
+    }
+    await db('authentication')
+      .where('key', 'org')
+      .update({ autoEnrollGroups: JSON.stringify({ v: [999] }) })
+    await expect(Promise.resolve(db.transaction(tx => loadEnrollmentPolicy(tx, 'org')))).rejects.toThrow('unavailable group')
+    await db('authentication')
+      .where('key', 'org')
+      .update({ autoEnrollGroups: JSON.stringify({ v: [] }), domainWhitelist: JSON.stringify({ invalid: true }) })
+    await expect(Promise.resolve(db.transaction(tx => loadEnrollmentPolicy(tx, 'org')))).rejects.toThrow('policy is invalid')
+  })
+  it('synchronizes directory memberships, versions and history once, without a cached group dependency', async () => {
+    await db('authentication')
+      .where('key', 'org')
+      .update({ config: JSON.stringify({ mapGroups: true }) })
+    const committed = vi.fn().mockResolvedValue(undefined),
+      sync = createProviderGroupSynchronizer(db, committed)
+    expect(await sync({ userId: 3, providerKey: 'org', groupNames: ['People managers', 'Unknown claim'] })).toMatchObject({ authVersion: 1, changed: true })
+    expect((await db('userGroups').where('userId', 3)).map(row => row.groupId)).toEqual([4])
+    expect(committed).toHaveBeenCalledWith(3)
+    const event = await db('userAdministrationEvents').first()
+    expect(event.action).toBe('directory-groups-synchronized')
+    expect(event.details).toMatchObject({ groupsAdded: [4], groupsRemoved: [3] })
+    expect((await db('groupAdministrationEvents').orderBy('groupId')).map(event => [event.groupId, event.action])).toEqual([
+      [3, 'members-removed'],
+      [4, 'members-added']
+    ])
+    expect(await sync({ userId: 3, providerKey: 'org', groupNames: ['People managers'] })).toMatchObject({ authVersion: 1, changed: false })
+    expect(committed).toHaveBeenCalledOnce()
+    await sync({ userId: 3, providerKey: 'org', groupNames: [] })
+    expect(await db('userGroups').where('userId', 3)).toHaveLength(0)
+  })
+  it('rolls directory membership and session changes back when group history cannot be recorded', async () => {
+    await db('authentication')
+      .where('key', 'org')
+      .update({ config: JSON.stringify({ mapGroups: true }) })
+    await db.raw(`CREATE FUNCTION reject_mapping_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'mapping history unavailable'; END $$`)
+    await db.raw('CREATE TRIGGER reject_mapping_history BEFORE INSERT ON "groupAdministrationEvents" FOR EACH ROW EXECUTE FUNCTION reject_mapping_history()')
+    const committed = vi.fn(),
+      sync = createProviderGroupSynchronizer(db, committed)
+    try {
+      await expect(sync({ userId: 3, providerKey: 'org', groupNames: ['People managers'] })).rejects.toThrow('mapping history unavailable')
+      expect((await db('userGroups').where('userId', 3)).map(row => row.groupId)).toEqual([3])
+      expect((await db('users').where('id', 3).first()).authVersion).toBe(0)
+      expect(await db('userAdministrationEvents')).toHaveLength(0)
+      expect(committed).not.toHaveBeenCalled()
+    } finally {
+      await db.raw('DROP TRIGGER reject_mapping_history ON "groupAdministrationEvents"')
+      await db.raw('DROP FUNCTION reject_mapping_history()')
+    }
+  })
+  it('uses current provider state and protects reserved or unrelated accounts during directory mapping', async () => {
+    const sync = createProviderGroupSynchronizer(db)
+    expect(await sync({ userId: 3, providerKey: 'org', groupNames: [] })).toMatchObject({ changed: false })
+    for (const userId of [1, 2, 4]) await expect(sync({ userId, providerKey: 'org', groupNames: [] })).rejects.toBeInstanceOf(Error)
+    await db('authentication')
+      .where('key', 'org')
+      .update({ isEnabled: false, config: JSON.stringify({ mapGroups: true }) })
+    await expect(sync({ userId: 3, providerKey: 'org', groupNames: [] })).rejects.toThrow('unavailable')
+    expect((await db('userGroups').where('userId', 3)).map(row => row.groupId)).toEqual([3])
   })
   it('guards migration rollback after recorded changes', async () => {
     await down(db)

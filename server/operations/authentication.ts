@@ -4,10 +4,13 @@ import type { Knex } from 'knex'
 import _ from 'lodash'
 
 import configuration from './configuration.ts'
+import { getAuthenticationAdministrationStore } from './authentication-administration.ts'
+import type { AuthenticationProviderDraft, AuthenticationValue } from '../../shared/authentication-policy.ts'
+import type { PagePrincipal } from '../helpers/page-access.ts'
 import errors from './errors.ts'
 import { createAuthRateLimiter, type AuthRateLimiter } from '../helpers/auth-rate-limiter.ts'
 
-const { parseConfig, preserveSensitiveConfig, serializeConfig } = configuration
+const { parseConfig, serializeConfig } = configuration
 const { ApplicationError } = errors
 
 interface ConfigEntry {
@@ -190,52 +193,50 @@ const listProviderOptions = async () =>
     isEnabled: Boolean(strategy.isEnabled)
   }))
 
-const updateStrategies = async (strategies: unknown): Promise<void> => {
+const updateStrategies = async (strategies: unknown, requester: PagePrincipal): Promise<void> => {
   if (!Array.isArray(strategies) || strategies.some(strategy => !validStrategy(strategy))) {
     throw new ApplicationError('strategies must be an array of valid authentication strategies', { code: 'INVALID_AUTHENTICATION_STRATEGIES' })
   }
-  const parsedUpdates = strategies.map(strategy => ({
-    ...strategy,
-    config: parseConfig(strategy.config, {
-      errorMessage: 'strategies must be an array of valid authentication strategies',
-      code: 'INVALID_AUTHENTICATION_STRATEGIES'
-    })
-  }))
-  const authenticationModel = getAuthenticationModel()
-  const previousStrategies = await authenticationModel.getStrategies()
-  const updates = parsedUpdates.map(strategy => {
-    const definition = _.find(getDefinitions(), ['key', strategy.strategyKey])
-    const previous = _.find(previousStrategies, ['key', strategy.key])
-    const current = previous && _.isPlainObject(previous.config) ? (previous.config as Record<string, unknown>) : {}
-    return {
+  const parsed = strategies
+    .map(strategy => ({
       ...strategy,
-      config: preserveSensitiveConfig({ config: strategy.config, current, definition: definition ?? {} })
+      config: parseConfig(strategy.config, {
+        errorMessage: 'strategies must be an array of valid authentication strategies',
+        code: 'INVALID_AUTHENTICATION_STRATEGIES'
+      })
+    }))
+    .sort((a, b) => a.order - b.order)
+  const store = getAuthenticationAdministrationStore(),
+    saved = await store.inspect(requester)
+  const providers: AuthenticationProviderDraft[] = parsed.map(strategy => {
+    const current = saved.providers.find(provider => provider.key === strategy.key),
+      definition = saved.definitions.find(item => item.key === strategy.strategyKey)
+    const config: Record<string, AuthenticationValue> = {},
+      secrets: AuthenticationProviderDraft['secrets'] = {}
+    for (const [key, value] of Object.entries(strategy.config)) {
+      if (definition?.fields.find(field => field.key === key)?.sensitive) {
+        if (value === '********') secrets[key] = { action: 'keep' }
+        else if (value === '') secrets[key] = { action: 'clear' }
+        else if (typeof value === 'string') secrets[key] = { action: 'replace', value }
+        else throw new ApplicationError('Enter a valid credential value.')
+      } else config[key] = value as AuthenticationValue
     }
-  })
-  for (const strategy of updates) {
-    const patch = {
+    return {
       key: strategy.key,
       strategyKey: strategy.strategyKey,
       displayName: strategy.displayName,
-      order: strategy.order,
+      description: current?.description ?? '',
       isEnabled: strategy.isEnabled,
-      config: strategy.config,
       selfRegistration: strategy.selfRegistration,
-      domainWhitelist: { v: strategy.domainWhitelist },
-      autoEnrollGroups: { v: strategy.autoEnrollGroups }
+      domainWhitelist: strategy.domainWhitelist,
+      autoEnrollGroups: strategy.autoEnrollGroups,
+      config,
+      secrets
     }
-    if (_.some(previousStrategies, ['key', strategy.key])) await authenticationModel.query().patch(patch).where('key', strategy.key)
-    else await authenticationModel.query().insert(patch)
-  }
-  for (const strategy of _.differenceBy(previousStrategies, updates, 'key')) {
-    const users = await getUserModel().query().count('* as total').where({ providerKey: strategy.key }).first()
-    if (_.toSafeInteger(users.total) > 0) {
-      throw new ApplicationError(`Cannot delete ${strategy.displayName} as 1 or more users are still using it.`, { code: 'AUTHENTICATION_STRATEGY_IN_USE' })
-    }
-    await authenticationModel.query().delete().where('key', strategy.key)
-  }
-  await getAuth().activateStrategies()
-  getOutboundEvents().emit('reloadAuthStrategies')
+  })
+  // This compatibility transport has no client review token. Obtain its version
+  // at the boundary; current authority and atomic persistence still apply.
+  await store.save(requester, { providers, fingerprint: saved.fingerprint, reason: 'Updated through the legacy authentication configuration API' })
 }
 
 const login = (args: unknown, context: unknown): unknown => getUserModel().login(args, context)

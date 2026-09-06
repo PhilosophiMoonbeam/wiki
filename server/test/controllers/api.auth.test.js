@@ -1,3 +1,5 @@
+const administrationStore = vi.hoisted(() => ({ inspect: vi.fn(), save: vi.fn() }))
+vi.mockModule('../../operations/authentication-administration.ts', import.meta.url, () => ({ getAuthenticationAdministrationStore: () => administrationStore }))
 const authRateLimiter = vi.hoisted(() => ({
   admit: vi.fn().mockResolvedValue(null),
   middleware: vi.fn((req, res, next) => next()),
@@ -43,6 +45,8 @@ class BruteTooManyAttempts extends Error {
 describe('controllers/api auth endpoints', () => {
   beforeEach(() => {
     vi.resetModules()
+    administrationStore.save.mockReset().mockResolvedValue({ sessionsEnded: 0, currentSessionEnded: false, activation: 'applied' })
+    administrationStore.inspect.mockReset().mockImplementation(async () => ({ fingerprint: 'review', providers: [{ key: 'local', description: 'Local recovery' }, { key: 'github', description: 'Organization sign-in' }], definitions: global.WIKI.data.authentication.map(definition => ({ key: definition.key, fields: Object.entries(definition.props).map(([key, value]) => ({ key, sensitive: value.sensitive === true })) })) }))
     express.__router.get.mockClear()
     express.__router.post.mockClear()
     authRateLimiter.reset.mockClear()
@@ -438,34 +442,15 @@ describe('controllers/api auth endpoints', () => {
     await updateStrategies(req, res)
 
     expect(global.WIKI.auth.checkAccess).toHaveBeenCalledWith({ permissions: ['manage:system'] }, ['manage:system'])
-    const queries = global.WIKI.models.authentication.query.mock.results.map(result => result.value)
-    expect(queries[0].patch).toHaveBeenCalledWith({
-      key: 'local',
-      strategyKey: 'local',
-      displayName: 'Local Login',
-      order: 0,
-      isEnabled: true,
-      config: { usernameFormat: 'email' },
-      selfRegistration: false,
-      domainWhitelist: { v: ['example.test'] },
-      autoEnrollGroups: { v: [1, 2] }
+    expect(administrationStore.inspect).toHaveBeenCalledWith(req.user)
+    expect(administrationStore.save).toHaveBeenCalledWith(req.user, {
+      fingerprint: 'review', reason: 'Updated through the legacy authentication configuration API',
+      providers: [
+        { key: 'local', strategyKey: 'local', displayName: 'Local Login', description: 'Local recovery', isEnabled: true, selfRegistration: false, domainWhitelist: ['example.test'], autoEnrollGroups: [1,2], config: { usernameFormat: 'email' }, secrets: {} },
+        { key: 'oidc', strategyKey: 'oauth2', displayName: 'OIDC', description: '', isEnabled: true, selfRegistration: true, domainWhitelist: [], autoEnrollGroups: [], config: { clientId: 'abc' }, secrets: {} }
+      ]
     })
-    expect(queries[0].patch.mock.results[0].value.where).toHaveBeenCalledWith('key', 'local')
-    expect(queries[1].insert).toHaveBeenCalledWith({
-      key: 'oidc',
-      strategyKey: 'oauth2',
-      displayName: 'OIDC',
-      order: 1,
-      isEnabled: true,
-      config: { clientId: 'abc' },
-      selfRegistration: true,
-      domainWhitelist: { v: [] },
-      autoEnrollGroups: { v: [] }
-    })
-    expect(queries[2].delete).toHaveBeenCalled()
-    expect(queries[2].delete.mock.results[0].value.where).toHaveBeenCalledWith('key', 'github')
-    expect(global.WIKI.auth.activateStrategies).toHaveBeenCalledTimes(1)
-    expect(global.WIKI.events.outbound.emit).toHaveBeenCalledWith('reloadAuthStrategies')
+    expect(global.WIKI.models.authentication.query).not.toHaveBeenCalled()
     expect(res.json).toHaveBeenCalledWith({ message: 'Strategies updated successfully' })
   })
 
@@ -491,11 +476,8 @@ describe('controllers/api auth endpoints', () => {
     }
     await updateStrategies({ user: { permissions: ['manage:system'] }, body }, res)
 
-    const githubQuery = global.WIKI.models.authentication.query.mock.results[1].value
-    expect(githubQuery.patch).toHaveBeenCalledWith(expect.objectContaining({
-      key: 'github',
-      config: { clientId: 'abc123', clientSharedKey: 'shh' }
-    }))
+    expect(administrationStore.save.mock.calls[0][1].providers[1]).toMatchObject({ key: 'github', config: { clientId: 'abc123' }, secrets: { clientSharedKey: { action: 'keep' } } })
+
   })
 
   it('returns 403 for unauthorized authentication strategy updates', async () => {
@@ -530,13 +512,7 @@ describe('controllers/api auth endpoints', () => {
   })
 
   it('returns JSON errors when a removed authentication strategy still has users', async () => {
-    global.WIKI.models.users.query.mockImplementationOnce(() => ({
-      count: vi.fn(() => ({
-        where: vi.fn(() => ({
-          first: vi.fn().mockResolvedValue({ total: '1' })
-        }))
-      }))
-    }))
+    administrationStore.save.mockRejectedValue(Object.assign(new Error('GitHub Login still has accounts.'), { status: 409 }))
     const { updateStrategies } = await loadHandlers()
     const req = {
       user: { permissions: ['manage:system'] },
@@ -560,8 +536,8 @@ describe('controllers/api auth endpoints', () => {
 
     await updateStrategies(req, res)
 
-    expect(res.status).toHaveBeenCalledWith(500)
-    expect(res.json).toHaveBeenCalledWith({ error: 'Cannot delete GitHub Login as 1 or more users are still using it.' })
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(res.json).toHaveBeenCalledWith({ error: 'GitHub Login still has accounts.' })
     expect(global.WIKI.auth.activateStrategies).not.toHaveBeenCalled()
   })
 
