@@ -39,4 +39,12 @@ describe('rendering workspace draft and asynchronous lifecycle', () => {
   it('cannot re-render while a settings draft is unsaved', async () => {
     const { state, transport } = arrange(); await state.reload(); state.current.config.option = true; state.output = { page: { id: 7 } }; await state.rerender(); expect(transport.renderPage).not.toHaveBeenCalled()
   })
+  it('keeps worker completion distinct from an output inspection failure', async () => {
+    const { state, transport } = arrange(); await state.reload(); state.pageId = 7; state.output = { page: { id: 7 } }
+    transport.renderPage.mockResolvedValue({ message: 'Page rendered successfully.' }); transport.fetchRenderingOutput.mockRejectedValue(new Error('Inspection temporarily unavailable'))
+    await state.rerender()
+    expect(state.renderFailed).toBe(false); expect(state.renderNotice).toContain('The render worker finished.'); expect(state.renderNoticeFor).toBe(7)
+    expect(state.outputError).toBe('Inspection temporarily unavailable'); expect(state.output).toBeNull(); expect(state.rendering).toBe(false)
+  })
+
 })
