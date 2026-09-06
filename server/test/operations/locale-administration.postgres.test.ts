@@ -52,7 +52,7 @@ suite('PostgreSQL reviewed Locale administration', () => {
       t.primary(['userId', 'groupId'])
     })
     await db.schema.createTable('locales', t => {
-      t.string('code').primary()
+      t.string('code', 35).primary()
       t.string('name')
       t.string('nativeName')
       t.boolean('isRTL')
@@ -67,7 +67,7 @@ suite('PostgreSQL reviewed Locale administration', () => {
     })
     await db.schema.createTable('pages', t => {
       t.integer('id').primary()
-      t.string('localeCode')
+      t.string('localeCode', 35)
       t.boolean('isPublished')
       t.string('localeGroupId')
       t.string('visibility')
@@ -202,6 +202,27 @@ suite('PostgreSQL reviewed Locale administration', () => {
     expect((await db('settings').where('key', 'lang').first()).value.revision).toBe(current.history[0].id)
     expect(current.catalog.observedAt).toBeTruthy()
   })
+  it('installs a script-code package through the durable worker and enables its reader policy', async () => {
+    const sr = { ...fr, code: 'sr-latn', name: 'Serbian (Latin)' }
+    await db('settings').insert({
+      key: 'localeCatalog',
+      value: JSON.stringify({ locales: [en, sr], observedAt: new Date().toISOString() }),
+      updatedAt: new Date().toISOString()
+    })
+    const { jobId } = await enqueue('install', sr.code)
+    const fetchImpl = (async (_url: unknown, options: RequestInit) => {
+      const body = JSON.parse(String(options.body))
+      return Response.json({ data: { localization: body.variables ? { strings: [{ key: 'common:greeting', value: 'Zdravo' }] } : { locales: [en, sr] } } })
+    }) as typeof fetch
+    await runDurableJobBatch(db, {
+      workerId: 'script-worker',
+      handlers: { 'locale-package@1': createLocalePackageHandler({ store: () => store, fetch: fetchImpl }) }
+    })
+    expect((await read()).operations[0]).toMatchObject({ id: jobId, state: 'succeeded' })
+    expect((await db('locales').where('code', sr.code).first()).strings).toEqual({ common: { greeting: 'Zdravo' } })
+    await save({ locale: sr.code, namespacing: true, namespaces: ['en', sr.code] })
+    expect((await read()).policy.locale).toBe(sr.code)
+  })
   it('rejects a stale lease, source change and authority revocation at publication', async () => {
     await enqueue()
     const jobs = await new DurableJobStore(db).claim({ workerId: 'test-worker', supportedIdentities: ['locale-package@1'] }),
@@ -212,9 +233,13 @@ suite('PostgreSQL reviewed Locale administration', () => {
     await db('settings').insert({ key: 'offline', value: '{"v":true}', updatedAt: new Date().toISOString() })
     await expect(store.publishJob(job, [fr], {})).rejects.toThrow('offline')
     await db('settings').where('key', 'offline').delete()
-    await db('durableJobs').where('id', job.id).update('leaseExpiresAt', new Date(Date.now() - 1000))
+    await db('durableJobs')
+      .where('id', job.id)
+      .update('leaseExpiresAt', new Date(Date.now() - 1000))
     await expect(store.publishJob(job, [fr], {})).rejects.toThrow('lease')
-    await db('durableJobs').where('id', job.id).update('leaseExpiresAt', new Date(Date.now() + 60000))
+    await db('durableJobs')
+      .where('id', job.id)
+      .update('leaseExpiresAt', new Date(Date.now() + 60000))
     await db('settings').insert({ key: 'graphEndpoint', value: '{"v":"https://changed.example.test"}', updatedAt: new Date().toISOString() })
     await expect(store.jobContext(job)).rejects.toThrow('source changed')
     await db('settings').where('key', 'graphEndpoint').delete()
