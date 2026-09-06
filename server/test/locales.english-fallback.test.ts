@@ -39,7 +39,9 @@ describe('bundled English locale fallback', () => {
 
   it('loads bundled English before installed locale overrides', async () => {
     const engine = {
-      addResourceBundle: vi.fn()
+      addResourceBundle: vi.fn(),
+      removeResourceBundle: vi.fn(),
+      changeLanguage: vi.fn()
     }
     vi.mockModule('i18next', import.meta.url, () => ({ default: engine }))
     Reflect.set(globalThis, 'WIKI', {
@@ -64,19 +66,10 @@ describe('bundled English locale fallback', () => {
 
     const adminBundles = engine.addResourceBundle.mock.calls
       .filter(([, namespace]) => namespace === 'admin')
-    expect(adminBundles[0]).toEqual([
-      'en',
-      'admin',
-      expect.objectContaining({ agents: { title: 'Agents', subtitle: expect.any(String) } }),
-      true,
-      true
-    ])
-    expect(adminBundles.at(-1)).toEqual([
-      'en',
-      'admin',
-      { dashboard: { title: 'Installed Dashboard' } },
-      true,
-      true
-    ])
+    expect(adminBundles).toHaveLength(1)
+    expect(adminBundles[0]?.slice(0, 2)).toEqual(['en', 'admin'])
+    expect(adminBundles[0]?.[2]).toMatchObject({ dashboard: { title: 'Installed Dashboard' }, agents: { title: 'Agents', subtitle: expect.any(String) } })
+    expect(adminBundles[0]?.slice(3)).toEqual([true, true])
+    expect(engine.changeLanguage).toHaveBeenCalledWith('en')
   })
 })
