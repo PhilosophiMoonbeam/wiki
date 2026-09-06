@@ -7,16 +7,21 @@ import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 
 import type { AgentCitation } from '../../../shared/agents/contracts.ts'
 import { renderSafeMarkdown } from '../../helpers/safe-markdown.ts'
 import { formatAgentCitationMarkers } from './agent-citations.ts'
+import { wikiSourceSelectorFromHref, type WikiSourceSelector } from '../../../shared/wiki-source.ts'
 
 const {
   content,
   citations = [],
-  streaming = false
+  streaming = false,
+  sourcePreviews = false
 } = defineProps<{
   content: string
   citations?: readonly AgentCitation[]
   streaming?: boolean
+  sourcePreviews?: boolean
 }>()
+
+const emit = defineEmits<{ previewSource: [selector: WikiSourceSelector] }>()
 
 interface CopyReset {
   readonly timer: number
@@ -58,7 +63,8 @@ const showCopyResult = (button: HTMLButtonElement, label: string, state: 'succes
   scheduleCopyReset(button, 2_000)
 }
 
-const renderMarkdown = (): string => renderSafeMarkdown(
+const renderMarkdown = (): string => {
+  const html = renderSafeMarkdown(
   formatAgentCitationMarkers(content, citations, streaming)
 )
   .replace(
@@ -81,6 +87,18 @@ const renderMarkdown = (): string => renderSafeMarkdown(
       return `<a${attributes}${ariaLabel}>${content}<span class="agent-markdown__new-window"> (opens in a new tab)</span></a>`
     }
   )
+  if (!sourcePreviews || typeof document === 'undefined') return html
+  const template = document.createElement('template')
+  template.innerHTML = html
+  for (const anchor of template.content.querySelectorAll<HTMLAnchorElement>('a[title^="Citation "]')) {
+    if (!wikiSourceSelectorFromHref(anchor.getAttribute('href') ?? '', window.location.origin)) continue
+    anchor.dataset.sourcePreview = 'true'
+    anchor.removeAttribute('target')
+    anchor.setAttribute('aria-label', `${anchor.title} (preview source)`)
+    anchor.querySelector('.agent-markdown__new-window')?.remove()
+  }
+  return template.innerHTML
+}
 const citationSemanticSignature = computed(() => JSON.stringify(
   citations.map(citation => [
     citation.evidenceId,
@@ -201,6 +219,11 @@ watch(
 const copyCode = async (event: MouseEvent): Promise<void> => {
   const target = event.target
   if (!(target instanceof Element)) return
+  const anchor = target.closest<HTMLAnchorElement>('a[data-source-preview]')
+  if (anchor && event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+    const selector = wikiSourceSelectorFromHref(anchor.href, window.location.origin)
+    if (selector) { event.preventDefault(); emit('previewSource', selector); return }
+  }
   const button = target.closest<HTMLButtonElement>('[data-copy-code]')
   if (!button) return
   const copyIndex = [...(markdownRoot.value?.querySelectorAll<HTMLButtonElement>('[data-copy-code]') ?? [])].indexOf(button)

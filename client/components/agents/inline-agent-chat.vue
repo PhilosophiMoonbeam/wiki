@@ -88,7 +88,7 @@
             :disabled="memoryMutationBusy"
             @click="toggleMemory"
           >Memory</v-btn>
-          <v-menu location="bottom end" attach=".inline-agent">
+          <v-menu content-class="agent-owned-overlay" location="bottom end" attach=".inline-agent">
             <template #activator="{ props: menuProps }">
               <v-btn v-bind="menuProps" class="inline-agent__mobile-panel-menu" icon="mdi-view-dashboard-outline" variant="text" size="small" aria-label="Open Agent panels: conversation history and memory" />
             </template>
@@ -234,7 +234,8 @@
                 :connection="connection"
                 :deciding-approval-id="decidingApprovalId"
                 :can-submit="canSubmit"
-                @suggest="sendPrompt"
+                @suggest="preparePrompt"
+                @ask-source="source => preparePrompt(`Help me understand “${source.title}”.`, source)"
                 @decision="agents.decideProposal"
               />
               <div
@@ -284,18 +285,7 @@
 
         <footer class="inline-agent__composer">
           <div class="inline-agent__composer-inner">
-            <div class="inline-agent__composer-meta">
-              <div v-if="currentPage" class="inline-agent__page-context" role="note" :aria-label="`${currentPage.locale}/${currentPage.path} is available to consult`">
-                <v-icon icon="mdi-file-link-outline" size="16" aria-hidden="true" />
-                <span>
-                  <strong>Reading with you</strong> · <bdi dir="auto">{{ currentPage.locale }}/{{ currentPage.path }}</bdi>
-                </span>
-              </div>
-              <div class="inline-agent__notice">
-                <v-icon icon="mdi-shield-check-outline" size="15" aria-hidden="true" />
-                <span>Answers link to sources. Page changes ask for your approval.</span>
-              </div>
-            </div>
+            <AgentContextPicker v-if="thread" :draft="activeDraft" :current-page="currentPage" @change="patchDraft" @find-sources="emit('return-search')" />
             <p
               v-if="openGoal || sessionMutationBusy"
               id="agent-composer-lock-reason"
@@ -310,8 +300,11 @@
               :key="thread?.session.id ?? 'opening'"
               ref="composer"
               :session-id="thread?.session.id"
-              :initial-draft="thread ? agents.drafts[thread.session.id] : ''"
+              :initial-draft="thread ? agents.drafts[thread.session.id]?.text : ''"
+              :initial-mode="thread ? agents.drafts[thread.session.id]?.mode : 'message'"
+              :initial-skill-version-ids="thread ? agents.drafts[thread.session.id]?.skillVersionIds : []"
               @draft-change="agents.setDraft"
+              @composition-change="agents.updateDraft"
               :sending="sending"
               :can-stop="Boolean(activeRun?.canCancel)"
               :disabled="!canSubmit"
@@ -355,6 +348,7 @@
   <AgentPersonalSkills v-if="skillsEnabled" v-model="skillManagerOpen" :csrf-token="csrfToken" @changed="reloadSkillCatalog" />
 
   <v-dialog
+    content-class="agent-owned-overlay"
     v-model="clearUnfiledHistoryOpen"
     max-width="30rem"
     aria-labelledby="clear-unfiled-history-title"
@@ -412,7 +406,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, wa
 import { storeToRefs } from 'pinia'
 import type { AgentCurrentPageHint } from '../../../shared/agents/contracts.ts'
 import { useAgentsStore } from '../../store/agents.ts'
-import { createModalFocusScope, type ModalFocusScope } from '../common/modal-focus-scope'
+import { activeOwnedOverlayRoots, createModalFocusScope, type ModalFocusScope } from '../common/modal-focus-scope'
 import AgentComposer from './agent-composer.vue'
 import AgentHistoryPanel from './agent-history-panel.vue'
 import AgentMemoryManager from './agent-memory-manager.vue'
@@ -420,6 +414,9 @@ import AgentPersonalSkills from './agent-personal-skills.vue'
 import AgentMcpApproval from './agent-mcp-approval.vue'
 import AgentGoalStatus from './agent-goal-status.vue'
 import AgentThread from './agent-thread.vue'
+import AgentContextPicker from './agent-context-picker.vue'
+import { emptyAgentDraft, type AgentDraft, type AgentSearchScope } from '../../helpers/agent-draft.ts'
+import type { WikiSource } from '../../../shared/wiki-source.ts'
 import { isAgentApprovalOutsideViewport, shouldFollowGoalExpansion } from './agent-thread-presentation.ts'
 
 const props = defineProps<{
@@ -542,8 +539,24 @@ const starters = computed(() => [
   { label: 'Catch up', description: 'See what changed recently', prompt: 'Summarize the most recently updated Wiki pages I can access.', icon: 'mdi-history' }
 ])
 
-const preparePrompt = async (prompt: string): Promise<void> => {
-  await composer.value?.setDraft(prompt)
+const activeDraft = computed(() => thread.value ? agents.drafts[thread.value.session.id] ?? emptyAgentDraft() : emptyAgentDraft())
+const patchDraft = (patch: Partial<AgentDraft>): void => { if (thread.value) agents.updateDraft(thread.value.session.id, patch) }
+
+const preparePrompt = async (prompt: string, source?: WikiSource, scope?: AgentSearchScope): Promise<void> => {
+  await ensureInitialized()
+  const sessionId = thread.value?.session.id
+  if (!sessionId) return
+  if (scope) agents.updateDraft(sessionId, { scope })
+  if (source) {
+    const sources = agents.drafts[sessionId]?.sources ?? []
+    if (!sources.some(item => item.id === source.id)) {
+      if (sources.length >= 8) { agents.error = 'Eight sources are already attached. Remove one before adding another.'; return }
+      agents.updateDraft(sessionId, { sources: [...sources, source] })
+    }
+  }
+  await nextTick()
+  const existing = agents.drafts[sessionId]?.text ?? ''
+  await composer.value?.setDraft(existing.trim() && existing.trim() !== prompt.trim() ? source ? existing : `${existing}\n\n${prompt}` : prompt)
 }
 
 const ensureInitialized = (): Promise<void> => {
@@ -888,7 +901,7 @@ watch([historyOpen, memoryOpen, panelMode], async ([history, memory, mode]) => {
   panelFocusScope = createModalFocusScope({
     root,
     restoreTarget: () => triggerForPanel(kind),
-    additionalRoots: () => panelScrim.value ? [panelScrim.value] : [],
+    additionalRoots: () => [...(panelScrim.value ? [panelScrim.value] : []), ...activeOwnedOverlayRoots('.agent-owned-overlay')],
     onEscape: kind === 'history' ? closeHistory : closeMemory
   })
 })
@@ -953,7 +966,7 @@ onBeforeUnmount(() => {
   window.visualViewport?.removeEventListener('resize', scheduleTranscriptReconcile)
   agents.closeWorkspace()
 })
-defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
+defineExpose({ sendPrompt, preparePrompt, focusComposer, focusConversation, scrollToLatest })
 </script>
 
 <style scoped>

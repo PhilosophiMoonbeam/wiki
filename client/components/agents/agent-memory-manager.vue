@@ -144,7 +144,7 @@
     </v-card-actions>
   </v-card>
 
-  <v-dialog :model-value="open && Boolean(removing)" max-width="30rem" :persistent="open && actionBusy === 'remove'" @update:model-value="value => { if (open && !value && actionBusy !== 'remove') cancelRemove() }">
+  <v-dialog content-class="agent-owned-overlay" :model-value="open && Boolean(removing)" max-width="30rem" :persistent="open && actionBusy === 'remove'" @update:model-value="value => { if (open && !value && actionBusy !== 'remove') cancelRemove() }">
     <v-card ref="removeDialogCard" class="agent-memory__dialog" rounded="xl">
       <v-card-title class="agent-memory__dialog-title">
         <v-avatar color="error" size="38" variant="tonal"><v-icon icon="mdi-archive-remove-outline" aria-hidden="true" /></v-avatar>
@@ -163,7 +163,7 @@
     </v-card>
   </v-dialog>
 
-  <v-dialog :model-value="open && clearing" max-width="30rem" :persistent="open && actionBusy === 'clear'" @update:model-value="value => { if (open && !value && actionBusy !== 'clear') cancelClear() }">
+  <v-dialog content-class="agent-owned-overlay" :model-value="open && clearing" max-width="30rem" :persistent="open && actionBusy === 'clear'" @update:model-value="value => { if (open && !value && actionBusy !== 'clear') cancelClear() }">
     <v-card ref="clearDialogCard" class="agent-memory__dialog" rounded="xl">
       <v-card-title class="agent-memory__dialog-title">
         <v-avatar color="error" size="38" variant="tonal"><v-icon icon="mdi-delete-sweep-outline" aria-hidden="true" /></v-avatar>

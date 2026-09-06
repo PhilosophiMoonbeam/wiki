@@ -1,0 +1,369 @@
+{
+  "reportVersion": 1,
+  "status": "passed",
+  "environment": {
+    "postgresVersion": "17.11 (Debian 17.11-1.pgdg12+2)",
+    "postgresMajorVersion": 17,
+    "pgTrgmVersion": "1.6"
+  },
+  "corpus": {
+    "seed": 20260831,
+    "expected": {
+      "pages": 20000,
+      "renderedPages": 20000,
+      "links": 20000,
+      "distinctTags": 21,
+      "tagAssignments": 25000,
+      "locales": {
+        "en": 18000,
+        "fr": 2000
+      }
+    },
+    "observed": {
+      "pages": 20000,
+      "renderedPages": 20000,
+      "links": 20000,
+      "distinctTags": 21,
+      "tagAssignments": 25000,
+      "locales": {
+        "en": 18000,
+        "fr": 2000
+      }
+    }
+  },
+  "searchSchema": {
+    "version": 2,
+    "dictionary": "english"
+  },
+  "derivedSearch": {
+    "vectors": 20000,
+    "suggestionTerms": 330606,
+    "revisionMismatches": 0,
+    "orphanVectors": 0
+  },
+  "caps": {
+    "maxHits": 100,
+    "fuzzyFallbackExactHitThreshold": 5,
+    "suggestionLimit": 5,
+    "graphDepth": 2,
+    "rebuildBatchSize": 100
+  },
+  "iterations": 10,
+  "warmupsPerDistribution": 2,
+  "thresholds": {
+    "maxRebuildMilliseconds": 300000,
+    "maxQueryP95Milliseconds": 200
+  },
+  "rebuildMilliseconds": 14089.664765000001,
+  "queryDistributions": [
+    {
+      "kind": "exactTitleContent",
+      "queries": [
+        "Amber Falcon Runbook",
+        "ultraviolet marmot checksum"
+      ],
+      "samples": 10,
+      "durationsMilliseconds": [
+        19.214272000001074,
+        21.92417900000146,
+        19.01478700000007,
+        21.79757199999949,
+        18.85254300000088,
+        22.14612599999964,
+        19.151213000001007,
+        22.122220999999627,
+        18.936680999999226,
+        21.79404500000055
+      ],
+      "p50Milliseconds": 19.214272000001074,
+      "p95Milliseconds": 22.14612599999964,
+      "p99Milliseconds": 22.14612599999964,
+      "maximumMilliseconds": 22.14612599999964
+    },
+    {
+      "kind": "typoFuzzy",
+      "queries": [
+        "celestal harbor handbook",
+        "amber falcn runbook"
+      ],
+      "samples": 10,
+      "durationsMilliseconds": [
+        21.464255999999295,
+        21.61130200000116,
+        21.1013039999998,
+        20.85802800000056,
+        21.27257599999939,
+        20.877314000001206,
+        21.50042399999984,
+        21.41179799999918,
+        21.58476199999859,
+        20.77253699999892
+      ],
+      "p50Milliseconds": 21.27257599999939,
+      "p95Milliseconds": 21.61130200000116,
+      "p99Milliseconds": 21.61130200000116,
+      "maximumMilliseconds": 21.61130200000116
+    },
+    {
+      "kind": "multiTermDescription",
+      "queries": [
+        "orbital cedar calibration protocol",
+        "deterministic actuator calibration"
+      ],
+      "samples": 10,
+      "durationsMilliseconds": [
+        22.78194000000076,
+        23.00726299999951,
+        22.682823999999528,
+        22.93214099999932,
+        22.99623199999951,
+        23.393436999998812,
+        22.88394100000005,
+        23.506330000000162,
+        22.684586999999738,
+        22.83686200000011
+      ],
+      "p50Milliseconds": 22.88394100000005,
+      "p95Milliseconds": 23.506330000000162,
+      "p99Milliseconds": 23.506330000000162,
+      "maximumMilliseconds": 23.506330000000162
+    },
+    {
+      "kind": "commonTag",
+      "queries": [
+        "common-platform"
+      ],
+      "samples": 10,
+      "durationsMilliseconds": [
+        37.17744500000117,
+        36.790648999998666,
+        37.08164499999839,
+        37.387189000000944,
+        37.04473599999983,
+        37.801808000000165,
+        36.605131000000256,
+        36.50992199999746,
+        37.28638900000078,
+        36.84843700000056
+      ],
+      "p50Milliseconds": 37.04473599999983,
+      "p95Milliseconds": 37.801808000000165,
+      "p99Milliseconds": 37.801808000000165,
+      "maximumMilliseconds": 37.801808000000165
+    }
+  ],
+  "representativeChecks": [
+    {
+      "name": "exact title ranks the seeded page first",
+      "passed": true,
+      "expected": "first page id 42",
+      "observed": "first page id 42"
+    },
+    {
+      "name": "rendered content retrieves the seeded page",
+      "passed": true,
+      "expected": "results include page id 42",
+      "observed": "result ids 42"
+    },
+    {
+      "name": "typo fallback retrieves the seeded page",
+      "passed": true,
+      "expected": "results include page id 314",
+      "observed": "result ids 314"
+    },
+    {
+      "name": "multi-term description retrieves the seeded page",
+      "passed": true,
+      "expected": "results include page id 2718",
+      "observed": "result ids 2718"
+    },
+    {
+      "name": "common tag fills the cap with matching pages",
+      "passed": true,
+      "expected": "100 results tagged common-platform",
+      "observed": "100 results, 100 tagged common-platform"
+    }
+  ],
+  "thresholdViolations": [],
+  "relevance": {
+    "corpus": "Seeded 20,000-page PostgreSQL benchmark; explicit allowed IDs model the result of permission evaluation.",
+    "cases": [
+      {
+        "name": "exact title",
+        "query": "Amber Falcon Runbook",
+        "expected": [
+          42
+        ],
+        "top5": [
+          42
+        ],
+        "recallAt5": 1,
+        "reciprocalRankAt5": 1,
+        "ndcgAt5": 1,
+        "zeroResults": false,
+        "p95Milliseconds": 19.202378999998473,
+        "scopeViolations": []
+      },
+      {
+        "name": "content terms",
+        "query": "ultraviolet marmot checksum",
+        "expected": [
+          42
+        ],
+        "top5": [
+          42
+        ],
+        "recallAt5": 1,
+        "reciprocalRankAt5": 1,
+        "ndcgAt5": 1,
+        "zeroResults": false,
+        "p95Milliseconds": 22.314140999998926,
+        "scopeViolations": []
+      },
+      {
+        "name": "typo",
+        "query": "celestal harbor handbook",
+        "expected": [
+          314
+        ],
+        "top5": [
+          314
+        ],
+        "recallAt5": 1,
+        "reciprocalRankAt5": 1,
+        "ndcgAt5": 1,
+        "zeroResults": false,
+        "p95Milliseconds": 21.382532999999967,
+        "scopeViolations": []
+      },
+      {
+        "name": "path",
+        "query": "knowledge/topic-42/page-42",
+        "expected": [
+          42
+        ],
+        "top5": [
+          42
+        ],
+        "recallAt5": 1,
+        "reciprocalRankAt5": 1,
+        "ndcgAt5": 1,
+        "zeroResults": false,
+        "p95Milliseconds": 25.54389500000252,
+        "scopeViolations": []
+      },
+      {
+        "name": "description",
+        "query": "deterministic actuator calibration",
+        "expected": [
+          2718
+        ],
+        "top5": [
+          2718
+        ],
+        "recallAt5": 1,
+        "reciprocalRankAt5": 1,
+        "ndcgAt5": 1,
+        "zeroResults": false,
+        "p95Milliseconds": 23.959860999999364,
+        "scopeViolations": []
+      },
+      {
+        "name": "related concepts",
+        "query": "checksum recovery",
+        "expected": [
+          42
+        ],
+        "top5": [
+          42
+        ],
+        "recallAt5": 1,
+        "reciprocalRankAt5": 1,
+        "ndcgAt5": 1,
+        "zeroResults": false,
+        "p95Milliseconds": 20.916778000002523,
+        "scopeViolations": []
+      },
+      {
+        "name": "abbreviation gap",
+        "query": "AFR",
+        "expected": [
+          42
+        ],
+        "top5": [],
+        "recallAt5": 0,
+        "reciprocalRankAt5": 0,
+        "ndcgAt5": 0,
+        "zeroResults": true,
+        "p95Milliseconds": 17.344622000000527,
+        "scopeViolations": []
+      },
+      {
+        "name": "paraphrase gap",
+        "query": "restore the ultraviolet verification code",
+        "expected": [
+          42
+        ],
+        "top5": [],
+        "recallAt5": 0,
+        "reciprocalRankAt5": 0,
+        "ndcgAt5": 0,
+        "zeroResults": true,
+        "p95Milliseconds": 23.18426499999987,
+        "scopeViolations": []
+      },
+      {
+        "name": "selected page and tag",
+        "query": "common-platform",
+        "expected": [
+          19000
+        ],
+        "top5": [
+          19000
+        ],
+        "recallAt5": 1,
+        "reciprocalRankAt5": 1,
+        "ndcgAt5": 1,
+        "zeroResults": false,
+        "p95Milliseconds": 96.01814000000013,
+        "scopeViolations": []
+      },
+      {
+        "name": "locale and section",
+        "query": "common-platform",
+        "expected": [
+          19000
+        ],
+        "top5": [
+          19000
+        ],
+        "recallAt5": 1,
+        "reciprocalRankAt5": 1,
+        "ndcgAt5": 1,
+        "zeroResults": false,
+        "p95Milliseconds": 90.47233799999958,
+        "scopeViolations": []
+      },
+      {
+        "name": "authorized tail beyond ordinary cap",
+        "query": "common-platform",
+        "expected": [
+          19000
+        ],
+        "top5": [
+          19000
+        ],
+        "recallAt5": 1,
+        "reciprocalRankAt5": 1,
+        "ndcgAt5": 1,
+        "zeroResults": false,
+        "p95Milliseconds": 97.25905000000057,
+        "scopeViolations": []
+      }
+    ],
+    "recallAt5": 0.8181818181818182,
+    "meanReciprocalRankAt5": 0.8181818181818182,
+    "meanNdcgAt5": 0.8181818181818182,
+    "zeroResultRate": 0.18181818181818182
+  }
+}

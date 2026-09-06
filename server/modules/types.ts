@@ -445,6 +445,8 @@ export interface SearchConfig extends UnknownRecord {
 }
 
 export interface SearchOptions extends UnknownRecord {
+  pageIds?: number[]
+  limit?: number
   locale?: string
   path?: string
 }
@@ -461,6 +463,7 @@ export interface SearchResult {
 }
 
 export interface SearchPlugin<C extends SearchConfig = SearchConfig, Context extends SearchContext<C> = SearchContext<C>> {
+  supportsPageFilters?: boolean
   activate(this: Context): Promise<void>
   deactivate(this: Context): Promise<void>
   init(this: Context): Promise<void>

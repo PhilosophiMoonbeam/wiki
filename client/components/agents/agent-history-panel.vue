@@ -206,7 +206,7 @@
                   <span class="agent-history__folder-name">{{ group.folder.name }}</span>
                   <span class="agent-history__folder-count" :aria-label="`${group.sessions.length} conversations`">{{ group.sessions.length }}</span>
                 </v-expansion-panel-title>
-                <v-menu location="bottom end">
+                <v-menu content-class="agent-owned-overlay" location="bottom end">
                   <template #activator="{ props: menuProps }">
                     <v-btn v-bind="menuProps" class="agent-history__folder-actions" icon="mdi-dots-horizontal" size="x-small" variant="text" :aria-label="`Actions for ${group.folder.name}`" :disabled="loading || refreshingHistory || sessionsReloading || savingFolder || deleting || sessionMutationBusy" />
                   </template>
@@ -269,7 +269,7 @@
     </div>
   </v-card>
 
-  <v-dialog v-model="folderEditorOpen" max-width="28rem" aria-labelledby="agent-history-folder-editor-title" :persistent="savingFolder">
+  <v-dialog content-class="agent-owned-overlay" v-model="folderEditorOpen" max-width="28rem" aria-labelledby="agent-history-folder-editor-title" :persistent="savingFolder">
     <v-card rounded="xl">
       <v-card-title id="agent-history-folder-editor-title" class="d-flex align-center ga-3 pt-5 px-5">
         <v-avatar color="primary" size="38" variant="tonal"><v-icon icon="mdi-folder-outline" aria-hidden="true" /></v-avatar>
@@ -290,7 +290,7 @@
     </v-card>
   </v-dialog>
 
-  <v-dialog v-model="sessionEditorOpen" max-width="28rem" aria-labelledby="agent-history-session-editor-title" :persistent="savingSessionTitle">
+  <v-dialog content-class="agent-owned-overlay" v-model="sessionEditorOpen" max-width="28rem" aria-labelledby="agent-history-session-editor-title" :persistent="savingSessionTitle">
     <v-card rounded="xl">
       <v-card-title id="agent-history-session-editor-title" class="d-flex align-center ga-3 pt-5 px-5">
         <v-avatar color="primary" size="38" variant="tonal"><v-icon icon="mdi-pencil-outline" aria-hidden="true" /></v-avatar>
@@ -310,7 +310,7 @@
     </v-card>
   </v-dialog>
 
-  <v-dialog :model-value="Boolean(deletingSession)" max-width="29rem" aria-labelledby="agent-history-delete-title" :persistent="deleting || sessionMutationBusy" @update:model-value="value => { if (!value && !deleting && !sessionMutationBusy) cancelDeleteSession() }">
+  <v-dialog content-class="agent-owned-overlay" :model-value="Boolean(deletingSession)" max-width="29rem" aria-labelledby="agent-history-delete-title" :persistent="deleting || sessionMutationBusy" @update:model-value="value => { if (!value && !deleting && !sessionMutationBusy) cancelDeleteSession() }">
     <v-card ref="deleteDialogCard" rounded="xl">
       <v-card-title id="agent-history-delete-title" class="d-flex align-center ga-3 pt-5 px-5">
         <v-avatar color="error" size="38" variant="tonal"><v-icon icon="mdi-delete-outline" aria-hidden="true" /></v-avatar>
@@ -328,7 +328,7 @@
     </v-card>
   </v-dialog>
 
-  <v-dialog :model-value="Boolean(removingFolder)" max-width="30rem" aria-labelledby="agent-history-remove-folder-title" :persistent="deleting || sessionMutationBusy" @update:model-value="value => { if (!value && !deleting && !sessionMutationBusy) cancelRemoveFolder() }">
+  <v-dialog content-class="agent-owned-overlay" :model-value="Boolean(removingFolder)" max-width="30rem" aria-labelledby="agent-history-remove-folder-title" :persistent="deleting || sessionMutationBusy" @update:model-value="value => { if (!value && !deleting && !sessionMutationBusy) cancelRemoveFolder() }">
     <v-card ref="removeFolderDialogCard" rounded="xl">
       <v-card-title id="agent-history-remove-folder-title" class="d-flex align-center ga-3 pt-5 px-5">
         <v-avatar color="warning" size="38" variant="tonal"><v-icon icon="mdi-folder-remove-outline" aria-hidden="true" /></v-avatar>

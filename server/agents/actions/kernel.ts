@@ -1,3 +1,4 @@
+import type { AgentKnowledgeContext } from '../../../shared/agents/knowledge-context.ts'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { z, ZodError } from 'zod'
 
@@ -44,6 +45,7 @@ export interface OfferedAction {
 }
 
 export interface ActionHandlerContext {
+  readonly knowledgeContext?: AgentKnowledgeContext
   readonly authority: ActionAuthority
   readonly actionCallId: string
   readonly signal: AbortSignal
@@ -55,6 +57,7 @@ export interface ActionHandlerContext {
 export type ActionHandler = (input: unknown, context: ActionHandlerContext) => Promise<unknown>
 
 export interface ActionExecutionRequest {
+  readonly knowledgeContext?: AgentKnowledgeContext
   readonly authority: ActionAuthority
   readonly actionCallId: string
   readonly input: unknown
@@ -289,7 +292,7 @@ export class ActionKernel {
       const nestedAuthority = createActionAuthority(actionName, authority.requestId, authFromAuthority(authority), currentAdmission)
       return this.execute({ ...request, authority: nestedAuthority, input: nestedInput })
     }
-    const output = await handler(input, { authority, actionCallId: z.string().min(1).max(128).parse(request.actionCallId), signal: request.signal, reauthorize, fenceSideEffect, executeAction })
+    const output = await handler(input, { ...(request.knowledgeContext ? { knowledgeContext: request.knowledgeContext } : {}), authority, actionCallId: z.string().min(1).max(128).parse(request.actionCallId), signal: request.signal, reauthorize, fenceSideEffect, executeAction })
     if (request.signal.aborted) throw new ActionKernelError('ACTION_CANCELLED', 'Action was cancelled during execution', 409)
     try {
       return definition.output.parse(output)

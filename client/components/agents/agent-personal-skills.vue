@@ -1,5 +1,5 @@
 <template>
-  <v-dialog :model-value="open" max-width="72rem" scrollable :fullscreen="smAndDown" aria-labelledby="personal-skills-title" :persistent="saving" @update:model-value="handleOpenUpdate">
+  <v-dialog content-class="agent-owned-overlay" :model-value="open" max-width="72rem" scrollable :fullscreen="smAndDown" aria-labelledby="personal-skills-title" :persistent="saving" @update:model-value="handleOpenUpdate">
     <v-card class="personal-skills">
       <header class="personal-skills__header">
         <span class="personal-skills__mark" aria-hidden="true"><v-icon icon="mdi-account-star-outline" size="23" /></span>
@@ -160,7 +160,7 @@
     </v-card>
   </v-dialog>
 
-  <v-dialog :model-value="removing !== null" max-width="32rem" aria-labelledby="personal-remove-title" :persistent="saving" @update:model-value="value => { if (!value && !saving) cancelRemove() }">
+  <v-dialog content-class="agent-owned-overlay" :model-value="removing !== null" max-width="32rem" aria-labelledby="personal-remove-title" :persistent="saving" @update:model-value="value => { if (!value && !saving) cancelRemove() }">
     <v-card ref="removeDialogCard" class="personal-confirmation">
       <div class="personal-confirmation__header personal-confirmation__header--danger"><span><v-icon icon="mdi-delete-alert-outline" size="21" /></span><div><div class="personal-skills__eyebrow">Destructive action</div><h2 id="personal-remove-title">Remove personal skill?</h2></div></div>
       <v-card-text>
@@ -172,7 +172,7 @@
     </v-card>
   </v-dialog>
 
-  <v-dialog v-model="discardOpen" max-width="28rem" aria-labelledby="personal-discard-title">
+  <v-dialog content-class="agent-owned-overlay" v-model="discardOpen" max-width="28rem" aria-labelledby="personal-discard-title">
     <v-card ref="discardDialogCard" class="personal-confirmation">
       <div class="personal-confirmation__header"><span><v-icon icon="mdi-file-alert-outline" size="21" /></span><div><div class="personal-skills__eyebrow">Unsaved draft</div><h2 id="personal-discard-title">Discard changes?</h2></div></div>
       <v-card-text>Your current personal skill revision has changes that have not been saved.</v-card-text>

@@ -901,6 +901,9 @@ export type PageSearchRow = {
 }
 
 export type PageSearchResult = {
+  nextCursor?: string | null
+  windowTruncated?: boolean
+  windowLimit?: number
   results: PageSearchRow[]
   suggestions: string[]
   totalHits: number
@@ -1148,12 +1151,14 @@ export async function fetchPageTree(
 export async function searchPages(
   fetchImpl: FetchImpl,
   query: string,
-  options: { locale?: string; path?: string } = {},
+  options: { locale?: string; path?: string; cursor?: string; paginated?: boolean } = {},
   fallbackMessage = 'Page search response is invalid'
 ): Promise<PageSearchResult> {
   const params = new URLSearchParams({ query })
   if (options.locale) params.set('locale', options.locale)
   if (options.path) params.set('path', options.path)
+  if (options.cursor) params.set('cursor', options.cursor)
+  if (options.paginated) params.set('paginated', 'true')
   const response = await sameOriginJsonFetch(fetchImpl, `/_api/pages/search?${params.toString()}`, {
     credentials: 'same-origin',
     headers: { Accept: 'application/json' }
@@ -1193,7 +1198,11 @@ export async function searchPages(
     }
   })
   if (payload.suggestions.some(suggestion => typeof suggestion !== 'string')) throw new Error(fallbackMessage)
-  return { results, suggestions: payload.suggestions, totalHits: payload.totalHits }
+  return { results, suggestions: payload.suggestions, totalHits: payload.totalHits,
+    ...(typeof payload.nextCursor === 'string' || payload.nextCursor === null ? { nextCursor: payload.nextCursor } : {}),
+    ...(typeof payload.windowTruncated === 'boolean' ? { windowTruncated: payload.windowTruncated } : {}),
+    ...(typeof payload.windowLimit === 'number' ? { windowLimit: payload.windowLimit } : {})
+  }
 }
 
 export async function searchPageTags(fetchImpl: FetchImpl, query: string, fallbackMessage = 'Tag search response is invalid'): Promise<string[]> {

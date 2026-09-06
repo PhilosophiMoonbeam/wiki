@@ -1,3 +1,4 @@
+import { paginateSearch } from '../../helpers/search-pagination.ts'
 import express from 'express'
 import { type Request, type Response, getTransportRuntime, getWikiAuth } from '../_types.ts'
 import _ from 'lodash'
@@ -378,25 +379,50 @@ router.get('/tags/search', async (req, res, next) => {
   }
 })
 
-router.get('/search', async (req, res, next) => {
-  const query = _.get(req, 'query.query')
-  if (!_.isString(query) || query.length < 1) {
-    return res.status(400).json({ error: 'query must be a non-empty string' })
-  }
+router.get('/preview', async (req, res, next) => {
+  res.set('Cache-Control', 'private, no-store')
+  res.vary('Cookie')
+  const query = optionalStringQuery(req.query.query)
+  const rawId = req.query.id
+  const locale = optionalStringQuery(req.query.locale)
+  const path = optionalStringQuery(req.query.path)
+  const visibility = req.query.visibility === 'private' ? 'private' : 'public'
+  if ((query?.length ?? 0) > 256) return res.status(400).json({ error: 'Query is too long' })
+  if (rawId !== undefined && (typeof rawId !== 'string' || !/^[1-9]\d*$/.test(rawId) || !Number.isSafeInteger(Number(rawId))))
+    return res.status(400).json({ error: 'Invalid page ID' })
+  if (rawId === undefined && (!locale || locale.length > 35 || !path || path.length > 1024))
+    return res.status(400).json({ error: 'A page ID or locale and path is required' })
   try {
-    const locale = optionalStringQuery(_.get(req, 'query.locale'))
-    const path = optionalStringQuery(_.get(req, 'query.path'))
-    res.json(
-      await pageOperations.search({
-        ...requesterInput(req),
-        query,
-        ...(locale === undefined ? {} : { locale }),
-        ...(path === undefined ? {} : { path })
-      })
-    )
-  } catch (err) {
-    next(err)
-  }
+    res.json(await pageOperations.preview({
+      ...pageOperationContext(req),
+      ...(rawId === undefined ? { locale, path, visibility } : { id: Number(rawId) }),
+      ...(query ? { query } : {})
+    }))
+  } catch (err) { return sendOperationError(res, next, err, 'Source preview is unavailable') }
+})
+
+router.get('/search', async (req, res, next) => {
+  res.set('Cache-Control', 'private, no-store')
+  res.vary('Cookie')
+  const query = _.get(req, 'query.query')
+  if (!_.isString(query) || query.length < 1 || query.length > 256) return res.status(400).json({ error: 'query must contain 1–256 characters' })
+  try {
+    const locale = optionalStringQuery(req.query.locale)
+    const path = optionalStringQuery(req.query.path)
+    const cursor = optionalStringQuery(req.query.cursor)
+    const paginated = req.query.paginated === 'true'
+    if (cursor && !paginated) return res.status(400).json({ error: 'Cursor requires paginated search' })
+    const search = () => pageOperations.search({
+      ...requesterInput(req), query,
+      ...(locale === undefined ? {} : { locale }),
+      ...(path === undefined ? {} : { path }),
+      ...(paginated ? { limit: 1001 } : {})
+    })
+    res.json(paginated ? await paginateSearch({
+      owner: `${principalId(req.user) ?? 'guest'}:${req.sessionID}`,
+      queryKey: JSON.stringify([query, locale, path]), ...(cursor ? { cursor } : {}), search
+    }) : await search())
+  } catch (err) { return sendOperationError(res, next, err, 'Page search failed') }
 })
 
 router.get('/tree', async (req, res, next) => {

@@ -161,3 +161,11 @@ The first external release remains blocked until an independent reviewer supplie
 - explicit statement for unresolved accepted risk.
 
 A maintainer self-review, automated dependency scan, or passing test suite is supporting evidence, not an independent review.
+
+## Search and Agent workspace boundary update — 2026-09-06
+
+The source reader at `server/controllers/api/pages.ts` delegates to `server/operations/pages.ts` for current ownership, page-rule, password-unlock, and publication-window checks. Its response projects only bounded source metadata and plain-text excerpts; it is non-cacheable. Tests in `server/test/operations.pages.preview.test.ts` exercise access, locked content, scheduled publication, private ownership, and response-field exclusion.
+
+`server/helpers/search-pagination.ts` retains bounded, expiring ordered identities keyed to session and query; it stores no excerpts and re-runs authorization before continuation. PostgreSQL ranking accepts the current authorized identity set before candidate limits. Protected page bodies do not contribute to private search matches. Search scope and selected-source references in `shared/agents/knowledge-context.ts` are validated, bounded, persisted in the admission envelope, and treated as untrusted navigation hints during execution. Existing page reads and immutable edit approvals remain authoritative. Answer saving explicitly creates a private, unpublished page through the existing create operation after editable review.
+
+This focused implementation review does not renew the covered-source revision above or claim an independent security review. The existing threat-model gate already reports intervening source changes outside this workspace iteration; that stale review contract remains visible instead of being advanced without reviewing those changes.

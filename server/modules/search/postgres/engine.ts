@@ -545,7 +545,7 @@ const queryPages = async (
   knex: Knex,
   dictionary: string,
   query: string,
-  options: { locale?: string; path?: string },
+  options: { locale?: string; path?: string; pageIds?: number[] },
   maxHits: number
 ): Promise<PostgresSearchRow[]> => {
   const path = options.path ?? null
@@ -560,7 +560,8 @@ const queryPages = async (
         ?::text AS like_query,
         ?::text AS locale_filter,
         ?::text AS path_filter,
-        ?::text AS path_prefix
+        ?::text AS path_prefix,
+        ?::int[] AS allowed_ids
     ), priority_ids AS MATERIALIZED (
       SELECT vector."pageId"
       FROM "pagesVector" vector
@@ -570,6 +571,7 @@ const queryPages = async (
         vector.tags @> ARRAY[input.raw_query]::text[] OR
         lower(vector.path) = input.raw_query
       )
+      AND (input.allowed_ids IS NULL OR vector."pageId" = ANY(input.allowed_ids))
       AND (input.locale_filter IS NULL OR vector.locale = input.locale_filter)
       AND (
         input.path_filter IS NULL OR
@@ -588,11 +590,13 @@ const queryPages = async (
       FROM "pagesVector" vector
       CROSS JOIN query_input input
       WHERE (SELECT count(*) FROM priority_ids) < ?
+      AND NOT EXISTS (SELECT 1 FROM priority_ids exact JOIN "pagesVector" direct ON direct."pageId" = exact."pageId" WHERE lower(direct.path) = input.raw_query)
       AND (
         (input.query <> ''::tsquery AND vector.tokens @@ input.query) OR
         vector.facets ILIKE input.like_query ESCAPE '\\'
       )
       AND NOT EXISTS (SELECT 1 FROM priority_ids priority WHERE priority."pageId" = vector."pageId")
+      AND (input.allowed_ids IS NULL OR vector."pageId" = ANY(input.allowed_ids))
       AND (input.locale_filter IS NULL OR vector.locale = input.locale_filter)
       AND (
         input.path_filter IS NULL OR
@@ -613,8 +617,10 @@ const queryPages = async (
       FROM "pagesVector" vector
       CROSS JOIN query_input input
       WHERE (SELECT count(*) FROM exact_ids) < 5
+      AND NOT EXISTS (SELECT 1 FROM priority_ids exact JOIN "pagesVector" direct ON direct."pageId" = exact."pageId" WHERE lower(direct.path) = input.raw_query OR lower(direct.title) = input.raw_query)
       AND length(input.raw_query) >= 3
       AND input.raw_query <% vector.facets
+      AND (input.allowed_ids IS NULL OR vector."pageId" = ANY(input.allowed_ids))
       AND (input.locale_filter IS NULL OR vector.locale = input.locale_filter)
       AND (
         input.path_filter IS NULL OR
@@ -726,7 +732,7 @@ const queryPages = async (
     FROM ranked
     ORDER BY score DESC, ranked.preliminary_score DESC, lower(ranked.title), ranked."pageId"
   `,
-    [dictionary, dictionary, query, query, escapedLikeTerm(query), options.locale ?? null, path, pathPrefix, maxHits * EXACT_MATCH_CANDIDATE_MULTIPLIER, maxHits, maxHits * EXACT_MATCH_CANDIDATE_MULTIPLIER, maxHits, maxHits]
+    [dictionary, dictionary, query, query, escapedLikeTerm(query), options.locale ?? null, path, pathPrefix, options.pageIds ?? null, maxHits * EXACT_MATCH_CANDIDATE_MULTIPLIER, maxHits, maxHits * EXACT_MATCH_CANDIDATE_MULTIPLIER, maxHits, maxHits]
   )
   return results.rows
 }
@@ -756,6 +762,7 @@ interface PostgresProjectionSearchEngine {
 }
 
 const plugin: SearchPlugin<PostgresSearchConfig, PostgresSearchContext> & PostgresProjectionSearchEngine = {
+  supportsPageFilters: true,
   async activate() {
     if (wiki.config.db.type !== 'postgres') {
       throw new wiki.Error.SearchActivationFailed('Must use PostgreSQL database to activate this engine!')
@@ -784,7 +791,7 @@ const plugin: SearchPlugin<PostgresSearchConfig, PostgresSearchContext> & Postgr
     if (!query) return { results: [], suggestions: [], totalHits: 0 }
     const knex = getKnexClient()
     try {
-      const results = await queryPages(knex, this.config.dictLanguage, query, opts, wiki.config.search.maxHits)
+      const results = await queryPages(knex, this.config.dictLanguage, query, opts, Math.min(1001, Math.max(1, opts.limit ?? wiki.config.search.maxHits)))
       const suggestions =
         results.length < 5
           ? await suggestionsFor(

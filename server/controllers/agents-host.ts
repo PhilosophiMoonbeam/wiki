@@ -1,3 +1,4 @@
+import { AgentKnowledgeContextSchema } from '../../shared/agents/knowledge-context.ts'
 import { createHash, createHmac } from 'node:crypto'
 import express, { type NextFunction, type Request, type Response } from 'express'
 import type { Knex } from 'knex'
@@ -185,6 +186,7 @@ const SubmitMessageSchema = z.strictObject({
   profileResolutionToken: z.string().min(1).max(4_096),
   content: z.string().min(1).max(32_000),
   invokedSkillVersionIds: z.array(z.uuid()).max(8).optional(),
+  knowledgeContext: AgentKnowledgeContextSchema.optional(),
   currentPage: z
     .strictObject({
       id: z.number().int().positive(),
@@ -201,6 +203,7 @@ const CreateGoalSchema = z.strictObject({
   profileResolutionToken: z.string().min(1).max(4_096),
   objective: z.string().min(1).max(32_000),
   invokedSkillVersionIds: z.array(z.uuid()).max(8).optional(),
+  knowledgeContext: AgentKnowledgeContextSchema.optional(),
   currentPage: z
     .strictObject({
       id: z.number().int().positive(),
@@ -486,7 +489,8 @@ export default function createAgentsHostController(wiki: AgentHostWiki): express
         profileResolutionToken: input.profileResolutionToken,
         content: input.content,
         invokedSkillVersionIds,
-        ...(input.currentPage === undefined ? {} : { currentPage: input.currentPage })
+        ...(input.currentPage === undefined ? {} : { currentPage: input.currentPage }),
+        ...(input.knowledgeContext === undefined ? {} : { knowledgeContext: input.knowledgeContext })
       })
       return res.status(202).json({ run: projectAgentRun(admitted.run), replayed: admitted.replayed })
     })
@@ -509,7 +513,8 @@ export default function createAgentsHostController(wiki: AgentHostWiki): express
         ownerId: principal.userId,
         sessionId,
         invokedSkillVersionIds,
-        ...(input.currentPage === undefined ? {} : { currentPage: input.currentPage })
+        ...(input.currentPage === undefined ? {} : { currentPage: input.currentPage }),
+        ...(input.knowledgeContext === undefined ? {} : { knowledgeContext: input.knowledgeContext })
       })
       return res.status(202).json({ goal: await projectGoal(created.goal), run: projectAgentRun(created.run), replayed: created.replayed })
     })

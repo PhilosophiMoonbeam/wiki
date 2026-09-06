@@ -1,3 +1,4 @@
+import type { AgentKnowledgeContext } from '../../shared/agents/knowledge-context.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Knex } from 'knex'
 import {
@@ -442,6 +443,7 @@ export interface AdmitAgentRunInput {
   readonly profileResolutionSha256: string
   readonly content: string
   readonly currentPage?: Readonly<Record<string, unknown>>
+  readonly knowledgeContext?: AgentKnowledgeContext
   readonly providerProfileVersionId: string
   readonly transportKind: string
   readonly model: string
@@ -470,6 +472,7 @@ const admissionEnvelope = (input: AdmitAgentRunInput): string =>
     userMessageVisible: input.userMessageVisible ?? true,
     content: input.content,
     currentPage: input.currentPage ?? null,
+    ...(input.knowledgeContext === undefined ? {} : { knowledgeContext: input.knowledgeContext }),
     providerProfileVersionId: input.providerProfileVersionId,
     transportKind: input.transportKind,
     model: input.model,
@@ -488,8 +491,8 @@ const nextMessageOrdinal = async (transaction: Knex.Transaction, sessionId: stri
   return Number(latest?.ordinal ?? 0) + 1
 }
 
-const queuedEventData = (runId: string, currentPage?: Readonly<Record<string, unknown>>): { data: string; dataSha256: string } => {
-  const value: AgentEventData = { runId, status: 'queued', ...(currentPage === undefined ? {} : { currentPage }) }
+const queuedEventData = (runId: string, currentPage?: Readonly<Record<string, unknown>>, knowledgeContext?: AgentKnowledgeContext): { data: string; dataSha256: string } => {
+  const value: AgentEventData = { runId, status: 'queued', ...(currentPage === undefined ? {} : { currentPage }), ...(knowledgeContext === undefined ? {} : { knowledgeContext }) }
   const data = canonicalJson(value)
   return { data, dataSha256: sha256(data) }
 }
@@ -607,7 +610,7 @@ export const admitAgentRunInTransaction = async (
   if (input.skillVersionIds.length > 0)
     await transaction('agentRunSkills').insert(input.skillVersionIds.map((skillVersionId, ordinal) => ({ runId, skillVersionId, ordinal })))
   await reserveQuotaInTransaction(transaction, runId, input.ownerId, input.quota, input.quotaLimits, now, input.reservationExpiresAt)
-  const event = queuedEventData(runId, input.currentPage)
+  const event = queuedEventData(runId, input.currentPage, input.knowledgeContext)
   await transaction('agentEvents').insert({
     id: input.queuedEventId ?? randomUUID(),
     runId,

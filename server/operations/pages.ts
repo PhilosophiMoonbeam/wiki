@@ -1,4 +1,6 @@
 import _ from 'lodash'
+import { searchExcerpt } from '../helpers/search-excerpt.ts'
+import type { WikiSource } from '../../shared/wiki-source.ts'
 import type { Knex } from 'knex'
 import type { SearchResult as ProviderSearchResult } from '../modules/types.ts'
 import { canDeletePage, canReadPage, canWritePage, managesSystem, pageRoute, principalId, scopePageQuery, type PageVisibility } from '../helpers/page-access.ts'
@@ -145,7 +147,7 @@ interface WikiPageOperations {
   }
   auth: { checkAccess(user: Express.User | undefined, permissions: readonly string[], context: Record<string, unknown>): boolean }
   config: { db: { type: string }; editors?: { available?: unknown }; lang: { code: string }; search?: { maxHits?: number } }
-  data: { searchEngine?: { query(query: string, options: Record<string, unknown>): Promise<SearchResponse> } }
+  data: { searchEngine?: { supportsPageFilters?: boolean; query(query: string, options: Record<string, unknown>): Promise<SearchResponse> } }
   models: {
     knex: Knex
     pages: {
@@ -496,6 +498,28 @@ const get = async (input: OperationInput): Promise<PageDetail> => {
   }
 }
 
+const publicationWindowOpen = (page: Record<string, unknown>, now = Date.now()): boolean => {
+  const start = page.publishStartDate
+  const end = page.publishEndDate
+  return (!start || new Date(String(start)).valueOf() <= now) && (!end || new Date(String(end)).valueOf() >= now)
+}
+
+const preview = async (input: OperationInput): Promise<WikiSource> => {
+  // Both readers enforce current ownership, page rules, publication, and password unlock.
+  const page = input.id === undefined ? await getByPath(input) : await get(input)
+  if (page.visibility === 'public' && (!page.isPublished || !publicationWindowOpen(page)) && !canWritePage(input.requester, page))
+    throw new ApplicationError('This page does not exist.', { code: 'PAGE_NOT_FOUND', status: 404 })
+  const render = Reflect.get(page, 'render')
+  const rendered = typeof render === 'string' ? render : ''
+  const query = typeof input.query === 'string' ? input.query.slice(0, 256) : ''
+  return {
+    id: page.id, locale: page.localeCode, path: page.path, title: page.title,
+    description: page.description ?? '', visibility: page.visibility,
+    updatedAt: new Date(page.updatedAt).toISOString(), sourceRevision: String(Reflect.get(page, 'sourceRevision')),
+    ...searchExcerpt(rendered, query)
+  }
+}
+
 const getSource = async (
   input: OperationInput
 ): Promise<{
@@ -791,12 +815,16 @@ const searchPrivatePages = async ({
   query,
   locale,
   path,
-  ownerId
+  ownerId,
+  pageIds: selectedPageIds,
+  limit = PRIVATE_SEARCH_WINDOW_LIMIT
 }: {
   query: string
   locale?: string
   path?: string
   ownerId?: number
+  pageIds?: number[]
+  limit?: number
 }): Promise<PageRecord[]> => {
   const escapedQuery = escapeLikePattern(query)
   const bindings: Knex.RawBinding[] = [escapedQuery, `${escapedQuery}%`, `%${escapedQuery}%`]
@@ -813,7 +841,8 @@ const searchPrivatePages = async ({
     filters.push(`(page.path = ? OR page.path LIKE ? ESCAPE '\\')`)
     bindings.push(path, `${escapeLikePattern(path)}/%`)
   }
-  bindings.push(PRIVATE_SEARCH_WINDOW_LIMIT)
+  if (selectedPageIds) { filters.push('page.id = ANY(?::int[])'); bindings.push(selectedPageIds) }
+  bindings.push(limit)
   const ranked = await wiki.models.knex.raw<{ rows: PrivateSearchRankRow[] }>(
     `
       WITH query_input AS (
@@ -835,7 +864,7 @@ const searchPrivatePages = async ({
           page.description ILIKE input.exact_query ESCAPE '\\' AS description_exact,
           page.description ILIKE input.prefix_query ESCAPE '\\' AS description_prefix,
           page.description ILIKE input.contains_query ESCAPE '\\' AS description_contains,
-          page.content ILIKE input.contains_query ESCAPE '\\' AS content_contains,
+          (page.content ILIKE input.contains_query ESCAPE '\\' AND NOT EXISTS (SELECT 1 FROM "pageAccessPasswords" protection WHERE protection."pageId" = page.id)) AS content_contains,
           coalesce(tag_matches.exact_match, false) AS tag_exact,
           coalesce(tag_matches.prefix_match, false) AS tag_prefix,
           coalesce(tag_matches.contains_match, false) AS tag_contains
@@ -922,8 +951,30 @@ const search = async (input: OperationInput) => {
   const query = stringValue(input.query, 'query')
   const locale = input.locale === undefined ? undefined : stringValue(input.locale, 'locale')
   const path = input.path === undefined ? undefined : stringValue(input.path, 'path')
+  const requestedLimit = input.limit === undefined ? undefined : Math.min(1001, positiveInteger(input.limit, 'limit'))
+  const selectedPageIds = input.pageIds === undefined ? undefined : Array.isArray(input.pageIds) && input.pageIds.length <= 8 ? input.pageIds.map(id => positiveInteger(id, 'pageId')) : (() => { throw new ApplicationError('Invalid selected pages', { code: 'INVALID_INPUT' }) })()
+  const protectedPageIds = new Set(
+    (await wiki.models.knex('pageAccessPasswords')).map(row => Reflect.get(row, 'pageId')).filter((id): id is number => typeof id === 'number')
+  )
+  let authorizedPublicIds: number[] | undefined
+  if (wiki.data.searchEngine?.supportsPageFilters) {
+    // Evaluate current page rules and protected metadata before ranking and limiting candidates.
+    const pages = await wiki.models.pages.query()
+      .select('pages.id', 'pages.localeCode', 'pages.path', 'pages.title', 'pages.description', 'pages.visibility', 'pages.ownerId', 'pages.isPublished', 'pages.publishStartDate', 'pages.publishEndDate')
+      .withGraphJoined('tags').modifyGraph('tags', builder => { builder.select('tag') })
+      .modify(builder => {
+        builder.where({ visibility: 'public', isPublished: true })
+        if (locale) builder.andWhere('pages.localeCode', locale)
+        if (path) builder.andWhere(scope => { scope.where('pages.path', path).orWhere('pages.path', 'LIKE', `${escapeLikePattern(path)}/%`) })
+        if (selectedPageIds) builder.whereIn('pages.id', selectedPageIds)
+      })
+    authorizedPublicIds = pages.filter(page => publicationWindowOpen(page) && canReadPage(requester, page) && (!protectedPageIds.has(page.id) ||
+      [page.title, page.description ?? '', page.path, ...resultTags(page.tags)].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase()))).map(page => page.id)
+  }
   const args = {
-    ..._.omit(input, ['requester', 'query', 'locale', 'path']),
+    ..._.omit(input, ['requester', 'query', 'locale', 'path', 'pageIds', 'limit']),
+    ...(authorizedPublicIds ? { pageIds: authorizedPublicIds } : {}),
+    ...(requestedLimit ? { limit: requestedLimit } : {}),
     ...(locale === undefined ? {} : { locale }),
     ...(path === undefined ? {} : { path })
   }
@@ -934,6 +985,8 @@ const search = async (input: OperationInput) => {
     ? []
     : await searchPrivatePages({
         query,
+        ...(selectedPageIds ? { pageIds: selectedPageIds } : {}),
+        ...(requestedLimit ? { limit: requestedLimit } : {}),
         ...(locale === undefined ? {} : { locale }),
         ...(path === undefined ? {} : { path }),
         ...(canSearchAllPrivatePages || privateOwnerId === null ? {} : { ownerId: privateOwnerId })
@@ -944,15 +997,13 @@ const search = async (input: OperationInput) => {
   } else {
     publicResponse = { results: [], suggestions: [], totalHits: 0 }
   }
-  const protectedPageIds = new Set(
-    (await wiki.models.knex('pageAccessPasswords')).map(row => Reflect.get(row, 'pageId')).filter((id): id is number => typeof id === 'number')
-  )
+
   const publicIdentities = new Set<string>()
   const livePublicPagesByIdentity = new Map<string, PageRecord>()
   if (publicResponse.results.length > 0) {
     const livePublicPages = await wiki.models.pages
       .query()
-      .select('pages.id', 'pages.localeCode', 'pages.path', 'pages.title', 'pages.description')
+      .select('pages.id', 'pages.localeCode', 'pages.path', 'pages.title', 'pages.description', 'pages.publishStartDate', 'pages.publishEndDate')
       .withGraphJoined('tags')
       .modifyGraph('tags', builder => {
         builder.select('tag')
@@ -970,17 +1021,18 @@ const search = async (input: OperationInput) => {
       const identity = `${page.localeCode}\u0000${page.path}`
       livePublicPagesByIdentity.set(identity, page)
       const searchableMetadata = [page.title, page.description ?? '', page.path, ...resultTags(page.tags)].join(' ').toLocaleLowerCase()
-      if (!protectedPageIds.has(page.id) || searchableMetadata.includes(normalizedQuery)) publicIdentities.add(identity)
+      if (publicationWindowOpen(page) && (!protectedPageIds.has(page.id) || searchableMetadata.includes(normalizedQuery))) publicIdentities.add(identity)
     }
   }
   const publicResults = publicResponse.results
     .filter(
       result =>
         publicIdentities.has(`${result.locale}\u0000${result.path}`) &&
+        (!selectedPageIds || selectedPageIds.includes(livePublicPagesByIdentity.get(`${result.locale}\u0000${result.path}`)?.id ?? 0)) &&
         wiki.auth.checkAccess(requester, ['read:pages'], {
           path: result.path,
           locale: result.locale,
-          tags: result.tags
+          tags: resultTags(livePublicPagesByIdentity.get(`${result.locale}\u0000${result.path}`)?.tags)
         })
     )
     .map(result => {
@@ -990,6 +1042,7 @@ const search = async (input: OperationInput) => {
         id: livePage?.id,
         title: livePage?.title,
         description: livePage?.description ?? '',
+        tags: resultTags(livePage?.tags),
         visibility: 'public' as const
       }
     })
@@ -999,7 +1052,7 @@ const search = async (input: OperationInput) => {
   ].sort(
     (left, right) => right.score - left.score || String(left.title).localeCompare(String(right.title)) || String(left.path).localeCompare(String(right.path))
   )
-  const configuredPublicLimit = wiki.config.search?.maxHits
+  const configuredPublicLimit = requestedLimit ?? wiki.config.search?.maxHits
   const publicWindowLimit =
     Number.isSafeInteger(configuredPublicLimit) && Number(configuredPublicLimit) > 0 ? Number(configuredPublicLimit) : DEFAULT_PUBLIC_SEARCH_WINDOW_LIMIT
   return {
@@ -1007,8 +1060,8 @@ const search = async (input: OperationInput) => {
     suggestions: publicResults.length === publicResponse.results.length ? publicResponse.suggestions : [],
     results,
     totalHits: results.length,
-    windowLimit: publicWindowLimit + (canSearchPrivatePages ? PRIVATE_SEARCH_WINDOW_LIMIT : 0),
-    windowTruncated: publicResponse.results.length >= publicWindowLimit || privatePages.length >= PRIVATE_SEARCH_WINDOW_LIMIT
+    windowLimit: publicWindowLimit + (canSearchPrivatePages ? (requestedLimit ?? PRIVATE_SEARCH_WINDOW_LIMIT) : 0),
+    windowTruncated: publicResponse.results.length >= publicWindowLimit || privatePages.length >= (requestedLimit ?? PRIVATE_SEARCH_WINDOW_LIMIT)
   }
 }
 
@@ -1212,7 +1265,7 @@ const restore = async (input: OperationInput): Promise<void> => {
   if (!page || (page.visibility === 'private' && !canWritePage(requester, page))) throw new wiki.Error.PageNotFound()
   if (!canWritePage(requester, page)) throw new wiki.Error.PageRestoreForbidden()
   await assertUnlocked(input, pageId)
-  if (String(page.sourceRevision) !== expected) {
+  if (String(Reflect.get(page, 'sourceRevision')) !== expected) {
     throw new ApplicationError('The page changed after history was opened. Reload history before restoring.', { code: 'PAGE_RESTORE_CONFLICT', status: 409 })
   }
   const version = await wiki.models.pageHistory.getVersion({ pageId, versionId, requester })
@@ -1229,7 +1282,7 @@ const restore = async (input: OperationInput): Promise<void> => {
         tags: version.tags,
         action: 'restored',
         expectedUpdatedAt: page.updatedAt instanceof Date ? page.updatedAt.toISOString() : page.updatedAt,
-        expectedSourceRevision: String(page.sourceRevision),
+        expectedSourceRevision: String(Reflect.get(page, 'sourceRevision')),
         ...(version.extra && typeof version.extra === 'object' && !Array.isArray(version.extra)
           ? { okfMetadata: (version.extra as Record<string, unknown>).okf }
           : {}),
@@ -1243,6 +1296,7 @@ const restore = async (input: OperationInput): Promise<void> => {
 
 const getPageTags = (value: unknown): RelatedTagQuery => wiki.models.pages.relatedQuery('tags').for(positiveInteger(value, 'pageId'))
 export default {
+  preview,
   authorizeMutation,
   changeVisibility,
   checkConflict,

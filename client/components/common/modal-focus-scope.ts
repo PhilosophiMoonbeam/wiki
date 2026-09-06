@@ -41,6 +41,10 @@ interface ModalFocusScopeState {
   restoreTarget: RestoreTarget
 }
 
+export const activeOwnedOverlayRoots = (contentSelector: string): HTMLElement[] =>
+  Array.from(new Set(Array.from(document.querySelectorAll<HTMLElement>(contentSelector))
+    .map(content => content.closest<HTMLElement>('.v-overlay--active')).filter((overlay): overlay is HTMLElement => overlay !== null)))
+
 const scopeStacks = new WeakMap<Document, ModalFocusScopeState[]>()
 
 const isVisible = (element: HTMLElement): boolean => {
@@ -204,6 +208,10 @@ export const createModalFocusScope = ({ root, restoreTarget, additionalRoots, on
 
   const handleKeydown = (event: KeyboardEvent): void => {
     if (!isTopScope() || event.defaultPrevented) return
+    // An owned Vuetify menu/dialog manages its own Tab and Escape handling.
+    const ElementConstructor = document.defaultView?.Element
+    const overlay = ElementConstructor && event.target instanceof ElementConstructor ? event.target.closest('.v-overlay--active') : null
+    if (overlay && isWithinModal(root, modalAdditionalRoots(), overlay)) return
     if (event.key === 'Escape' && containsTarget([root, ...modalAdditionalRoots()], event.target as Node)) {
       event.preventDefault()
       event.stopImmediatePropagation()

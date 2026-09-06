@@ -1453,8 +1453,8 @@ describe('Agent session mutation transitions', () => {
     pending.resolve(Response.json({ run: submittedRun, replayed: false }))
 
     expect(await sending).toBe(true)
-    expect(store.drafts[origin.session.id]).toBeUndefined()
-    expect(store.drafts[selected.session.id]).toBe('Another draft')
+    expect(store.drafts[origin.session.id]?.text).toBe('')
+    expect(store.drafts[selected.session.id]?.text).toBe('Another draft')
     expect(store.thread?.session.id).toBe(selected.session.id)
     expect(store.thread?.session.title).toBe(selected.session.title)
     expect(store.thread?.session.version).toBe(selected.session.version)
@@ -1499,9 +1499,32 @@ describe('Agent session mutation transitions', () => {
     expect(await sending).toBe(true)
     expect(threadReads).toBe(2)
     expect(store.thread?.session.currentRun?.id).toBe(active.session.currentRun?.id)
-    expect(store.drafts[active.session.id]).toBeUndefined()
+    expect(store.drafts[active.session.id]?.text).toBe('')
     expect(store.sessionMutationBusy).toBe(false)
     store.closeWorkspace()
+  })
+
+  it('submits an immutable source snapshot and preserves a newer composed request', async () => {
+    setActivePinia(createPinia())
+    const store = useAgentsStore()
+    store.csrfToken = 'csrf-token'
+    const active = activeThread()
+    store.thread = { ...active, session: { ...active.session, currentRun: null } }
+    store.contextPage = { id: 99, locale: 'en', path: 'unrelated', observedUpdatedAt: '2026-09-01T00:00:00Z' }
+    const source = { id: 42, locale: 'en', path: 'docs/start', title: 'Start', description: '', sourceRevision: '8', updatedAt: '2026-09-01T00:00:00Z', visibility: 'public' as const, excerpt: '', excerptTruncated: false }
+    store.updateDraft(active.session.id, { text: 'Read this source', includeCurrentPage: false, scope: { kind: 'selected' }, sources: [source] })
+    const pending = deferred<Response>()
+    const fetcher = vi.spyOn(window, 'fetch').mockImplementationOnce(() => pending.promise).mockResolvedValueOnce(Response.json({ message: 'Refresh unavailable' }, { status: 503 }))
+    const sending = store.send('Read this source')
+    store.updateDraft(active.session.id, { text: 'My next question', mode: 'goal', sources: [{ ...source, sourceRevision: '9' }] })
+    const payload = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))
+    expect(payload).not.toHaveProperty('currentPage')
+    expect(payload.knowledgeContext).toEqual({ scope: { kind: 'selected' }, sources: [{ id: 42, locale: 'en', path: 'docs/start', title: 'Start', visibility: 'public', sourceRevision: '8' }] })
+    pending.resolve(Response.json({ run: active.session.currentRun, replayed: false }))
+    expect(await sending).toBe(true)
+    expect(store.drafts[active.session.id]?.text).toBe('My next question')
+    expect(store.drafts[active.session.id]?.mode).toBe('goal')
+    expect(store.drafts[active.session.id]?.sources[0]?.sourceRevision).toBe('9')
   })
 
   it('returns a committed send separately from its authoritative refresh failure', async () => {
@@ -1518,7 +1541,7 @@ describe('Agent session mutation transitions', () => {
 
     store.setDraft(active.session.id, 'Committed once')
     expect(await store.send('Committed once')).toBe(true)
-    expect(store.drafts[active.session.id]).toBeUndefined()
+    expect(store.drafts[active.session.id]?.text).toBe('')
     expect(store.error).toBe('The message was sent, but the conversation could not be refreshed. Refresh unavailable')
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
@@ -1536,13 +1559,13 @@ describe('Agent session mutation transitions', () => {
       .mockImplementationOnce(() => pending.promise)
       .mockResolvedValueOnce(Response.json({ message: 'Refresh unavailable' }, { status: 503 }))
     expect(await store.send('First question')).toBe(false)
-    expect(store.drafts[active.session.id]).toBe('First question')
+    expect(store.drafts[active.session.id]?.text).toBe('First question')
 
     const sending = store.send('First question')
     store.setDraft(active.session.id, 'A newer question')
     pending.resolve(Response.json({ run: active.session.currentRun, replayed: false }))
     expect(await sending).toBe(true)
-    expect(store.drafts[active.session.id]).toBe('A newer question')
+    expect(store.drafts[active.session.id]?.text).toBe('A newer question')
   })
 
   it('coalesces repeated stop requests until the committed cancellation is refreshed', async () => {
@@ -1624,7 +1647,7 @@ describe('Agent empty conversation lifecycle', () => {
     await expect(store.newSession('temporary')).rejects.toThrow('Temporarily unavailable')
 
     expect(store.thread?.session.id).toBe(active.session.id)
-    expect(store.drafts[active.session.id]).toBe('Do not lose this question')
+    expect(store.drafts[active.session.id]?.text).toBe('Do not lose this question')
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect(fetcher.mock.calls[0]?.[1]?.method).toBe('POST')
     expect(store.sessionMutationBusy).toBe(false)

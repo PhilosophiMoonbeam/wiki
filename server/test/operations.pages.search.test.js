@@ -54,7 +54,7 @@ describe('page search visibility', () => {
   it('propagates the original provider query failure', async () => {
     const failure = new Error('provider query failed')
     const query = vi.fn().mockRejectedValue(failure)
-    const knex = vi.fn()
+    const knex = vi.fn().mockResolvedValue([])
     global.WIKI = {
       auth: { checkAccess: vi.fn().mockReturnValue(true) },
       config: { db: { type: 'postgres' }, lang: { code: 'en' } },
@@ -69,7 +69,24 @@ describe('page search visibility', () => {
 
     await expect(operations.search({ query: 'runbook' })).rejects.toBe(failure)
     expect(query).toHaveBeenCalledWith('runbook', { query: 'runbook' })
-    expect(knex).not.toHaveBeenCalled()
+    expect(knex).toHaveBeenCalledWith('pageAccessPasswords')
+  })
+
+  it('prefilters current permissions and publication before the PostgreSQL result cap', async () => {
+    const pages = [
+      { id: 1, localeCode: 'en', path: 'visible', title: 'Runbook', description: '', visibility: 'public', ownerId: null, isPublished: true, tags: [] },
+      { id: 2, localeCode: 'en', path: 'protected', title: 'Unrelated', description: '', visibility: 'public', ownerId: null, isPublished: true, tags: [] },
+      { id: 3, localeCode: 'en', path: 'denied', title: 'Runbook', description: '', visibility: 'public', ownerId: null, isPublished: true, tags: [] },
+      { id: 4, localeCode: 'en', path: 'scheduled', title: 'Runbook', description: '', visibility: 'public', ownerId: null, isPublished: true, publishStartDate: '2099-01-01T00:00:00Z', tags: [] }
+    ]
+    const builder = { where: vi.fn().mockReturnThis(), orWhere: vi.fn().mockReturnThis(), whereIn: vi.fn().mockReturnThis(), andWhere: vi.fn(value => { if (typeof value === 'function') value(builder); return builder }) }
+    const pageQuery = { select: vi.fn().mockReturnThis(), withGraphJoined: vi.fn().mockReturnThis(), modifyGraph: vi.fn().mockReturnThis(), modify: vi.fn(callback => { callback(builder); return Promise.resolve(pages) }) }
+    const query = vi.fn(async (_query, options) => ({ results: options.pageIds.map(id => ({ ...pages.find(page => page.id === id), locale: 'en', score: 10, matchedFields: ['title'] })), suggestions: [], totalHits: options.pageIds.length }))
+    global.WIKI = { auth: { checkAccess: vi.fn((_user, permissions, context) => !permissions.includes('manage:system') && context?.path !== 'denied') }, config: { search: { maxHits: 1 } }, data: { searchEngine: { supportsPageFilters: true, query } }, models: { knex: vi.fn(async () => [{ pageId: 2 }]), pages: { query: () => pageQuery } } }
+    const { default: operations } = await vi.importFresh('../operations/pages.ts', import.meta.url)
+    const result = await operations.search({ query: 'Runbook', limit: 1 })
+    expect(query).toHaveBeenCalledWith('Runbook', expect.objectContaining({ pageIds: [1], limit: 1 }))
+    expect(result.results.map(row => row.id)).toEqual([1])
   })
 
   it('drops stale private search documents and their suggestions', async () => {
@@ -129,7 +146,7 @@ describe('page search visibility', () => {
       windowTruncated: false
     })
     expect(whereBuilder.where).toHaveBeenCalledWith({ visibility: 'public', isPublished: true })
-    expect(pageQuery.select).toHaveBeenCalledWith('pages.id', 'pages.localeCode', 'pages.path', 'pages.title', 'pages.description')
+    expect(pageQuery.select).toHaveBeenCalledWith('pages.id', 'pages.localeCode', 'pages.path', 'pages.title', 'pages.description', 'pages.publishStartDate', 'pages.publishEndDate')
     expect(global.WIKI.auth.checkAccess).toHaveBeenCalledTimes(1)
   })
 

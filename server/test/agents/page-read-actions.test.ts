@@ -1,3 +1,4 @@
+import type { AgentKnowledgeContext } from '../../../shared/agents/knowledge-context.ts'
 import { describe, expect, it, vi } from '../bun-test.mts'
 
 import { AGENT_FEATURE_FLAG_KEYS, type AgentActionName, type AgentFeatureFlags } from '../../../shared/agents/contracts.ts'
@@ -119,11 +120,12 @@ const setup = (
   const resolveRequester = vi.fn(async () => principal)
   const kernel = new ActionKernel()
   registerPageReadActions(kernel, { operations, resolveRequester, snapshotSigningSecret: Buffer.alloc(32, 3), ...(knowledge ? { knowledge } : {}) })
-  const execute = (name: AgentActionName, input: unknown) =>
+  const execute = (name: AgentActionName, input: unknown, knowledgeContext?: AgentKnowledgeContext) =>
     kernel.execute({
       authority: createActionAuthority(name, requestId, auth, admission),
       actionCallId,
       input,
+      ...(knowledgeContext ? { knowledgeContext } : {}),
       signal: new AbortController().signal,
       refreshAdmission: async () => admission
     })
@@ -131,6 +133,14 @@ const setup = (
 }
 
 describe('permission-safe page read actions', () => {
+  it('applies the user-selected scope even when the model requests a broader search', async () => {
+    const { execute, operations } = setup()
+    await execute('pages.search', { query: 'guide', locale: 'fr', path: 'elsewhere', limit: 5, offset: 0 }, { scope: { kind: 'section', locale: 'en', path: 'docs' }, sources: [] })
+    expect(operations.search).toHaveBeenCalledWith(expect.objectContaining({ locale: 'en', path: 'docs' }))
+    await execute('pages.search', { query: 'guide', limit: 5, offset: 0 }, { scope: { kind: 'selected' }, sources: [{ id: 42, locale: 'en', path: 'docs/start', title: 'Start', visibility: 'public', sourceRevision: '8' }] })
+    expect(operations.search).toHaveBeenLastCalledWith(expect.objectContaining({ pageIds: [42] }))
+  })
+
   it('returns bounded hydrated search results without protected model fields', async () => {
     const { execute, operations } = setup({
       search: vi.fn(async () => ({

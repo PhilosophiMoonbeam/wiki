@@ -1,3 +1,4 @@
+import { AgentKnowledgeContextSchema } from '../../shared/agents/knowledge-context.ts'
 import { z } from 'zod'
 import { sameOriginJsonFetch } from './json-transport.ts'
 import {
@@ -46,6 +47,7 @@ const Citation = z.object({
   href: z.string().nullable()
 })
 const Message = z.object({
+  knowledgeContext: AgentKnowledgeContextSchema.optional(),
   id: Uuid,
   runId: Uuid.nullable(),
   ordinal: z.number().int().nonnegative(),

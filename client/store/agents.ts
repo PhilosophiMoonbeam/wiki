@@ -1,3 +1,5 @@
+import { AgentKnowledgeContextSchema } from '../../shared/agents/knowledge-context.ts'
+import { emptyAgentDraft, type AgentDraft } from '../helpers/agent-draft.ts'
 import { defineStore } from 'pinia'
 import { markRaw } from 'vue'
 import type {
@@ -60,7 +62,7 @@ export const useAgentsStore = defineStore('agents', {
     sessionsReloading: false,
     folders: [] as AgentConversationFolderView[],
     thread: null as AgentThreadState | null,
-    drafts: {} as Record<string, string>,
+    drafts: {} as Record<string, AgentDraft>,
     skills: [] as VisibleAgentSkill[],
     skillsLoading: false,
     skillsLoadError: '',
@@ -221,8 +223,11 @@ export const useAgentsStore = defineStore('agents', {
     },
     setDraft(sessionId: string, text: string) {
       if (!sessionId) return
-      if (!text) delete this.drafts[sessionId]
-      else this.drafts[sessionId] = text
+      this.updateDraft(sessionId, { text })
+    },
+    updateDraft(sessionId: string, patch: Partial<AgentDraft>) {
+      if (!sessionId) return
+      this.drafts[sessionId] = { ...(this.drafts[sessionId] ?? emptyAgentDraft()), ...patch }
     },
     async newSession(retention: 'temporary' | 'saved', mutationOwner?: typeof sessionMutationAlreadyAcquired) {
       const acquiredHere = mutationOwner !== sessionMutationAlreadyAcquired
@@ -557,7 +562,8 @@ export const useAgentsStore = defineStore('agents', {
     async send(content: string, invokedSkillVersionIds: readonly string[] = [], mode: 'message' | 'goal' = 'message'): Promise<boolean> {
       const thread = this.thread
       const trimmed = content.trim()
-      const currentPage = this.contextPage ?? this.launchPage
+      const draftSnapshot = JSON.parse(JSON.stringify(this.drafts[thread?.session.id ?? ''] ?? emptyAgentDraft())) as AgentDraft
+      const currentPage = draftSnapshot.includeCurrentPage ? this.contextPage ?? this.launchPage : null
       if (
         !thread ||
         !trimmed ||
@@ -578,7 +584,8 @@ export const useAgentsStore = defineStore('agents', {
             expectedSessionVersion: thread.session.version,
             profileResolutionToken: thread.session.profileResolutionToken,
             ...(invokedSkillVersionIds.length > 0 ? { invokedSkillVersionIds } : {}),
-            ...(currentPage ? { currentPage } : {})
+            ...(currentPage ? { currentPage } : {}),
+            knowledgeContext: AgentKnowledgeContextSchema.parse({ scope: draftSnapshot.scope, sources: draftSnapshot.sources.map(({ id, locale, path, title, visibility, sourceRevision }) => ({ id, locale, path, title, visibility, sourceRevision })) })
           }
           if (mode === 'goal') {
             await createAgentGoal(fetchFromWindow, this.csrfToken, sessionId, {
@@ -596,7 +603,8 @@ export const useAgentsStore = defineStore('agents', {
           if (this.isSessionContextCurrent(this.workspaceVersion, sessionId)) this.error = error instanceof Error ? error.message : 'Message could not be sent.'
           return false
         }
-        if (this.drafts[sessionId]?.trim() === trimmed) delete this.drafts[sessionId]
+        if (this.drafts[sessionId]?.text.trim() === trimmed && this.drafts[sessionId]?.mode === draftSnapshot.mode && JSON.stringify(this.drafts[sessionId]?.skillVersionIds) === JSON.stringify(draftSnapshot.skillVersionIds))
+          this.updateDraft(sessionId, { text: '', mode: 'message', skillVersionIds: [] })
         // Reopening the same conversation while POST is pending must discover its accepted run.
         // Refresh authoritative state in the current workspace; never replay an old thread response.
         await this.refreshCommittedMutation(this.workspaceVersion, sessionId, 'The message was sent, but the conversation could not be refreshed.')

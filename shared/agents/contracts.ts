@@ -1,3 +1,4 @@
+import type { AgentKnowledgeContext } from './knowledge-context.ts'
 export const AGENT_PERMISSION_KEYS = ['use:agents', 'use:agent-browser', 'use:mcp'] as const
 
 export type AgentPermissionKey = (typeof AGENT_PERMISSION_KEYS)[number]
@@ -205,6 +206,7 @@ export interface AgentFollowUpSuggestion {
 }
 
 export interface AgentMessageView {
+  readonly knowledgeContext?: AgentKnowledgeContext
   readonly id: string
   readonly runId: string | null
   readonly ordinal: number
@@ -530,6 +532,7 @@ export interface SubmitAgentMessageRequest {
   readonly content: string
   readonly invokedSkillVersionIds?: readonly string[]
   readonly currentPage?: AgentCurrentPageHint
+  readonly knowledgeContext?: AgentKnowledgeContext
 }
 export interface CreateAgentGoalRequest {
   readonly goalId: string
@@ -539,6 +542,7 @@ export interface CreateAgentGoalRequest {
   readonly objective: string
   readonly invokedSkillVersionIds?: readonly string[]
   readonly currentPage?: AgentCurrentPageHint
+  readonly knowledgeContext?: AgentKnowledgeContext
 }
 
 export interface PauseAgentGoalRequest {

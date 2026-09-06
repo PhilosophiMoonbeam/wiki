@@ -151,7 +151,7 @@
       </div>
     </v-expand-transition>
 
-    <v-dialog v-model="cancelDialogOpen" max-width="30rem" :aria-labelledby="cancelGoalTitleId">
+    <v-dialog content-class="agent-owned-overlay" v-model="cancelDialogOpen" max-width="30rem" :aria-labelledby="cancelGoalTitleId">
       <v-card rounded="xl">
         <v-card-title class="agent-goal__dialog-title">
           <v-avatar color="error" size="38" variant="tonal"><v-icon icon="mdi-stop-circle-outline" /></v-avatar>

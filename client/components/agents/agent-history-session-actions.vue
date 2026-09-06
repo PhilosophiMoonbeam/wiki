@@ -1,6 +1,6 @@
 <template>
   <div class="agent-history-session-actions" @click.stop @keydown.stop>
-    <v-menu location="bottom end">
+    <v-menu content-class="agent-owned-overlay" location="bottom end">
       <template #activator="{ props: menuProps }">
         <v-btn
           ref="trigger"
@@ -27,7 +27,7 @@
           @click="requestRename"
         />
         <v-divider class="agent-history-session-actions__divider" />
-        <v-menu v-if="canMove" location="end" submenu>
+        <v-menu content-class="agent-owned-overlay" v-if="canMove" location="end" submenu>
           <template #activator="{ props: moveMenuProps }">
             <v-list-item
               v-bind="moveMenuProps"

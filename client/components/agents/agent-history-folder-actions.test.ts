@@ -94,7 +94,7 @@ describe('Agent history folder actions', () => {
 
     expect(actions.availableFolders.value).toEqual([])
     expect(actions.canMove.value).toBe(false)
-    expect(actionsTemplate).toContain('<v-menu v-if="canMove" location="end" submenu>')
+    expect(actionsTemplate).toMatch(/<v-menu[^>]*v-if="canMove" location="end" submenu>/)
     expect(actionsTemplate).toContain('<v-divider v-if="canMove"')
     expect(actionsTemplate).toContain('title="Delete"')
   })

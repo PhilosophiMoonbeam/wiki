@@ -110,7 +110,7 @@
 
     <div class="agent-composer__actions">
       <div class="agent-composer__context-controls" role="group" aria-label="Conversation context controls">
-        <v-menu v-if="skillsEnabled" v-model="skillMenuOpen" :close-on-content-click="false">
+        <v-menu content-class="agent-owned-overlay" v-if="skillsEnabled" v-model="skillMenuOpen" :close-on-content-click="false">
           <template #activator="{ props: activatorProps }">
             <v-btn
               id="agent-composer-skills-trigger"
@@ -273,10 +273,12 @@ const props = defineProps<{
   statusTone: 'ready' | 'error' | 'busy'
   sessionId?: string
   initialDraft?: string
+  initialMode?: 'message' | 'goal'
+  initialSkillVersionIds?: readonly string[]
   hasMessages?: boolean
   externalDescriptionId?: string
 }>()
-const emit = defineEmits<{ draftChange: [sessionId: string, text: string]; send: [content: string, invokedSkillVersionIds: readonly string[], mode: 'message' | 'goal', completion?: (success: boolean) => void]; stop: []; manageSkills: []; retrySkills: []; updateSkillPreferences: [skillIds: string[]] }>()
+const emit = defineEmits<{ draftChange: [sessionId: string, text: string]; compositionChange: [sessionId: string, patch: { mode: 'message' | 'goal'; skillVersionIds: string[] }]; send: [content: string, invokedSkillVersionIds: readonly string[], mode: 'message' | 'goal', completion?: (success: boolean) => void]; stop: []; manageSkills: []; retrySkills: []; updateSkillPreferences: [skillIds: string[]] }>()
 const draft = ref(props.initialDraft ?? '')
 watch(draft, text => {
   if (props.sessionId) emit('draftChange', props.sessionId, text)
@@ -285,9 +287,19 @@ watch(draft, text => {
 watch(() => props.initialDraft, (value, previous) => {
   if (draft.value === (previous ?? '')) draft.value = value ?? ''
 })
-const goalMode = ref(false)
+const goalMode = ref(props.initialMode === 'goal')
 const skillMenuOpen = ref(false)
-const selectedSkillIds = ref<string[]>([])
+const selectedSkillIds = ref<string[]>([...(props.initialSkillVersionIds ?? [])])
+let syncingComposition = false
+watch([goalMode, selectedSkillIds], () => {
+  if (props.sessionId && !syncingComposition) emit('compositionChange', props.sessionId, { mode: goalMode.value ? 'goal' : 'message', skillVersionIds: [...selectedSkillIds.value] })
+}, { deep: true, flush: 'sync' })
+watch(() => [props.initialMode, props.initialSkillVersionIds] as const, ([mode, skills]) => {
+  syncingComposition = true
+  goalMode.value = mode === 'goal'
+  if (JSON.stringify(skills ?? []) !== JSON.stringify(selectedSkillIds.value)) selectedSkillIds.value = [...(skills ?? [])]
+  syncingComposition = false
+})
 const composerRoot = useTemplateRef<{ $el?: HTMLElement } | HTMLElement>('composerRoot')
 const messageInput = useTemplateRef<{ focus: () => void; $el?: HTMLElement }>('messageInput')
 const skillsTrigger = useTemplateRef<{ focus?: () => void; $el?: HTMLElement } | HTMLElement>('skillsTrigger')
@@ -585,8 +597,9 @@ const toggleSkill = (versionId: string): void => {
   selectedSkillIds.value.push(versionId)
 }
 watch(
-  [visibleSkillByVersionId, preferredSkillIds, () => props.invocationLimit],
+  [visibleSkillByVersionId, preferredSkillIds, () => props.invocationLimit, () => props.skillsPartial],
   () => {
+    if (props.skillsPartial || props.skillsLoading) return
     selectedSkillIds.value = selectedSkillIds.value
       .filter(id => visibleSkillByVersionId.value.has(id) && !isPreferred(id))
       .slice(0, props.invocationLimit)

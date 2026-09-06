@@ -43,7 +43,15 @@
         @return-search='returnToSearch'
         @close='closeSearch'
       )
-      .search-results-search(v-else)
+      WikiSourcePreview(
+        v-if='previewSelector'
+        :selector='previewSelector'
+        :query='normalizedSearch'
+        :can-ask='canAsk'
+        @close='previewSelector = null'
+        @ask='askSource'
+      )
+      .search-results-search(v-if='!isAgentOpen')
         .search-results-instructions.sr-only#wiki-search-instructions Use Arrow Up and Down to move through results, Enter to open a result, and Escape to close search.
         .search-results-scope
           .search-results-scope-copy
@@ -111,7 +119,7 @@
               div(role='status' aria-live='polite' aria-atomic='true')
                 .search-results-eyebrow Direct matches
                 .search-results-count(v-if='results.length')
-                  span {{$t('common:header.searchResultsCount', { total: response.totalHits })}}
+                  span {{ response.windowTruncated ? `At least ${response.totalHits} matches` : `${response.totalHits} ${response.totalHits === 1 ? 'match' : 'matches'}` }}
                   span.search-results-window(v-if='response.results.length < response.totalHits')  · Showing the top {{ response.results.length }}
               v-btn.search-results-ask(
                 v-if='canAsk'
@@ -138,52 +146,55 @@
             template(v-if='results.length > 0')
               v-list.search-results-items(
                 id='wiki-search-results'
-                role='listbox'
+                role='grid'
                 :aria-busy='searchIsLoading'
                 aria-label='Search results'
               )
                 template(v-for='(item, idx) of results' :key='resultKey(item)')
-                  v-list-item.search-results-item(
-                    :id='resultOptionId(idx)'
-                    role='option'
-                    lines='three'
-                    :aria-selected='idx === cursor'
-                    :href='pageHref(item)'
-                    :class='idx === cursor ? `highlighted` : ``'
-                    @click='closeSearch'
-                  )
-                    template(v-slot:prepend)
-                      .search-results-item-mark
-                        v-icon(icon='mdi-file-document-outline' size='21')
-                    v-list-item-title {{ item.title }}
-                    v-list-item-subtitle {{ item.description }}
-                    .search-results-match(v-if='matchSummary(item)') {{ matchSummary(item) }}
-                    .search-results-path
-                      v-icon(icon='mdi-source-branch' size='14')
-                      span {{ item.path }}
-                    .search-results-tags(v-if='item.tags.length || item.matchedFields?.includes("graph")')
-                      v-chip(
-                        v-for='(tag, tagIndex) of item.tags.slice(0, 3)'
-                        :key='occurrenceKey(item.tags, tag, tagIndex)'
-                        size='x-small'
-                        variant='tonal'
-                      ) {{ tag }}
-                      span.text-body-small.text-medium-emphasis(v-if='item.tags.length > 3') +{{ item.tags.length - 3 }}
-                      v-chip(
-                        v-if='item.matchedFields?.includes("graph")'
-                        size='x-small'
-                        variant='tonal'
-                        color='secondary'
+                  .search-results-row(role='row')
+                    .search-results-main-cell(role='gridcell' :id='resultOptionId(idx)' :aria-selected='idx === cursor')
+                      v-list-item.search-results-item(
+                        lines='three'
+                        :href='pageHref(item)'
+                        :class='idx === cursor ? `highlighted` : ``'
+                        @click='closeSearch'
                       )
-                        v-icon(start icon='mdi-graph-outline' size='12')
-                        | Linked page
-                    template(v-slot:append)
-                      .search-results-item-meta
-                        v-chip(v-if='item.visibility === "private"' size='x-small' label color='warning' variant='tonal')
-                          v-icon(start icon='mdi-lock-outline' size='12')
-                          | Private
-                        v-chip(size='x-small' label variant='outlined') {{ item.locale.toLocaleUpperCase() }}
-                        v-icon.search-results-item-chevron(icon='mdi-chevron-right' size='19')
+                        template(v-slot:prepend)
+                          .search-results-item-mark
+                            v-icon(icon='mdi-file-document-outline' size='21')
+                        v-list-item-title {{ item.title }}
+                        v-list-item-subtitle {{ item.description }}
+                        .search-results-match(v-if='matchSummary(item)') {{ matchSummary(item) }}
+                        .search-results-path
+                          v-icon(icon='mdi-source-branch' size='14')
+                          span {{ item.path }}
+                        .search-results-tags(v-if='item.tags.length || item.matchedFields?.includes("graph")')
+                          v-chip(
+                            v-for='(tag, tagIndex) of item.tags.slice(0, 3)'
+                            :key='occurrenceKey(item.tags, tag, tagIndex)'
+                            size='x-small'
+                            variant='tonal'
+                          ) {{ tag }}
+                          span.text-body-small.text-medium-emphasis(v-if='item.tags.length > 3') +{{ item.tags.length - 3 }}
+                          v-chip(
+                            v-if='item.matchedFields?.includes("graph")'
+                            size='x-small'
+                            variant='tonal'
+                            color='secondary'
+                          )
+                            v-icon(start icon='mdi-graph-outline' size='12')
+                            | Linked page
+                        template(v-slot:append)
+                          .search-results-item-meta
+                            v-chip(v-if='item.visibility === "private"' size='x-small' label color='warning' variant='tonal')
+                              v-icon(start icon='mdi-lock-outline' size='12')
+                              | Private
+                            v-chip(size='x-small' label variant='outlined') {{ item.locale.toLocaleUpperCase() }}
+                            v-icon.search-results-item-chevron(icon='mdi-chevron-right' size='19')
+                    .search-results-preview-cell(role='gridcell')
+                      button.search-results-preview(type='button' :aria-label='`Preview ${item.title}`' @click='previewSelector = { id: Number(item.id) }')
+                        v-icon(icon='mdi-text-box-search-outline' size='18')
+                        span Preview
                   v-divider(v-if='idx < results.length - 1' aria-hidden='true')
               v-pagination.search-results-pagination(
                 v-if='paginationLength > 1'
@@ -193,6 +204,10 @@
                 :total-visible='$vuetify.display.xs ? 3 : 7'
                 rounded
               )
+            .search-results-continuation(v-if='response.nextCursor || moreError || response.windowTruncated')
+              v-btn(v-if='response.nextCursor' variant='tonal' :loading='loadingMore' prepend-icon='mdi-chevron-down' @click='loadMoreResults') More results
+              p(v-if='moreError' role='alert') {{ moreError }}
+              p(v-if='response.windowTruncated') Showing a bounded set of matches. Narrow the query or scope to find a more specific page.
             .search-results-suggestion-block(v-if='suggestions.length')
               .search-results-eyebrow Suggested searches
               v-list.search-results-suggestions(
@@ -227,16 +242,20 @@
 import { defineComponent } from 'vue'
 import AsyncState from '@/components/common/async-state.vue'
 import InlineAgentChat from '../agents/inline-agent-chat.vue'
+import WikiSourcePreview from './wiki-source-preview.vue'
+import type { AgentSearchScope } from '../../helpers/agent-draft.ts'
+import type { WikiSource, WikiSourceSelector } from '../../../shared/wiki-source.ts'
 import { getErrorMessage } from '../../helpers/root-ui-store'
 import { wikiStore } from '@/store/index.ts'
 import { onSearchEnter, onSearchExit, onSearchMove, offSearchEnter, offSearchExit, offSearchMove } from '../../helpers/search-navigation-events'
 import { searchPages, type PageSearchResult, type PageSearchRow } from '../../helpers/pages-api'
-import { createModalFocusScope, type ModalFocusScope } from './modal-focus-scope'
+import { activeOwnedOverlayRoots, createModalFocusScope, type ModalFocusScope } from './modal-focus-scope'
 import { navigateToWikiPage } from '../../helpers/wiki-navigation'
 
 type InlineAgentChatRef = {
   focusComposer: () => Promise<void>
   sendPrompt: (prompt: string) => Promise<boolean>
+  preparePrompt: (prompt: string, source?: WikiSource, scope?: AgentSearchScope) => Promise<void>
   focusConversation: () => Promise<void>
 }
 
@@ -250,10 +269,14 @@ const emptySearchResponse = (): PageSearchResult => ({
 export default defineComponent({
   components: {
     AsyncState,
-    InlineAgentChat
+    InlineAgentChat,
+    WikiSourcePreview
   },
   data() {
     return {
+      loadingMore: false,
+      moreError: '',
+      previewSelector: null as WikiSourceSelector | null,
       cursor: -1,
       approvalId: '',
       pagination: 1,
@@ -453,6 +476,7 @@ export default defineComponent({
       const focusScope = createModalFocusScope({
         root,
         restoreTarget: this.restoreTargetFor(agentOpener),
+        additionalRoots: () => activeOwnedOverlayRoots('.agent-owned-overlay'),
         onEscape: this.returnToSearch
       })
       this.pendingAskRestoreTarget = null
@@ -561,8 +585,7 @@ export default defineComponent({
     },
     searchModalAdditionalRoots(): HTMLElement[] {
       this.syncSearchInputA11y()
-      return Array.from(document.querySelectorAll<HTMLElement>('.nav-header-search-control input, [data-search-modal-action]'))
-        .filter(element => !element.matches(':disabled'))
+      return [...Array.from(document.querySelectorAll<HTMLElement>('.nav-header-search-control input, [data-search-modal-action]')).filter(element => !element.matches(':disabled')), ...activeOwnedOverlayRoots('.agent-owned-overlay')]
     },
     setSearchMode(mode: 'search' | 'ask'): void {
       if (mode === 'ask') this.openAsk()
@@ -647,7 +670,19 @@ export default defineComponent({
       const prompt = this.normalizedSearch
       this.pendingAskRestoreTarget = this.activeModalOpener()
       this.searchMode = 'ask'
-      await this.sendAskPrompt(prompt)
+      await this.$nextTick()
+      await (this.$refs.inlineAgent as InlineAgentChatRef | undefined)?.preparePrompt(prompt, undefined, this.agentSearchScope())
+    },
+    agentSearchScope(): AgentSearchScope {
+      if (this.searchRestrictPath && this.currentPageLocale && this.currentPagePath) return { kind: 'section', locale: this.currentPageLocale, path: this.currentPagePath }
+      if (this.searchRestrictLocale && this.currentPageLocale) return { kind: 'locale', locale: this.currentPageLocale }
+      return { kind: 'all' }
+    },
+    async askSource(source: WikiSource): Promise<void> {
+      this.previewSelector = null
+      this.searchMode = 'ask'
+      await this.$nextTick()
+      await (this.$refs.inlineAgent as InlineAgentChatRef | undefined)?.preparePrompt(this.normalizedSearch || `Help me understand “${source.title}”.`, source, this.agentSearchScope())
     },
     async sendAskPrompt(prompt: string): Promise<void> {
       if (!prompt || this.directPromptHandoffPending) return
@@ -709,6 +744,28 @@ export default defineComponent({
       this.closeSearch()
       navigateToWikiPage(href)
     },
+    async loadMoreResults(): Promise<void> {
+      if (!this.response.nextCursor || this.loadingMore) return
+      this.loadingMore = true
+      this.moreError = ''
+      const requestKey = this.searchRequestKey
+      const requestId = this.searchRequestId
+      const cursor = this.response.nextCursor
+      try {
+        const next = await searchPages(window.fetch.bind(window), this.normalizedSearch, {
+          locale: this.searchRestrictLocale ? wikiStore.page.locale : undefined,
+          path: this.searchRestrictPath ? wikiStore.page.path : undefined,
+          paginated: true, cursor
+        })
+        if (requestKey !== this.searchRequestKey || requestId !== this.searchRequestId) return
+        const known = new Set(this.response.results.map(item => this.resultKey(item)))
+        const added = next.results.filter(item => !known.has(this.resultKey(item)))
+        const firstNewPage = Math.floor(this.response.results.length / this.perPage) + 1
+        this.response = { ...next, results: [...this.response.results, ...added] }
+        if (added.length) this.pagination = firstNewPage
+      } catch (value) { if (requestKey === this.searchRequestKey) this.moreError = getErrorMessage(value) }
+      finally { this.loadingMore = false }
+    },
     retrySearch(): void {
       const query = this.normalizedSearch
       if (query.length < 2) return
@@ -733,11 +790,13 @@ export default defineComponent({
           (url, init) => window.fetch(url, { ...init, signal: controller.signal }),
           query,
           {
+            paginated: true,
             locale: this.searchRestrictLocale ? wikiStore.page.locale : undefined,
             path: this.searchRestrictPath ? wikiStore.page.path : undefined
           }
         )
         if (requestId !== this.searchRequestId || controller.signal.aborted) return
+        this.moreError = ''
         this.response = response
         this.responseKey = requestKey
         this.pagination = 1
@@ -1178,4 +1237,18 @@ export default defineComponent({
   .search-results-container--ask,
   .search-results-item { animation: none; transition: none; }
 }
+</style>
+
+<style scoped>
+.search-results-row { position: relative; }
+.search-results-row .search-results-item { padding-inline-end: 7rem; }
+.search-results-preview { position: absolute; inset-inline-end: 1rem; bottom: 1rem; display: flex; align-items: center; gap: .4rem; padding: .5rem .65rem; border-radius: .65rem; color: rgb(var(--v-theme-primary)); font-size: .75rem; background: rgb(var(--v-theme-primary) / .08); }
+.search-results-preview:hover { background: rgb(var(--v-theme-primary) / .17); }
+.search-results-preview:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+@media (max-width: 480px) { .search-results-row .search-results-item { padding-inline-end: 3.5rem; } .search-results-preview { inset-inline-end: .5rem; } .search-results-preview span { display: none; } }
+</style>
+
+<style scoped>
+.search-results-continuation { padding: 1rem; text-align: center; }
+.search-results-continuation p { font-size: .75rem; opacity: .7; margin: .6rem 0 0; }
 </style>

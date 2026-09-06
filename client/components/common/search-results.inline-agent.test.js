@@ -363,7 +363,7 @@ describe('inline Ask mode contract', () => {
     expect(header).toMatch(/this\.searchIsFocused\s*=\s*true[\s\S]*this\.searchMode\s*=\s*['"]ask['"]/)
     expect(header).toMatch(/event\.ctrlKey\s*\|\|\s*event\.metaKey/)
     expect(search).toMatch(/focusComposer\(\)/)
-    expect(inline).toMatch(/defineExpose\(\{\s*sendPrompt,\s*focusComposer,\s*focusConversation,\s*scrollToLatest\s*\}\)/)
+    expect(inline).toMatch(/defineExpose\(\{\s*sendPrompt,\s*preparePrompt,\s*focusComposer,\s*focusConversation,\s*scrollToLatest\s*\}\)/)
     expect(composer).toMatch(/defineExpose\(\{\s*focusInput,\s*focusSkillsTrigger,\s*setDraft\s*\}\)/)
     expect(search).toMatch(/async submitAskPrompt\(\): Promise<void>/)
   })
@@ -669,14 +669,13 @@ describe('inline Ask mode contract', () => {
     expect(inline).toMatch(/scrollbar-gutter:\s*stable both-edges/)
   })
 
-  test('keeps current-page locale and path identity available on narrow phones', () => {
-    const pageContext = inline.match(/<div[^>]*class=['"]inline-agent__page-context['"][^>]*>/)?.[0] ?? ''
-    expect(pageContext).toMatch(/\brole=['"]note['"]/)
-    expect(pageContext).toMatch(/:aria-label="`\$\{currentPage\.locale\}\/\$\{currentPage\.path\} is available to consult`"/)
-    expect(inline).toMatch(/<bdi\s+dir=['"]auto['"]>\s*\{\{\s*currentPage\.locale\s*\}\}\s*\/\s*\{\{\s*currentPage\.path\s*\}\}\s*<\/bdi>/)
-    expect(inline).toMatch(/:aria-label="`\$\{currentPage\.locale\}\/\$\{currentPage\.path\} is available to consult`"/)
-    const narrowPhone = inline.match(/@media \(max-width:\s*380px\)([\s\S]*?)(?=@media|<\/style>)/)?.[1] ?? ''
-    expect(narrowPhone).not.toMatch(/\.inline-agent__page-context\s*\{[\s\S]*?display:\s*none/)
+  test('keeps removable current-page context available on narrow phones', () => {
+    const context = fs.readFileSync(path.join(process.cwd(), 'client/components/agents/agent-context-picker.vue'), 'utf8')
+    expect(inline).toContain('<AgentContextPicker')
+    expect(context).toContain('Remove current page')
+    expect(context).toContain('currentPage.path')
+    expect(context).toContain('Include current page')
+    expect(context).not.toMatch(/display:\s*none/)
   })
 
   test('reserves a non-message dock for latest-response navigation without outranking approvals', () => {
@@ -717,7 +716,7 @@ describe('inline Ask mode contract', () => {
   })
   test('prepares editable starter prompts before sending', () => {
     expect(inline).toContain('@click="preparePrompt(starter.prompt)"')
-    expect(inline).toContain('await composer.value?.setDraft(prompt)')
+    expect(inline).toContain('await composer.value?.setDraft(')
     expect(composer).toMatch(/const setDraft = async[\s\S]*draft.value = value[\s\S]*await focusInput\(\)/)
   })
 

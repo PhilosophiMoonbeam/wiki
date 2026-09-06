@@ -1,3 +1,4 @@
+import { evaluateSearchRelevance } from './search-relevance.ts'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import { performance } from 'node:perf_hooks'
@@ -84,6 +85,7 @@ export interface BenchmarkViolation {
 
 export interface PostgresSearchBenchmarkReport {
   reportVersion: 1
+  relevance?: Awaited<ReturnType<typeof evaluateSearchRelevance>>
   status: 'passed' | 'failed'
   environment: {
     postgresVersion: string
@@ -528,7 +530,7 @@ interface BenchmarkEngine {
   config: { dictLanguage: string }
   init(): Promise<void>
   rebuild(): Promise<void>
-  query(query: string, options: { locale?: string; path?: string }): Promise<SearchResponse>
+  query(query: string, options: { locale?: string; path?: string; pageIds?: number[]; limit?: number }): Promise<SearchResponse>
 }
 
 const asSearchResponse = (value: unknown): SearchResponse => {
@@ -684,7 +686,8 @@ export const runPostgresSearchBenchmark = async (): Promise<void> => {
       querySamples,
       representativeChecks: checks
     })
-    await publishPostgresSearchBenchmarkReport(report, outputPath)
+    const relevance = await evaluateSearchRelevance((query, options) => engine.query(query, options))
+    await publishPostgresSearchBenchmarkReport({ ...report, relevance }, outputPath)
   } finally {
     await knex.destroy()
   }

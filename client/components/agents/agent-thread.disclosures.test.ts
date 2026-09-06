@@ -90,6 +90,8 @@ const renderDuplicateSources = async (): Promise<string> => {
         decidingApprovalId: null,
         canSubmit: true,
         safeNavigableHref,
+        sourceSelector: () => null,
+        previewSelector: null,
         sourceDomId,
         messageTime: () => '',
         messageTimestamp: () => '',
@@ -106,7 +108,7 @@ const renderDuplicateSources = async (): Promise<string> => {
   )
   const emptyStub = defineComponent({ render: () => null })
   const app = createSSRApp(component)
-  for (const name of ['AgentMarkdown', 'AgentTaskProgress', 'AgentToolCard', 'v-avatar', 'v-btn', 'v-icon']) {
+  for (const name of ['AgentAnswerActions', 'WikiSourcePreview', 'AgentMarkdown', 'AgentTaskProgress', 'AgentToolCard', 'v-avatar', 'v-btn', 'v-icon']) {
     app.component(name, emptyStub)
   }
   return renderToString(app)

@@ -1,3 +1,4 @@
+import { AgentKnowledgeContextSchema, type AgentKnowledgeContext } from '../../shared/agents/knowledge-context.ts'
 import type { Knex } from 'knex'
 import { z } from 'zod'
 import {
@@ -527,10 +528,11 @@ export const projectAgentThread = async (knex: Knex, ownerId: number, sessionId:
     proposalQuery.where(proposals => proposals.whereNull('agentProposals.runId').orWhereIn('agentProposals.runId', selectedRunIds))
     artifactQuery.whereIn('runId', selectedRunIds)
   }
-  const [proposalRows, artifactRows, eventPages] = await Promise.all([
+  const [proposalRows, artifactRows, eventPages, sourceContextRows] = await Promise.all([
     proposalQuery,
     artifactQuery,
-    listOwnedAgentProjectionEvents(knex, ownerId, runRows, THREAD_LATEST_ATTEMPT_EVENT_LIMIT)
+    listOwnedAgentProjectionEvents(knex, ownerId, runRows, THREAD_LATEST_ATTEMPT_EVENT_LIMIT),
+    knex('agentEvents').whereIn('runId', selectedRunIds).where({ type: 'run.queued' }).select('runId', 'data') as Promise<Array<{ runId: string; data: string }>>
   ])
   if (proposalRows.length > THREAD_RELATED_RECORD_LIMIT || artifactRows.length > THREAD_RELATED_RECORD_LIMIT)
     throw new AgentRepositoryError('AGENT_THREAD_PROJECTION_OVERFLOW', 'Agent session has too many related records to project safely', 500)
@@ -548,6 +550,14 @@ export const projectAgentThread = async (knex: Knex, ownerId: number, sessionId:
   const goal = latestGoal === null ? null : projectAgentGoal(latestGoal, latestGoalRun?.id ?? null)
   const reduced = reduceAgentEvents(eventPages.flat(), runRows[0]?.id ?? null)
   const approvals = new Map(approvalRows.map(row => [row.proposalId, approvalView(row)]))
+  const sourceContexts = new Map<string, AgentKnowledgeContext>()
+  for (const row of sourceContextRows) {
+    try {
+      const payload: unknown = JSON.parse(row.data)
+      const parsed = AgentKnowledgeContextSchema.safeParse(typeof payload === 'object' && payload !== null ? Reflect.get(payload, 'knowledgeContext') : undefined)
+      if (parsed.success) sourceContexts.set(row.runId, parsed.data)
+    } catch { /* The run reader handles corrupt execution context; history remains readable. */ }
+  }
   const messages: AgentMessageView[] = messageRows.map(message => ({
     id: message.id,
     runId: message.runId,
@@ -556,6 +566,7 @@ export const projectAgentThread = async (knex: Knex, ownerId: number, sessionId:
     status: message.status,
     content: message.content,
     citations: citations(message.citations),
+    ...(message.role === 'user' && message.runId && sourceContexts.has(message.runId) ? { knowledgeContext: sourceContexts.get(message.runId)! } : {}),
     createdAt: message.createdAt,
     updatedAt: message.updatedAt
   }))

@@ -44,7 +44,7 @@ describe('Ask modal accessibility contract', () => {
     const agentFocusScope = search.match(/const focusScope = createModalFocusScope\(\{([\s\S]*?)\n\s+\}\)/)?.[1] ?? ''
     const searchFocusScope = search.match(/this\.searchModalFocusScope = createModalFocusScope\(\{([\s\S]*?)\n\s+\}\)/)?.[1] ?? ''
     expect(agentFocusScope).toMatch(/root,[\s\S]*restoreTarget:\s*this\.restoreTargetFor\(agentOpener\),[\s\S]*onEscape:\s*this\.returnToSearch/)
-    expect(agentFocusScope).not.toMatch(/additionalRoots/)
+    expect(agentFocusScope).toMatch(/additionalRoots:.*activeOwnedOverlayRoots/)
     expect(searchFocusScope).toMatch(/additionalRoots:\s*this\.searchModalAdditionalRoots/)
     expect(search).toMatch(
       /isAgentOpen\(open:\s*boolean\)\s*\{[\s\S]*if\s*\(open\)\s*\{[\s\S]*void this\.activateAgentModal\(\)[\s\S]*return[\s\S]*if \(this\.directPromptHandoffPending\) this\.directPromptHandoffId \+= 1[\s\S]*if\s*\(this\.searchIsFocused\)\s*void this\.reactivateSearchModal\(\)[\s\S]*else this\.deactivateAgentModal\(false\)/
@@ -82,7 +82,7 @@ describe('Ask modal accessibility contract', () => {
     const overlayObserver = focusScope.match(/const backgroundObserver = ([\s\S]*?)(?=\n\s*const modalAdditionalRoots)/)?.[1] ?? ''
     expect(overlayObserver).toMatch(/new MutationObserverConstructor\([\s\S]*reconcileBackgrounds\(document, true\)/)
     expect(overlayObserver).toMatch(/observe\(document\.body, \{ childList: true, subtree: true \}\)/)
-    expect(focusScope).not.toMatch(/querySelectorAll[\s\S]{0,120}v-overlay--active/)
+    expect(focusScope).toContain('querySelectorAll<HTMLElement>(contentSelector)')
     expect(search).toMatch(
       /closeSearch\(\):\s*void\s*\{[\s\S]*this\.finishSearchFocus\(\)[\s\S]*this\.searchIsFocused\s*=\s*false[\s\S]*this\.searchMode\s*=\s*['"]search['"]/
     )

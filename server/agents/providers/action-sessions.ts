@@ -56,6 +56,7 @@ export class KernelActionSessionProvider implements AgentActionSessionProvider {
       ...(this.#dependencies.timeoutMilliseconds === undefined ? {} : { timeoutMilliseconds: this.#dependencies.timeoutMilliseconds }),
       execute: (action, input, signal, actionCallId) => this.#dependencies.kernel.execute({
         authority: action.authority,
+        ...(request.knowledgeContext ? { knowledgeContext: request.knowledgeContext } : {}),
         actionCallId,
         input,
         signal,

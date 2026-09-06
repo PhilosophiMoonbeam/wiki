@@ -1,3 +1,4 @@
+import { AgentKnowledgeContextSchema, type AgentKnowledgeContext } from '../../shared/agents/knowledge-context.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Knex } from 'knex'
 import type { AgentActionName, AgentCurrentPageHint, AgentEventData, AgentEventType, AgentExecutionMode } from '../../shared/agents/contracts.ts'
@@ -366,6 +367,7 @@ export interface AgentEngineRequest {
   readonly messages: readonly AgentEngineMessage[]
   readonly memory: AgentMemorySnapshot
   readonly currentPage?: AgentCurrentPageHint
+  readonly knowledgeContext?: AgentKnowledgeContext
   readonly skills: readonly AgentEngineSkill[]
   readonly dispatchBudget?: AgentDispatchBudget
   readonly priorActivity?: readonly AgentPriorRunActivity[]
@@ -402,6 +404,7 @@ export interface SubmitAgentMessageInput {
   readonly content: string
   readonly invokedSkillVersionIds?: readonly string[]
   readonly currentPage?: Readonly<Record<string, unknown>>
+  readonly knowledgeContext?: AgentKnowledgeContext
 }
 export interface CreateAgentGoalInput {
   readonly goalId: string
@@ -413,6 +416,7 @@ export interface CreateAgentGoalInput {
   readonly objective: string
   readonly invokedSkillVersionIds?: readonly string[]
   readonly currentPage?: Readonly<Record<string, unknown>>
+  readonly knowledgeContext?: AgentKnowledgeContext
 }
 
 export interface ResumeAgentGoalInput {
@@ -596,9 +600,19 @@ const priorRunActivity = (rows: readonly RuntimePriorEventRow[]): readonly Agent
   })
 }
 
+const knowledgeContextHint = (value: string | undefined): AgentKnowledgeContext | undefined => {
+  if (value === undefined) return undefined
+  try {
+    if (Buffer.byteLength(value, 'utf8') > 32 * 1024) throw new Error('context too large')
+    const parsed: unknown = JSON.parse(value)
+    const context = typeof parsed === 'object' && parsed !== null ? Reflect.get(parsed, 'knowledgeContext') : undefined
+    return context === undefined ? undefined : AgentKnowledgeContextSchema.parse(context)
+  } catch { throw new AgentRepositoryError('AGENT_RUN_CONTEXT_CORRUPT', 'Stored source context is invalid', 500) }
+}
+
 const currentPageHint = (value: string | undefined): AgentCurrentPageHint | undefined => {
   if (value === undefined) return undefined
-  if (Buffer.byteLength(value, 'utf8') > 16 * 1_024) throw new AgentRepositoryError('AGENT_RUN_CONTEXT_CORRUPT', 'Stored run context is too large', 500)
+  if (Buffer.byteLength(value, 'utf8') > 32 * 1_024) throw new AgentRepositoryError('AGENT_RUN_CONTEXT_CORRUPT', 'Stored run context is too large', 500)
   try {
     const parsed: unknown = JSON.parse(value)
     const currentPage = typeof parsed === 'object' && parsed !== null ? Reflect.get(parsed, 'currentPage') : undefined
@@ -719,6 +733,7 @@ export class AgentProductRuntime {
       expectedSessionVersion: input.expectedSessionVersion,
       content: input.content,
       ...(input.currentPage === undefined ? {} : { currentPage: input.currentPage }),
+      ...(input.knowledgeContext === undefined ? {} : { knowledgeContext: input.knowledgeContext }),
       ...resolved,
       skillVersionIds,
       reservationExpiresAt: new Date(Date.now() + resolved.reservationMilliseconds)
@@ -747,6 +762,7 @@ export class AgentProductRuntime {
         expectedSessionVersion: input.expectedSessionVersion,
         content: goal.objective,
         ...(input.currentPage === undefined ? {} : { currentPage: input.currentPage }),
+      ...(input.knowledgeContext === undefined ? {} : { knowledgeContext: input.knowledgeContext }),
         ...resolved,
         quota: { ...resolved.quota, tokens: Math.min(resolved.quota.tokens, goal.maxTokens) },
         goalId: goal.id,
@@ -853,6 +869,8 @@ export class AgentProductRuntime {
   async #planResearch(
     claim: AgentRunClaim,
     userRequest: string,
+    currentPage: AgentEngineRequest['currentPage'],
+    knowledgeContext: AgentKnowledgeContext | undefined,
     signal: AbortSignal,
     dispatchBudget: AgentDispatchBudget,
     maxTokens?: number
@@ -865,6 +883,8 @@ export class AgentProductRuntime {
         {
           run: claim,
           purpose: 'planner',
+          ...(currentPage === undefined ? {} : { currentPage }),
+          ...(knowledgeContext === undefined ? {} : { knowledgeContext }),
           actionAllowlist: [],
           limits: {
             ...(maxTokens === undefined ? {} : { maxTokens }),
@@ -989,6 +1009,7 @@ export class AgentProductRuntime {
     memory: AgentMemorySnapshot,
     skills: readonly RuntimeSkillRow[],
     currentPage: AgentCurrentPageHint | undefined,
+    knowledgeContext: AgentKnowledgeContext | undefined,
     reservations: AgentChildBudgetReservations,
     reservation: AgentChildBudgetReservation,
     signal: AbortSignal,
@@ -1023,7 +1044,8 @@ export class AgentProductRuntime {
           priorActivity: [],
           dispatchBudget,
           signal: childSignal,
-          ...(currentPage === undefined ? {} : { currentPage })
+          ...(currentPage === undefined ? {} : { currentPage }),
+          ...(knowledgeContext === undefined ? {} : { knowledgeContext })
         },
         {
           text: async delta => {
@@ -1108,6 +1130,7 @@ export class AgentProductRuntime {
     memory: AgentMemorySnapshot,
     skills: readonly RuntimeSkillRow[],
     currentPage: AgentCurrentPageHint | undefined,
+    knowledgeContext: AgentKnowledgeContext | undefined,
     budget: AgentChildBudgetUsage,
     signal: AbortSignal,
     dispatchBudget: AgentDispatchBudget
@@ -1141,7 +1164,7 @@ export class AgentProductRuntime {
       }
       const settlements = await Promise.allSettled(
         batch.map(({ task, reservation }) =>
-          this.#executeResearchTask(claim, task, memory, skills, currentPage, reservations, reservation, signal, dispatchBudget)
+          this.#executeResearchTask(claim, task, memory, skills, currentPage, knowledgeContext, reservations, reservation, signal, dispatchBudget)
         )
       )
       const rejected = settlements.find(result => result.status === 'rejected')
@@ -1276,6 +1299,7 @@ export class AgentProductRuntime {
       ])
       if (!sessionRow) throw new AgentRepositoryError('AGENT_RESOURCE_NOT_FOUND', 'Agent session was not found', 404)
       const currentPage = currentPageHint(contextRow?.data)
+      const knowledgeContext = knowledgeContextHint(contextRow?.data)
       const memory = decodeAgentMemorySnapshot(sessionRow.memorySnapshot)
       const priorActivity = priorRunActivity([...priorEventRows].reverse())
       const messages: AgentEngineMessage[] = messageRows.map(message => {
@@ -1320,11 +1344,11 @@ export class AgentProductRuntime {
         }
         const latestUserMessage = [...messages].reverse().find(message => message.role === 'user')?.content ?? ''
         if (this.#orchestration.enabled && claim.executionMode === 'agent' && tasks.length === 0 && shouldPlanAgentResearch(latestUserMessage)) {
-          tasks = (await this.#planResearch(claim, latestUserMessage, executionSignal, dispatchBudget, startingGoalTokens)).tasks
+          tasks = (await this.#planResearch(claim, latestUserMessage, currentPage, knowledgeContext, executionSignal, dispatchBudget, startingGoalTokens)).tasks
         }
       }
       if (continuation === null && this.#orchestration.enabled && claim.executionMode === 'agent' && tasks.some(task => task.status === 'pending')) {
-        await this.#executeResearchTasks(claim, tasks, memory, skills, currentPage, orchestrationTelemetry.budget, executionSignal, dispatchBudget)
+        await this.#executeResearchTasks(claim, tasks, memory, skills, currentPage, knowledgeContext, orchestrationTelemetry.budget, executionSignal, dispatchBudget)
         tasks = await listAgentRunTasks(this.#knex, claim.id)
         orchestrationTelemetry = await this.#orchestrationTelemetry(claim)
       }
@@ -1363,7 +1387,8 @@ export class AgentProductRuntime {
               }
             }),
         ...(research === undefined ? {} : { research }),
-        ...(currentPage === undefined ? {} : { currentPage })
+        ...(currentPage === undefined ? {} : { currentPage }),
+          ...(knowledgeContext === undefined ? {} : { knowledgeContext })
       }
       const sink: AgentEngineSink = {
         text: async delta => {
@@ -1741,6 +1766,12 @@ export class AgentProductRuntime {
           completedAt: null
         })
       if (changed !== 1) throw new AgentRepositoryError('GOAL_VERSION_CHANGED', 'Agent goal changed concurrently', 409)
+      const initialContext = await transaction('agentEvents as events')
+        .join('agentRuns as runs', 'runs.id', 'events.runId')
+        .where({ 'runs.goalId': locked.id, 'events.type': 'run.queued' })
+        .orderBy('events.createdAt', 'asc').first('events.data') as { data: string } | undefined
+      const knowledgeContext = knowledgeContextHint(initialContext?.data)
+      const currentPage = currentPageHint(initialContext?.data)
       const result = await admitAgentRunInTransaction(transaction, {
         id: runId,
         ownerId: locked.ownerId,
@@ -1748,6 +1779,8 @@ export class AgentProductRuntime {
         clientRequestId,
         expectedSessionVersion: Number(session.version),
         content,
+        ...(knowledgeContext === undefined ? {} : { knowledgeContext }),
+        ...(currentPage === undefined ? {} : { currentPage: { ...currentPage } }),
         ...resolved,
         quota: { ...resolved.quota, tokens: Math.min(resolved.quota.tokens, fresh.maxTokens - usage.tokens) },
         goalId: locked.id,

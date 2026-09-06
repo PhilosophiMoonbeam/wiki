@@ -357,13 +357,19 @@ export const registerPageReadActions = (kernel: ActionKernel, dependencies: Page
   const operations = dependencies.operations
 
   kernel.register('pages.search', async (rawInput, context) => {
-    const input = rawInput as SearchInput
+    const requested = rawInput as SearchInput
+    const scope = context.knowledgeContext?.scope
+    const input = { ...requested,
+      ...(scope?.kind === 'section' ? { locale: scope.locale, path: scope.path } : {}),
+      ...(scope?.kind === 'locale' ? { locale: scope.locale } : {})
+    }
     const requester = await requesterFor(dependencies.resolveRequester, context.authority)
     const rawResponse = await operations.search({
       query: input.query,
       ...(input.locale ? { locale: input.locale } : {}),
       ...(input.path !== undefined ? { path: input.path } : {}),
       limit: SEARCH_CANDIDATE_WINDOW_LIMIT,
+      ...(scope?.kind === 'selected' ? { pageIds: context.knowledgeContext?.sources.map(source => source.id) } : {}),
       requester
     })
     const response = SearchResponseSchema.safeParse(rawResponse)
@@ -428,6 +434,7 @@ export const registerPageReadActions = (kernel: ActionKernel, dependencies: Page
       ? await dependencies.knowledge.getCurrentMany(hydrated.map(result => result.id))
       : new Map<number, KnowledgeProjectionView>()
     const filtered = hydrated
+      .filter(result => scope?.kind !== 'selected' || context.knowledgeContext?.sources.some(source => source.id === result.id))
       .map(result => ({
         ...result,
         knowledge: result.knowledge ?? currentKnowledge.get(result.id) ?? null

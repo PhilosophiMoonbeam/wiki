@@ -62,6 +62,8 @@
               v-if="entry.message.content"
               :content="entry.message.content"
               :citations="entry.message.citations"
+              source-previews
+              @preview-source="previewSelector = $event"
               :streaming="entry.message.status === 'streaming'"
             />
             <div
@@ -102,6 +104,11 @@
                 Try again
               </v-btn>
             </aside>
+            <div v-if="entry.message.role === 'user' && entry.message.knowledgeContext" class="agent-message__source-context" aria-label="Source context used for this message">
+              <span>Search: {{ entry.message.knowledgeContext.scope.kind === 'selected' ? 'selected pages' : entry.message.knowledgeContext.scope.kind === 'section' ? entry.message.knowledgeContext.scope.path : entry.message.knowledgeContext.scope.kind === 'locale' ? entry.message.knowledgeContext.scope.locale.toUpperCase() : 'all Wiki' }}</span>
+              <v-btn v-for="source in entry.message.knowledgeContext.sources" :key="source.id" size="x-small" variant="text" prepend-icon="mdi-file-document-outline" :aria-label="`Preview ${source.title}, selected revision ${source.sourceRevision}`" @click="previewSelector = { id: source.id }">{{ source.title }} · r{{ source.sourceRevision }}</v-btn>
+            </div>
+            <AgentAnswerActions v-if="entry.message.role === 'assistant' && entry.message.status === 'complete' && entry.message.content" :content="entry.message.content" :citations="entry.message.citations" />
             <details v-if="entry.message.citations.length" class="agent-sources mt-3" aria-label="Sources">
               <summary class="agent-sources__heading">
                 <v-icon icon="mdi-book-open-page-variant-outline" size="18" aria-hidden="true" />
@@ -128,6 +135,7 @@
                     <v-icon v-if="safeNavigableHref(group.pageHref)" icon="mdi-open-in-new" size="15" aria-hidden="true" />
                     <span v-if="safeNavigableHref(group.pageHref)" class="agent-sources__new-window"> (opens in a new tab)</span>
                   </component>
+                  <v-btn v-if="sourceSelector(group.pageHref)" class="agent-sources__preview" size="small" variant="text" prepend-icon="mdi-text-box-search-outline" :aria-label="`Preview ${group.pageLabel}`" @click="previewSelector = sourceSelector(group.pageHref)">Preview source</v-btn>
                   <ol v-if="group.sections.length" class="agent-sources__sections">
                     <li
                       v-for="citationEntry in group.sections"
@@ -230,6 +238,7 @@
         @click="emit('suggest', suggestion.prompt)"
       >{{ suggestion.label }}</v-btn>
     </div>
+    <WikiSourcePreview v-if="previewSelector" :selector="previewSelector" :can-ask="canSubmit !== false" @close="previewSelector = null" @ask="source => { previewSelector = null; emit('askSource', source) }" />
   </section>
 </template>
 
@@ -237,6 +246,9 @@
 import { computed, ref, watch } from 'vue'
 import type { AgentToolState, AgentThreadState } from '../../../shared/agents/contracts.ts'
 import AgentMarkdown from './agent-markdown.vue'
+import AgentAnswerActions from './agent-answer-actions.vue'
+import WikiSourcePreview from '../common/wiki-source-preview.vue'
+import { wikiSourceSelectorFromHref, type WikiSource, type WikiSourceSelector } from '../../../shared/wiki-source.ts'
 import AgentTaskProgress from './agent-task-progress.vue'
 import AgentToolCard from './agent-tool-card.vue'
 import {
@@ -247,6 +259,7 @@ import {
 
 const props = defineProps<{ thread: AgentThreadState; connection: string; decidingApprovalId?: string | null; canSubmit?: boolean }>()
 const emit = defineEmits<{
+  askSource: [source: WikiSource]
   suggest: [prompt: string]
   decision: [proposalId: string, approvalId: string, decision: 'approved' | 'denied', confirmationPath?: string]
 }>()
@@ -257,6 +270,8 @@ const forwardDecision = (
   confirmationPath?: string
 ): void => emit('decision', proposalId, approvalId, decision, confirmationPath)
 
+const previewSelector = ref<WikiSourceSelector | null>(null)
+const sourceSelector = (href: string | null): WikiSourceSelector | null => href ? wikiSourceSelectorFromHref(href, window.location.origin) : null
 const messageTimeFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
 const messageTimestampFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 interface MessageTemporalMetadata {
@@ -1081,4 +1096,10 @@ watch(
     outline-color: Highlight;
   }
 }
+</style>
+
+<style scoped>
+.agent-message__source-context { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-top: .75rem; font-size: .68rem; opacity: .75; }
+.agent-message__source-context .v-btn { max-width: 100%; }
+.agent-message__source-context :deep(.v-btn__content) { overflow: hidden; text-overflow: ellipsis; }
 </style>
