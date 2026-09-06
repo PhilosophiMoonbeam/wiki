@@ -225,7 +225,7 @@ export default defineComponent({
       return this.items.filter(item => item.k !== 'link' || item.y !== 'home')
     },
     pageLocationKey (): string {
-      return `${this.locale}:${this.path}`
+      return `${wikiStore.page.visibility}:${wikiStore.page.id}:${this.locale}:${this.path}`
     }
   },
   watch: {
