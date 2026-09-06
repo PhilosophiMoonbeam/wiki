@@ -20,6 +20,7 @@ import storageRouter from './storage.ts'
 import systemRouter from './system.ts'
 import themingRouter from './theming.ts'
 import usersRouter from './users.ts'
+import taxonomyRouter from './taxonomy.ts'
 import webhooksRouter from './webhooks.ts'
 
 export interface ApiRuntime {
@@ -48,6 +49,7 @@ router.use('/users', usersRouter)
 router.use('/pages', pagesRouter)
 router.use('/auth', authRouter)
 router.use('/webhooks', webhooksRouter)
+router.use('/taxonomy', taxonomyRouter)
 
 router.use((req, res) => {
   res.status(404).json({ error: 'Not Found' })

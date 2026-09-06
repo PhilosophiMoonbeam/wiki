@@ -2,6 +2,8 @@ import { Model } from 'objection'
 import type { Knex } from 'knex'
 import _ from 'lodash'
 import Page from './pages.ts'
+import { tagAliasMap } from '../helpers/tag-aliases.ts'
+import errors from '../operations/errors.ts'
 
 /* global WIKI */
 
@@ -12,6 +14,8 @@ export default class Tag extends Model {
   declare id: number
   declare tag: string
   declare title: string
+  declare redirectToId: number | null
+  declare isArchived: boolean
   declare createdAt: string
   declare updatedAt: string
   static override get tableName() {
@@ -26,6 +30,8 @@ export default class Tag extends Model {
         id: { type: 'integer' },
         tag: { type: 'string' },
         title: { type: 'string' },
+        redirectToId: { type: ['integer', 'null'] },
+        isArchived: { type: 'boolean' },
 
         createdAt: { type: 'string' },
         updatedAt: { type: 'string' }
@@ -55,7 +61,8 @@ export default class Tag extends Model {
     this.createdAt = new Date().toISOString()
     this.updatedAt = new Date().toISOString()
   }
-  static async associateTags({ tags, page, transaction }: { tags: string[]; page: Page; transaction?: Knex.Transaction }) {
+  static async associateTags({ tags, page, transaction }: { tags: string[]; page: Page; transaction?: Knex.Transaction }): Promise<boolean> {
+    if (!transaction) return wiki.models.knex.transaction(tx => this.associateTags({ tags, page, transaction: tx }))
     // Format tags
 
     tags = _.uniq(tags.map(t => _.trim(t).toLowerCase()))
@@ -73,7 +80,12 @@ export default class Tag extends Model {
 
     // Fetch current page tags
 
-    const targetTags = await wiki.models.tags.query(transaction).column('id', 'tag').whereIn('tag', tags)
+    const identities = await wiki.models.tags.query(transaction).select('id', 'tag', 'redirectToId', 'isArchived').orderBy('id').forShare()
+    const aliases = tagAliasMap(identities)
+    const archived = tags.find(tag => aliases[tag] === null)
+    if (archived) throw new errors.ApplicationError(`Tag “${archived}” is archived. Restore it in Administration → Tags, or choose an active tag.`, { status: 400 })
+    const names = _.uniq(tags.map(tag => aliases[tag] ?? tag))
+    const targetTags = await wiki.models.tags.query(transaction).column('id', 'tag').whereIn('tag', names)
     const currentTags = await page.$relatedQuery('tags', transaction)
 
     // Tags to relate
@@ -97,5 +109,5 @@ export default class Tag extends Model {
 }
 
 const wiki = WIKI as unknown as {
-  models: { tags: typeof Tag }
+  models: { tags: typeof Tag; knex: Knex }
 }

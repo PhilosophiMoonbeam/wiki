@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import knexModule, { type Knex } from 'knex'
+import { up as migrateTaxonomy } from '../../db/migrations/tsfranki-000013-taxonomy-lifecycle.ts'
 import type PageModel from '../../models/pages.ts'
 import type TagModel from '../../models/tags.ts'
 import { afterAll, beforeAll, describe, expect, it, vi } from '../bun-test.mts'
@@ -21,7 +22,7 @@ const wikiGlobal = globalThis as unknown as { WIKI?: unknown }
 const originalWiki = wikiGlobal.WIKI
 
 interface TestWiki {
-  models: { tags: typeof TagModel | undefined }
+  models: { tags: typeof TagModel | undefined; knex: Knex }
 }
 
 suite('PostgreSQL tag association', () => {
@@ -44,6 +45,7 @@ suite('PostgreSQL tag association', () => {
       table.timestamp('createdAt').notNullable()
       table.timestamp('updatedAt').notNullable()
     })
+    await migrateTaxonomy(db)
     await db.schema.createTable('pageTags', table => {
       table.integer('pageId').notNullable().references('id').inTable('pages').onDelete('CASCADE')
       table.integer('tagId').notNullable().references('id').inTable('tags').onDelete('CASCADE')
@@ -51,7 +53,7 @@ suite('PostgreSQL tag association', () => {
     })
     await db('pages').insert([{ id: 1 }, { id: 2 }])
 
-    const testWiki: TestWiki = { models: { tags: undefined } }
+    const testWiki: TestWiki = { models: { tags: undefined, knex: db } }
     wikiGlobal.WIKI = testWiki
     // Models capture the global WIKI object during evaluation, so they must load after the test installs it.
     Tag = (await vi.importFresh('../../models/tags.ts', import.meta.url)).default
@@ -113,4 +115,18 @@ suite('PostgreSQL tag association', () => {
       { pageId: 2, tagId: canonicalTags[0].id }
     ])
   })
+  it('resolves aliases during authoring and rejects archived names without losing current assignments', async () => {
+    const now = new Date().toISOString()
+    const [canonical] = await db('tags').insert({ tag: 'canonical', title: 'Canonical', createdAt: now, updatedAt: now }).returning('id')
+    await db('tags').insert([
+      { tag: 'old-label', title: 'Old label', redirectToId: canonical.id, createdAt: now, updatedAt: now },
+      { tag: 'retired', title: 'Retired', isArchived: true, createdAt: now, updatedAt: now }
+    ])
+    const page = await Page.query().findById(1).throwIfNotFound()
+    await Tag.associateTags({ tags: ['old-label', 'canonical'], page })
+    expect(await db('pageTags').where('pageId', 1).pluck('tagId')).toEqual([canonical.id])
+    await expect(Tag.associateTags({ tags: ['retired'], page })).rejects.toThrow('archived')
+    expect(await db('pageTags').where('pageId', 1).pluck('tagId')).toEqual([canonical.id])
+  })
+
 })

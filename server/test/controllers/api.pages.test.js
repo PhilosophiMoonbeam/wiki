@@ -1,3 +1,5 @@
+const taxonomyLegacyChange = vi.fn()
+vi.mockModule('../../operations/taxonomy.ts', import.meta.url, () => ({ default: () => ({ legacyChange: taxonomyLegacyChange }) }))
 vi.mockModule('express', import.meta.url, () => {
   const router = {
     delete: vi.fn(),
@@ -61,7 +63,8 @@ const knexWithProjection = (projection = null) =>
     const chain = {
       first: vi.fn().mockResolvedValue(table === 'pageKnowledgeProjections as projections' && projection !== null ? { projection } : undefined),
       join: vi.fn().mockReturnThis(),
-      where: vi.fn().mockReturnThis()
+      where: vi.fn().mockReturnThis(),
+      select: vi.fn().mockResolvedValue([])
     }
     return chain
   })
@@ -70,6 +73,7 @@ const knexWithProjection = (projection = null) =>
 describe('controllers/api pages endpoints', () => {
   beforeEach(() => {
     vi.resetModules()
+    taxonomyLegacyChange.mockReset().mockResolvedValue({ tagId: 7, pageCount: 0, refreshWarnings: [] })
     express.__router.delete.mockClear()
     express.__router.get.mockClear()
     express.__router.patch.mockClear()
@@ -665,7 +669,7 @@ describe('controllers/api pages endpoints', () => {
     expect(typeof listPages).toBe('function')
   })
 
-  it('lists pages with GraphQL-compatible query semantics and access filtering', async () => {
+  it('resolves historical tag filters while preserving query semantics and access filtering', async () => {
     const rows = [
       {
         id: 10,
@@ -720,7 +724,8 @@ describe('controllers/api pages endpoints', () => {
       .mockReturnValueOnce(true)
       .mockReturnValueOnce(false)
     const { listPages } = await loadHandler()
-    const req = { user: { permissions: ['read:pages'] }, query: { locale: 'en', limit: '50', orderBy: 'UPDATED', orderByDirection: 'DESC', tags: 'alpha, docs' } }
+    global.WIKI.models.knex.mockReturnValue({ select: vi.fn().mockResolvedValue([{ id: 1, tag: 'old-alpha', redirectToId: 2 }, { id: 2, tag: 'alpha' }, { id: 3, tag: 'docs' }]) })
+    const req = { user: { permissions: ['read:pages'] }, query: { locale: 'en', limit: '50', orderBy: 'UPDATED', orderByDirection: 'DESC', tags: 'old-alpha, docs' } }
     const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
 
     await listPages(req, res, vi.fn())
@@ -1610,62 +1615,31 @@ describe('controllers/api pages endpoints', () => {
     expect(global.WIKI.models.tags.query).not.toHaveBeenCalled()
   })
 
-  it('updates tags with GraphQL-compatible trim and lowercase semantics', async () => {
+  it('passes administrator and session context to the reviewed tag lifecycle', async () => {
     const { updateTag } = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] }, params: { id: '7' }, body: { tag: '  News  ', title: '  Current News  ' } }
+    const req = { user: { id: 1, permissions: ['manage:system'] }, sessionID: 'session', params: { id: '7' }, body: { tag: '  News  ', title: ' Current News ' } }
     const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
     await updateTag(req, res)
-
-    const tagsQuery = global.WIKI.models.tags.query.mock.results[0].value
-    expect(tagsQuery.findById).toHaveBeenCalledWith(7)
-    const tagPatch = tagsQuery.findById.mock.results[0].value
-    expect(tagPatch.patch).toHaveBeenCalledWith({ tag: 'news', title: 'Current News' })
+    expect(taxonomyLegacyChange).toHaveBeenCalledWith({ requester: req.user, sessionId: 'session' }, { action: 'edit', tagId: 7, tag: '  News  ', title: ' Current News ' })
     expect(res.json).toHaveBeenCalledWith({ message: 'Tag has been updated successfully.' })
+    expect(global.WIKI.models.tags.query).not.toHaveBeenCalled()
   })
 
-  it('allows empty strings to preserve existing updateTag GraphQL write semantics', async () => {
+  it('returns lifecycle validation and review conflicts through the operation error policy', async () => {
+    taxonomyLegacyChange.mockRejectedValueOnce(Object.assign(new Error('Review this change in Administration → Tags.'), { status: 409 }))
     const { updateTag } = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] }, params: { id: '7' }, body: { tag: '', title: '' } }
     const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await updateTag(req, res)
-
-    const tagsQuery = global.WIKI.models.tags.query.mock.results[0].value
-    expect(tagsQuery.findById.mock.results[0].value.patch).toHaveBeenCalledWith({ tag: '', title: '' })
-    expect(res.json).toHaveBeenCalledWith({ message: 'Tag has been updated successfully.' })
+    await updateTag({ user: { id: 1, permissions: ['manage:system'] }, params: { id: '7' }, body: { tag: 'news', title: '' } }, res)
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(res.json).toHaveBeenCalledWith({ error: 'Review this change in Administration → Tags.' })
   })
 
-  it('returns a JSON 404 when a tag update affects no rows', async () => {
-    global.WIKI.models.tags.query.mockReturnValueOnce({
-      findById: vi.fn().mockReturnValue({
-        patch: vi.fn().mockResolvedValue(0)
-      })
-    })
-    const { updateTag } = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] }, params: { id: '7' }, body: { tag: 'News', title: 'News' } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await updateTag(req, res)
-
-    expect(res.status).toHaveBeenCalledWith(404)
-    expect(res.json).toHaveBeenCalledWith({ error: 'This tag does not exist.' })
-  })
-
-  it('forwards unexpected tag update failures to the central error policy', async () => {
+  it('forwards unexpected tag lifecycle failures to the central error policy', async () => {
     const failure = new Error('tag db down')
-    global.WIKI.models.tags.query.mockReturnValueOnce({
-      findById: vi.fn().mockReturnValue({
-        patch: vi.fn().mockRejectedValue(failure)
-      })
-    })
+    taxonomyLegacyChange.mockRejectedValueOnce(failure)
     const { updateTag } = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] }, params: { id: '7' }, body: { tag: 'News', title: 'News' } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-    const next = vi.fn()
-
-    await updateTag(req, res, next)
-
+    const next = vi.fn(), res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await updateTag({ user: { id: 1, permissions: ['manage:system'] }, params: { id: '7' }, body: { tag: 'news', title: '' } }, res, next)
     expect(next).toHaveBeenCalledWith(failure)
     expect(res.json).not.toHaveBeenCalled()
   })
@@ -1707,54 +1681,22 @@ describe('controllers/api pages endpoints', () => {
     expect(global.WIKI.models.tags.query).not.toHaveBeenCalled()
   })
 
-  it('deletes tags with GraphQL-compatible unrelate-then-delete semantics', async () => {
+  it('archives a tag through the reviewed lifecycle with administrator context', async () => {
     const { deleteTag } = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] }, params: { id: '7' } }
+    const req = { user: { id: 1, permissions: ['manage:system'] }, sessionID: 'session', params: { id: '7' } }
     const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
     await deleteTag(req, res)
-
-    const findQuery = global.WIKI.models.tags.query.mock.results[0].value
-    expect(findQuery.findById).toHaveBeenCalledWith(7)
-    const tagToDel = findQuery.findById.mock.results[0].value
-    expect(tagToDel.$relatedQuery).toHaveBeenCalledWith('pages')
-    expect(tagToDel.$relatedQuery.mock.results[0].value.unrelate).toHaveBeenCalled()
-    const deleteQuery = global.WIKI.models.tags.query.mock.results[1].value
-    expect(deleteQuery.deleteById).toHaveBeenCalledWith(7)
-    expect(res.json).toHaveBeenCalledWith({ message: 'Tag has been deleted.' })
+    expect(taxonomyLegacyChange).toHaveBeenCalledWith({ requester: req.user, sessionId: 'session' }, { action: 'archive', tagId: 7 })
+    expect(global.WIKI.models.tags.query).not.toHaveBeenCalled()
+    expect(res.json).toHaveBeenCalledWith({ message: 'Tag has been archived. Historical references are preserved.' })
   })
 
-  it('returns a JSON 404 when deleting a missing tag', async () => {
-    global.WIKI.models.tags.query.mockReturnValueOnce({
-      findById: vi.fn().mockResolvedValue(null)
-    })
+  it('returns a JSON 404 when archiving a missing tag', async () => {
+    taxonomyLegacyChange.mockRejectedValueOnce(Object.assign(new Error('This tag no longer exists.'), { status: 404 }))
     const { deleteTag } = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] }, params: { id: '7' } }
     const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await deleteTag(req, res)
-
+    await deleteTag({ user: { id: 1, permissions: ['manage:system'] }, params: { id: '7' } }, res)
     expect(res.status).toHaveBeenCalledWith(404)
-    expect(res.json).toHaveBeenCalledWith({ error: 'This tag does not exist.' })
-  })
-
-  it('forwards unexpected tag delete failures to the central error policy', async () => {
-    const failure = new Error('unrelate failed')
-    global.WIKI.models.tags.query.mockReturnValueOnce({
-      findById: vi.fn().mockReturnValue({
-        $relatedQuery: vi.fn().mockReturnValue({
-          unrelate: vi.fn().mockRejectedValue(failure)
-        })
-      })
-    })
-    const { deleteTag } = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] }, params: { id: '7' } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-    const next = vi.fn()
-
-    await deleteTag(req, res, next)
-
-    expect(next).toHaveBeenCalledWith(failure)
-    expect(res.json).not.toHaveBeenCalled()
+    expect(res.json).toHaveBeenCalledWith({ error: 'This tag no longer exists.' })
   })
 })

@@ -40,6 +40,7 @@ const rule = (overrides: Partial<PageRule> = {}): PageRule => ({
 describe('page-rule authorization contract', () => {
   beforeEach(() => {
     auth.groups = {}
+    auth.tagAliases = {}
   })
 
   it('denies missing principals, absent global permissions, and pages without a matching rule', () => {
@@ -53,6 +54,18 @@ describe('page-rule authorization contract', () => {
 
   it('lets manage:system bypass global and page-scoped rules', () => {
     expect(auth.checkAccess(user([], ['manage:system']), ['delete:pages'], page)).toBe(true)
+  })
+
+  it('resolves old tag names in access rules and cached page labels, while archived names fail closed', () => {
+    auth.groups = { '1': group(1, [rule({ match: 'TAG', path: 'old-label' })]) }
+    auth.tagAliases = { 'old-label': 'published', published: 'published', retired: null }
+    expect(auth.checkAccess(user(), ['read:pages'], page)).toBe(true)
+    expect(auth.checkAccess(user(), ['read:pages'], { ...page, tags: [{ tag: 'old-label' }] })).toBe(true)
+    auth.tagAliases['old-label'] = null
+    expect(auth.checkAccess(user(), ['read:pages'], page)).toBe(false)
+    expect(auth.checkAccess(user(), ['read:pages'], { ...page, tags: [{ tag: 'old-label' }] })).toBe(false)
+    auth.groups = { '1': group(1, [rule({ match: 'TAG', path: 'retired' })]) }
+    expect(auth.checkAccess(user(), ['read:pages'], { ...page, tags: [{ tag: 'retired' }] })).toBe(false)
   })
 
   it('uses the most specific matching path across groups regardless of group order', () => {

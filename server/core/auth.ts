@@ -1,3 +1,4 @@
+import { tagAliasMap, resolveTagName, type TagIdentity } from '../helpers/tag-aliases.ts'
 import passport from 'passport'
 import passportJwt from 'passport-jwt'
 import jwt from 'jsonwebtoken'
@@ -146,6 +147,7 @@ interface ApiKeyQuery extends PromiseLike<ApiKeyRecord[]> {
 }
 
 interface WikiModels {
+  tags: { query(): PromiseLike<TagIdentity[]> }
   apiKeys: { query(): ApiKeyQuery }
   authentication: { getStrategies(): Promise<StrategyRecord[]> }
   groups: { query(): GroupQuery }
@@ -211,6 +213,7 @@ interface AuthService {
   checkAssignUserToGroupAccess(requester: AccessUser, groupIds?: number[]): Promise<boolean>
   checkExclusiveAccess(user: AccessUser, includePermissions?: string[], excludePermissions?: string[]): boolean
   getEffectivePermissions(req: Request, page: PageContext): EffectivePermissions
+  tagAliases: Record<string, string | null>
   groups: Record<string, GroupRecord>
   guest: GuestState
   init(): AuthService
@@ -338,6 +341,7 @@ const auth: AuthService = {
   passport,
   guest: { cacheExpiration: DateTime.utc().minus({ days: 1 }) },
   groups: {},
+  tagAliases: {},
   validApiKeys: [],
   revocationList: cache.init(),
 
@@ -560,7 +564,7 @@ const auth: AuthService = {
             break
           case 'TAG':
             for (const tag of page.tags ?? []) {
-              if (tag.tag === rule.path) checkState = this._applyPageRuleSpecificity({ rule, checkState, higherPriority: ['EXACT'] })
+              if (resolveTagName(this.tagAliases, rule.path) !== null && resolveTagName(this.tagAliases, tag.tag) === resolveTagName(this.tagAliases, rule.path)) checkState = this._applyPageRuleSpecificity({ rule, checkState, higherPriority: ['EXACT'] })
             }
             break
           case 'EXACT':
@@ -605,10 +609,12 @@ const auth: AuthService = {
   },
 
   async reloadGroups() {
-    const groups = await getWiki().models.groups.query()
+    const [groups, tags] = await Promise.all([getWiki().models.groups.query(), getWiki().models.tags.query()])
+    const aliases = tagAliasMap(tags)
     const indexedGroups: Record<string, GroupRecord> = {}
     for (const group of groups) indexedGroups[String(group.id)] = group
     this.groups = indexedGroups
+    this.tagAliases = aliases
     this.guest.cacheExpiration = DateTime.utc().minus({ days: 1 })
   },
 

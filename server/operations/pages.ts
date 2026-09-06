@@ -1,3 +1,5 @@
+import taxonomy from './taxonomy.ts'
+import { tagAliasMap, resolveTagName } from '../helpers/tag-aliases.ts'
 import _ from 'lodash'
 import { searchExcerpt } from '../helpers/search-excerpt.ts'
 import type { WikiSource } from '../../shared/wiki-source.ts'
@@ -249,6 +251,12 @@ const list = async ({ requester, ...rawArgs }: OperationInput) => {
           : [],
     orderBy: typeof rawArgs.orderBy === 'string' ? rawArgs.orderBy : '',
     orderByDirection: typeof rawArgs.orderByDirection === 'string' ? rawArgs.orderByDirection : ''
+  }
+  if (args.tags?.length) {
+    const aliases = tagAliasMap(await wiki.models.knex('tags').select('id', 'tag', 'redirectToId', 'isArchived'))
+    const resolved = args.tags.map(tag => resolveTagName(aliases, tag.trim().toLowerCase()))
+    if (resolved.some(tag => tag === null)) return []
+    args.tags = resolved as string[]
   }
   const pages = await wiki.models.pages
     .query()
@@ -700,25 +708,13 @@ const remove = async (input: OperationInput): Promise<unknown> => {
 }
 
 const updateTag = async (input: OperationInput): Promise<void> => {
-  const id = positiveInteger(input.id, 'id')
-  const tag = stringValue(input.tag, 'tag')
-  const title = stringValue(input.title, 'title')
-  const affectedRows = await wiki.models.tags
-    .query()
-    .findById(id)
-    .patch({
-      tag: _.trim(tag).toLowerCase(),
-      title: _.trim(title)
-    })
-  if (affectedRows < 1) throw new ApplicationError('This tag does not exist.', { code: 'TAG_NOT_FOUND', status: 404 })
+  await taxonomy().legacyChange({ requester: input.requester, sessionId: input.sessionId ?? '' }, {
+    action: 'edit', tagId: positiveInteger(input.id, 'id'), tag: stringValue(input.tag, 'tag'), title: stringValue(input.title, 'title')
+  })
 }
 
-const removeTag = async (value: unknown): Promise<void> => {
-  const id = positiveInteger(value, 'id')
-  const tag = await wiki.models.tags.query().findById(id)
-  if (!tag) throw new ApplicationError('This tag does not exist.', { code: 'TAG_NOT_FOUND', status: 404 })
-  await tag.$relatedQuery('pages').unrelate()
-  await wiki.models.tags.query().deleteById(id)
+const removeTag = async (value: unknown, context: OperationInput = {}): Promise<void> => {
+  await taxonomy().legacyChange({ requester: context.requester, sessionId: context.sessionId ?? '' }, { action: 'archive', tagId: positiveInteger(value, 'id') })
 }
 
 const getHistory = async (input: OperationInput) => {

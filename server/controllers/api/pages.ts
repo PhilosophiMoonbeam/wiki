@@ -1010,7 +1010,7 @@ router.patch('/tags/:id', async (req, res, next) => {
   }
 
   try {
-    await pageOperations.updateTag({ id, tag, title })
+    await pageOperations.updateTag({ ...pageOperationContext(req), id, tag, title })
     res.json({ message: 'Tag has been updated successfully.' })
   } catch (err) {
     sendOperationError(res, next, err, 'Tag update failed')
@@ -1033,8 +1033,8 @@ router.delete('/tags/:id', async (req, res, next) => {
   }
 
   try {
-    await pageOperations.removeTag(id)
-    res.json({ message: 'Tag has been deleted.' })
+    await pageOperations.removeTag(id, pageOperationContext(req))
+    res.json({ message: 'Tag has been archived. Historical references are preserved.' })
   } catch (err) {
     sendOperationError(res, next, err, 'Tag delete failed')
   }

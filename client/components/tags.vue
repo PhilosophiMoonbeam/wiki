@@ -308,7 +308,7 @@ export default {
       }, {})
     },
     tagsSelected () {
-      return this.tags.filter((tag: PageTagRow) => this.selection.includes(tag.tag))
+      return this.selection.map(tag => ({ tag, title: this.tags.find(entry => entry.tag === tag)?.title || tag }))
     },
     orderByItems () {
       return [
