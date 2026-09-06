@@ -21,7 +21,7 @@
         </div>
         <footer v-if="source && !loading && !error" class="wiki-source-preview__actions">
           <v-btn :href="wikiSourceHref(source)" target="_blank" rel="noopener noreferrer" variant="text" append-icon="mdi-open-in-new">Open page<span class="sr-only"> in a new tab</span></v-btn>
-          <v-btn v-if="canAsk" color="primary" variant="tonal" prepend-icon="mdi-text-box-plus-outline" @click="emit('ask', source)">Ask about this page</v-btn>
+          <v-btn v-if="canAsk" class="wiki-source-preview__ask" variant="tonal" prepend-icon="mdi-text-box-plus-outline" @click="emit('ask', source)">Ask about this page</v-btn>
         </footer>
       </section>
     </div>
@@ -77,6 +77,7 @@ onBeforeUnmount(() => { request?.abort(); focusScope?.deactivate() })
 .wiki-source-preview { position: fixed; inset: 0; z-index: 2800; display: flex; justify-content: flex-end; background: rgb(0 0 0 / .42); backdrop-filter: blur(3px); }
 .wiki-source-preview__panel { display: flex; flex-direction: column; width: min(42rem, 100%); height: 100%; background: var(--wiki-surface-raised, rgb(var(--v-theme-surface))); color: rgb(var(--v-theme-on-surface)); box-shadow: -12px 0 60px rgb(0 0 0 / .18); }
 .wiki-source-preview__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 2rem 1.75rem 1.25rem; border-bottom: 1px solid rgba(var(--v-theme-on-surface), .12); }
+.wiki-source-preview__ask { color: color-mix(in srgb, rgb(var(--v-theme-primary)) 35%, rgb(var(--v-theme-on-surface))); }
 .wiki-source-preview__eyebrow { font-size: .68rem; text-transform: uppercase; letter-spacing: .16em; color: color-mix(in srgb, rgb(var(--v-theme-primary)) 35%, rgb(var(--v-theme-on-surface))); font-weight: 700; margin: 0 0 .75rem; }
 .wiki-source-preview h2 { margin: 0; font-family: var(--wiki-font-display, 'Newsreader', serif); font-size: clamp(1.7rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.12; overflow-wrap: anywhere; }
 .wiki-source-preview__body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 1.75rem; }

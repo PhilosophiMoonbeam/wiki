@@ -21,7 +21,7 @@
             <v-alert v-if="saveError" type="error" variant="tonal" class="mt-3" role="alert">{{ saveError }}</v-alert>
           </template>
         </v-card-text>
-        <v-card-actions><v-spacer /><v-btn :disabled="saving" @click="draftOpen = false">{{ savedHref ? 'Done' : 'Cancel' }}</v-btn><v-btn v-if="!savedHref" color="primary" variant="tonal" :loading="saving" :disabled="!title.trim() || !path.trim() || !markdown.trim() || !locale.trim()" prepend-icon="mdi-lock-outline" @click="saveDraft">Create private draft</v-btn></v-card-actions>
+        <v-card-actions><v-spacer /><v-btn :disabled="saving" @click="draftOpen = false">{{ savedHref ? 'Done' : 'Cancel' }}</v-btn><v-btn v-if="!savedHref" class="agent-answer-draft__create" variant="tonal" :loading="saving" :disabled="!title.trim() || !path.trim() || !markdown.trim() || !locale.trim()" prepend-icon="mdi-lock-outline" @click="saveDraft">Create private draft</v-btn></v-card-actions>
       </v-card>
     </v-dialog>
   </div>
@@ -94,6 +94,7 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 .agent-answer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .2rem; margin-top: .8rem; opacity: .85; }
 .agent-answer-actions__feedback { font-size: .72rem; }
 .agent-answer-draft__heading { display: flex; justify-content: space-between; align-items: flex-start; padding: 1.5rem !important; gap: 1rem; white-space: normal; }
+.agent-answer-draft__create { color: color-mix(in srgb, rgb(var(--v-theme-primary)) 35%, rgb(var(--v-theme-on-surface))); }
 .agent-answer-draft__eyebrow { display: block; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: color-mix(in srgb, rgb(var(--v-theme-primary)) 35%, rgb(var(--v-theme-on-surface))); margin-bottom: .5rem; }
 .agent-answer-draft h2 { margin: 0; line-height: 1.15; font-family: var(--wiki-font-display, 'Newsreader', serif); font-size: 2rem; font-weight: 500; }
 .agent-answer-draft__intro { font-size: .88rem; opacity: .75; margin-bottom: 1.5rem; line-height: 1.6; }
