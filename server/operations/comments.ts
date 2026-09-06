@@ -139,14 +139,14 @@ const updateProviders = async (providers: unknown): Promise<void> => {
 
 const list = async ({ requester, pageId, sessionId = '' }: { requester: Requester; pageId: number; sessionId?: string }) => {
   const { models, auth, Error: errors } = getWiki()
-  if (!Number.isSafeInteger(pageId) || pageId < 1) throw new errors.CommentNotFound()
+  if (!Number.isSafeInteger(pageId) || pageId < 1) throw Object.assign(new errors.CommentNotFound(), { status: 404 })
   const page = await models.pages
     .query()
     .select('pages.id', 'pages.localeCode', 'pages.path', 'pages.visibility', 'pages.ownerId')
     .findById(pageId)
     .withGraphJoined('tags')
     .modifyGraph('tags', builder => builder.select('tag'))
-  if (!page || (page.visibility === 'private' && !canReadPage(requester, page))) throw new errors.CommentNotFound()
+  if (!page || (page.visibility === 'private' && !canReadPage(requester, page))) throw Object.assign(new errors.CommentNotFound(), { status: 404 })
   if (
     !canReadPage(requester, page) ||
     !auth.checkAccess(requester, ['read:comments'], {
@@ -155,7 +155,7 @@ const list = async ({ requester, pageId, sessionId = '' }: { requester: Requeste
       tags: page.tags
     })
   ) {
-    throw new errors.CommentViewForbidden()
+    throw Object.assign(new errors.CommentViewForbidden(), { status: 403 })
   }
   await assertPageUnlocked({ requester, pageId, sessionId })
   const includeAuditFields = auth.checkAccess(requester, ['manage:system'])
@@ -165,7 +165,7 @@ const list = async ({ requester, pageId, sessionId = '' }: { requester: Requeste
 const get = async ({ requester, id, sessionId = '' }: { requester: Requester; id: number; sessionId?: string }) => {
   const { models, auth, Error: errors, logger } = getWiki()
   const comment = await models.comments.query().findById(id) as unknown as Comment | undefined
-  if (!comment || !comment.pageId || comment.isHidden) throw new errors.CommentNotFound()
+  if (!comment || !comment.pageId || comment.isHidden) throw Object.assign(new errors.CommentNotFound(), { status: 404 })
   const page = await models.pages
     .query()
     .select('localeCode', 'path', 'visibility', 'ownerId')
@@ -174,9 +174,9 @@ const get = async ({ requester, id, sessionId = '' }: { requester: Requester; id
     .modifyGraph('tags', builder => builder.select('tag'))
   if (!page) {
     logger.warn(`Comment #${comment.id} is linked to a page #${comment.pageId} that doesn't exist! [ERROR]`)
-    throw new errors.CommentNotFound()
+    throw Object.assign(new errors.CommentNotFound(), { status: 404 })
   }
-  if (page.visibility === 'private' && !canReadPage(requester, page)) throw new errors.CommentNotFound()
+  if (page.visibility === 'private' && !canReadPage(requester, page)) throw Object.assign(new errors.CommentNotFound(), { status: 404 })
   if (
     !canReadPage(requester, page) ||
     !auth.checkAccess(requester, ['read:comments'], {
@@ -185,7 +185,7 @@ const get = async ({ requester, id, sessionId = '' }: { requester: Requester; id
       tags: page.tags
     })
   ) {
-    throw new errors.CommentViewForbidden()
+    throw Object.assign(new errors.CommentViewForbidden(), { status: 403 })
   }
   await assertPageUnlocked({ requester, pageId: comment.pageId, sessionId })
   return commentReadDto(comment, auth.checkAccess(requester, ['manage:system']))

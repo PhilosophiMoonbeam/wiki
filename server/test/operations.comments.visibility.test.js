@@ -106,6 +106,13 @@ describe('comment page identity and private existence isolation', () => {
     await expect(Promise.resolve(operations.list({ requester, pageId: 17 }))).rejects.toBeInstanceOf(CommentNotFound)
   })
 
+  it('returns an HTTP-compatible not-found status for a hidden comment', async () => {
+    global.WIKI.models.comments.query.mockReturnValue({ findById: vi.fn().mockResolvedValue({ id: 31, pageId: 17, isHidden: true }) })
+    const operations = (await vi.importFresh('../operations/comments.ts', import.meta.url)).default
+    await expect(operations.get({ requester: { id: 7, permissions: ['read:comments'] }, id: 31 })).rejects.toMatchObject({ status: 404 })
+    expect(global.WIKI.models.pages.query).not.toHaveBeenCalled()
+  })
+
   it('shares the durable create throttle across transports, keys, and windows', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_000)
     global.WIKI.models.comments.postNewComment

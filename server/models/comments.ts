@@ -95,12 +95,12 @@ export default class Comment extends Model {
     }
     content = _.trim(content)
     if (content.length > 50000) throw new wiki.Error.InputInvalid('Comments must be at most 50,000 characters.')
-    if (content.length < 2) throw new wiki.Error.CommentContentMissing()
+    if (content.length < 2) throw Object.assign(new wiki.Error.CommentContentMissing(), { status: 400 })
     const page = await wiki.models.pages.getPageFromDb(pageId)
-    if (!page) throw new wiki.Error.PageNotFound()
-    if (page.visibility === 'private' && !canReadPage(user, page)) throw new wiki.Error.PageNotFound()
+    if (!page) throw Object.assign(new wiki.Error.PageNotFound(), { status: 404 })
+    if (page.visibility === 'private' && !canReadPage(user, page)) throw Object.assign(new wiki.Error.PageNotFound(), { status: 404 })
     if (!canReadPage(user, page) || !wiki.auth.checkAccess(user, ['write:comments'], { path: page.path, locale: page.localeCode, tags: page.tags })) {
-      throw new wiki.Error.CommentPostForbidden()
+      throw Object.assign(new wiki.Error.CommentPostForbidden(), { status: 403 })
     }
     await assertPageUnlocked({ requester: user, pageId, sessionId })
     if (typeof wiki.data.commentProvider.create !== 'function') throw new wiki.Error.InputInvalid('Built-in discussions are not the active provider.')
@@ -116,12 +116,12 @@ export default class Comment extends Model {
 
   static async updateComment ({ id, content, user, ip, sessionId = '' }: UpdateCommentOptions): Promise<unknown> {
     const pageId = (await this.query().findById(id).select('pageId'))?.pageId
-    if (!pageId) throw new wiki.Error.CommentNotFound()
+    if (!pageId) throw Object.assign(new wiki.Error.CommentNotFound(), { status: 404 })
     const page = await wiki.models.pages.getPageFromDb(pageId)
-    if (!page) throw new wiki.Error.PageNotFound()
-    if (page.visibility === 'private' && !canReadPage(user, page)) throw new wiki.Error.CommentNotFound()
+    if (!page) throw Object.assign(new wiki.Error.PageNotFound(), { status: 404 })
+    if (page.visibility === 'private' && !canReadPage(user, page)) throw Object.assign(new wiki.Error.CommentNotFound(), { status: 404 })
     if (!canReadPage(user, page) || !wiki.auth.checkAccess(user, ['manage:comments'], { path: page.path, locale: page.localeCode, tags: page.tags })) {
-      throw new wiki.Error.CommentManageForbidden()
+      throw Object.assign(new wiki.Error.CommentManageForbidden(), { status: 403 })
     }
     await assertPageUnlocked({ requester: user, pageId, sessionId })
     content = _.trim(content)
@@ -133,12 +133,12 @@ export default class Comment extends Model {
 
   static async deleteComment ({ id, user, ip, sessionId = '' }: DeleteCommentOptions): Promise<void> {
     const pageId = (await this.query().findById(id).select('pageId'))?.pageId
-    if (!pageId) throw new wiki.Error.CommentNotFound()
+    if (!pageId) throw Object.assign(new wiki.Error.CommentNotFound(), { status: 404 })
     const page = await wiki.models.pages.getPageFromDb(pageId)
-    if (!page) throw new wiki.Error.PageNotFound()
-    if (page.visibility === 'private' && !canReadPage(user, page)) throw new wiki.Error.CommentNotFound()
+    if (!page) throw Object.assign(new wiki.Error.PageNotFound(), { status: 404 })
+    if (page.visibility === 'private' && !canReadPage(user, page)) throw Object.assign(new wiki.Error.CommentNotFound(), { status: 404 })
     if (!canReadPage(user, page) || !wiki.auth.checkAccess(user, ['manage:comments'], { path: page.path, locale: page.localeCode, tags: page.tags })) {
-      throw new wiki.Error.CommentManageForbidden()
+      throw Object.assign(new wiki.Error.CommentManageForbidden(), { status: 403 })
     }
     await assertPageUnlocked({ requester: user, pageId, sessionId })
     void ip
