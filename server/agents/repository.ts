@@ -167,6 +167,7 @@ export const listOwnedAgentSessions = async (knex: Knex, ownerId: number, limit 
   const keyset = cursor === undefined ? null : decodeAgentSessionCursor(cursor)
   const query = knex<SessionRow>('agentSessions')
     .where({ ownerId })
+    .andWhere(history => history.where('retention', 'saved').orWhereNotNull('folderId'))
     .whereNull('deletedAt')
     .whereExists(function persistedConversation() {
       this.select(knex.raw('1'))

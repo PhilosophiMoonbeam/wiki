@@ -271,11 +271,20 @@ const props = defineProps<{
   invocationLimit: number
   statusLabel: string
   statusTone: 'ready' | 'error' | 'busy'
+  sessionId?: string
+  initialDraft?: string
   hasMessages?: boolean
   externalDescriptionId?: string
 }>()
-const emit = defineEmits<{ send: [content: string, invokedSkillVersionIds: readonly string[], mode: 'message' | 'goal', completion?: (success: boolean) => void]; stop: []; manageSkills: []; retrySkills: []; updateSkillPreferences: [skillIds: string[]] }>()
-const draft = ref('')
+const emit = defineEmits<{ draftChange: [sessionId: string, text: string]; send: [content: string, invokedSkillVersionIds: readonly string[], mode: 'message' | 'goal', completion?: (success: boolean) => void]; stop: []; manageSkills: []; retrySkills: []; updateSkillPreferences: [skillIds: string[]] }>()
+const draft = ref(props.initialDraft ?? '')
+watch(draft, text => {
+  if (props.sessionId) emit('draftChange', props.sessionId, text)
+}, { flush: 'sync' })
+// A send may settle while a replacement composer is already mounted.
+watch(() => props.initialDraft, (value, previous) => {
+  if (draft.value === (previous ?? '')) draft.value = value ?? ''
+})
 const goalMode = ref(false)
 const skillMenuOpen = ref(false)
 const selectedSkillIds = ref<string[]>([])

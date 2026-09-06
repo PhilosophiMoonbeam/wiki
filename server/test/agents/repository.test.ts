@@ -375,6 +375,26 @@ describe('durable agent repositories', () => {
     )
   })
 
+  it('excludes temporary chats before limiting history and lists them after they are kept', async () => {
+    const temporaryId = '00000000-0000-4000-8000-000000000099'
+    await createAgentSession(knex, { id: temporaryId, ownerId: 7, retention: 'temporary', providerProfileId: null, executionMode: 'agent', expiresAt: new Date('2099-01-01T00:00:00Z') })
+    await appendAgentMessage(knex, { ownerId: 7, sessionId: temporaryId, role: 'user', status: 'complete', content: 'A temporary question.' })
+    await knex('agentSessions').where({ id: temporaryId }).update({ lastActivityAt: new Date('2098-01-01T00:00:00Z') })
+
+    expect((await listOwnedAgentSessions(knex, 7, 1)).map(session => session.id)).toEqual([sessionId])
+    expect(await getOwnedAgentSession(knex, 7, temporaryId)).toMatchObject({ retention: 'temporary' })
+    await expect(getOwnedAgentSession(knex, 8, temporaryId)).rejects.toMatchObject({ status: 404 })
+
+    await updateAgentSession(knex, { ownerId: 7, sessionId: temporaryId, expectedVersion: 1, retention: 'saved', expiresAt: null })
+    expect((await listOwnedAgentSessions(knex, 7, 1)).map(session => session.id)).toEqual([temporaryId])
+    expect(await getOwnedAgentSession(knex, 7, temporaryId)).toMatchObject({ retention: 'saved', expiresAt: null })
+  })
+
+  it('preserves visibility for a legacy temporary conversation explicitly kept in a folder', async () => {
+    await knex('agentSessions').where({ id: sessionId }).update({ retention: 'temporary', folderId: '00000000-0000-4000-8000-000000000088' })
+    expect((await listOwnedAgentSessions(knex, 7)).map(session => session.id)).toEqual([sessionId])
+  })
+
   it('persists bounded immutable memory snapshots at session creation', async () => {
     const snapshotSessionId = '00000000-0000-4000-8000-000000000005'
     const memorySnapshot = '{"agent":["Use citations."],"user":["Prefers concise answers."]}'

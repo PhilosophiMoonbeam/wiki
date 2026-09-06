@@ -60,6 +60,7 @@ export const useAgentsStore = defineStore('agents', {
     sessionsReloading: false,
     folders: [] as AgentConversationFolderView[],
     thread: null as AgentThreadState | null,
+    drafts: {} as Record<string, string>,
     skills: [] as VisibleAgentSkill[],
     skillsLoading: false,
     skillsLoadError: '',
@@ -218,40 +219,46 @@ export const useAgentsStore = defineStore('agents', {
       if (this.visibilityListening) document.removeEventListener('visibilitychange', this.handleVisibilityChange)
       this.visibilityListening = false
     },
+    setDraft(sessionId: string, text: string) {
+      if (!sessionId) return
+      if (!text) delete this.drafts[sessionId]
+      else this.drafts[sessionId] = text
+    },
     async newSession(retention: 'temporary' | 'saved', mutationOwner?: typeof sessionMutationAlreadyAcquired) {
       const acquiredHere = mutationOwner !== sessionMutationAlreadyAcquired
       if (acquiredHere && !this.beginSessionMutation()) return
       try {
         const workspaceVersion = this.workspaceVersion
         const version = this.beginSessionTransition()
-        const disposableSessionId = this.thread && this.thread.messages.length === 0 && !this.thread.session.currentRun ? this.thread.session.id : null
-        try {
+        const previous = this.thread
+        const disposableSessionId = previous && previous.messages.length === 0 && !previous.session.currentRun && !previous.goal && !previous.session.folderId
+          ? previous.session.id
+          : null
+        // Keep the current conversation and its draft intact until creation succeeds.
+        const created = await createAgentThread(fetchFromWindow, this.csrfToken, { retention, providerProfileId: null })
+        const selectsCreated = this.isWorkspaceCurrent(workspaceVersion) && this.isSessionTransitionCurrent(version)
+        if (selectsCreated) {
+          this.error = ''
+          this.closeStream()
+          this.invalidateRefresh()
+          this.applyCreatedThread(created)
+          if (this.routeSync) window.history.replaceState(null, '', `/sessions/${created.session.id}`)
           if (disposableSessionId) {
-            await deleteAgentSession(fetchFromWindow, this.csrfToken, disposableSessionId)
-            if (!this.isWorkspaceCurrent(workspaceVersion)) return
-            if (!this.isSessionTransitionCurrent(version)) {
-              await this.reloadSessions()
-              return
-            }
-            if (this.thread?.session.id === disposableSessionId) {
-              this.closeStream()
-              this.thread = null
-              this.launchPage = null
+            try {
+              await deleteAgentSession(fetchFromWindow, this.csrfToken, disposableSessionId)
+              delete this.drafts[disposableSessionId]
+            } catch {
+              // The replacement is usable; empty sessions are already excluded from history.
             }
           }
-          const created = await createAgentThread(fetchFromWindow, this.csrfToken, { retention, providerProfileId: null })
-          if (this.isWorkspaceCurrent(workspaceVersion) && this.isSessionTransitionCurrent(version)) {
-            this.closeStream()
-            this.applyCreatedThread(created)
-            if (this.routeSync) window.history.replaceState(null, '', `/sessions/${created.session.id}`)
-          }
-          if (this.isWorkspaceCurrent(workspaceVersion)) await this.reloadSessions()
-        } catch (error) {
+        }
+        if (this.isWorkspaceCurrent(workspaceVersion)) {
           try {
-            if (this.isWorkspaceCurrent(workspaceVersion)) await this.reloadSessions()
-          } catch {}
-          if (!this.isWorkspaceCurrent(workspaceVersion) || !this.isSessionTransitionCurrent(version)) return
-          throw error
+            await this.reloadSessions()
+          } catch (error) {
+            if (this.isWorkspaceCurrent(workspaceVersion) && this.isSessionTransitionCurrent(version))
+              this.error = `The conversation was created, but history could not be refreshed. ${error instanceof Error ? error.message : ''}`.trim()
+          }
         }
       } finally {
         if (acquiredHere) this.endSessionMutation()
@@ -589,6 +596,7 @@ export const useAgentsStore = defineStore('agents', {
           if (this.isSessionContextCurrent(workspaceVersion, sessionId)) this.error = error instanceof Error ? error.message : 'Message could not be sent.'
           return false
         }
+        if (this.drafts[sessionId]?.trim() === trimmed) delete this.drafts[sessionId]
         await this.refreshCommittedMutation(workspaceVersion, sessionId, 'The message was sent, but the conversation could not be refreshed.')
         return true
       } finally {
@@ -766,6 +774,7 @@ export const useAgentsStore = defineStore('agents', {
         const version = this.beginSessionTransition()
         try {
           await deleteAgentSession(fetchFromWindow, this.csrfToken, sessionId)
+          delete this.drafts[sessionId]
         } catch (error) {
           try {
             if (this.isWorkspaceCurrent(workspaceVersion)) await this.reloadSessions()
@@ -817,6 +826,9 @@ export const useAgentsStore = defineStore('agents', {
         }
         if (!this.isWorkspaceCurrent(workspaceVersion)) return
         const preservedFiledSessions = this.sessions.filter(session => session.folderId !== null)
+        const retainedDraftIds = new Set(preservedFiledSessions.map(session => session.id))
+        if (this.thread?.session.folderId) retainedDraftIds.add(this.thread.session.id)
+        for (const id of Object.keys(this.drafts)) if (!retainedDraftIds.has(id)) delete this.drafts[id]
 
         this.sessionListVersion += 1
         this.sessionsLoadMoreController?.abort()

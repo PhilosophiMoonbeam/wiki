@@ -160,7 +160,7 @@ describe('inline Ask mode contract', () => {
       /inline-agent__mobile-panel-menu" icon="mdi-view-dashboard-outline"[\s\S]*aria-label="Open Agent panels: conversation history and memory"/
     )
     expect(inline).toMatch(
-      /inline-agent__temporary-session"[\s\S]*aria-label="Start a temporary agent conversation"[\s\S]*title="Temporary conversations are not saved"[\s\S]*@click="newTemporarySession"[\s\S]*inline-agent__session-action-label">Temporary/
+      /inline-agent__temporary-session"[\s\S]*aria-label="Start a temporary agent conversation"[\s\S]*title="Start a fresh conversation that stays out of history and expires automatically"[\s\S]*@click="newTemporarySession"[\s\S]*inline-agent__session-action-label">Temporary/
     )
     expect(inline).toMatch(
       /inline-agent__new-session"[\s\S]*aria-label="Start a new saved agent conversation"[\s\S]*@click="newSession"[\s\S]*inline-agent__session-action-label">New/

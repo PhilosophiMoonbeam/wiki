@@ -1444,6 +1444,8 @@ describe('Agent session mutation transitions', () => {
     const selected = threadForSession('00000000-0000-4000-8000-000000000070', '00000000-0000-4000-8000-000000000071')
     const pending = deferred<Response>()
     store.thread = origin
+    store.setDraft(origin.session.id, 'Keep this in the original conversation')
+    store.setDraft(selected.session.id, 'Another draft')
     const fetcher = vi.spyOn(window, 'fetch').mockImplementation(() => pending.promise)
 
     const sending = store.send('Keep this in the original conversation')
@@ -1451,6 +1453,8 @@ describe('Agent session mutation transitions', () => {
     pending.resolve(Response.json({ run: submittedRun, replayed: false }))
 
     expect(await sending).toBe(true)
+    expect(store.drafts[origin.session.id]).toBeUndefined()
+    expect(store.drafts[selected.session.id]).toBe('Another draft')
     expect(store.thread?.session.id).toBe(selected.session.id)
     expect(store.thread?.session.title).toBe(selected.session.title)
     expect(store.thread?.session.version).toBe(selected.session.version)
@@ -1472,9 +1476,33 @@ describe('Agent session mutation transitions', () => {
       .mockResolvedValueOnce(Response.json({ run: submittedRun, replayed: false }))
       .mockResolvedValueOnce(Response.json({ message: 'Refresh unavailable' }, { status: 503 }))
 
+    store.setDraft(active.session.id, 'Committed once')
     expect(await store.send('Committed once')).toBe(true)
+    expect(store.drafts[active.session.id]).toBeUndefined()
     expect(store.error).toBe('The message was sent, but the conversation could not be refreshed. Refresh unavailable')
     expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('retains unsent text on failure and a newer draft when an earlier send settles', async () => {
+    setActivePinia(createPinia())
+    const store = useAgentsStore()
+    store.csrfToken = 'csrf-token'
+    const active = activeThread()
+    store.thread = { ...active, session: { ...active.session, currentRun: null } }
+    store.setDraft(active.session.id, 'First question')
+    const pending = deferred<Response>()
+    vi.spyOn(window, 'fetch')
+      .mockResolvedValueOnce(Response.json({ message: 'Send unavailable' }, { status: 503 }))
+      .mockImplementationOnce(() => pending.promise)
+      .mockResolvedValueOnce(Response.json({ message: 'Refresh unavailable' }, { status: 503 }))
+    expect(await store.send('First question')).toBe(false)
+    expect(store.drafts[active.session.id]).toBe('First question')
+
+    const sending = store.send('First question')
+    store.setDraft(active.session.id, 'A newer question')
+    pending.resolve(Response.json({ run: active.session.currentRun, replayed: false }))
+    expect(await sending).toBe(true)
+    expect(store.drafts[active.session.id]).toBe('A newer question')
   })
 
   it('coalesces repeated stop requests until the committed cancellation is refreshed', async () => {
@@ -1508,13 +1536,14 @@ describe('Agent empty conversation lifecycle', () => {
     vi.restoreAllMocks()
   })
 
-  it('deletes an unused draft before creating its replacement', async () => {
+  it('creates a replacement before deleting an unused conversation and its draft', async () => {
     setActivePinia(createPinia())
     const store = useAgentsStore()
     store.csrfToken = 'csrf-token'
     const running = activeThread()
     const empty = { ...running, session: { ...running.session, currentRun: null } }
     store.thread = empty
+    store.setDraft(empty.session.id, 'Unsent original draft')
     const replacement = {
       ...empty,
       session: {
@@ -1527,20 +1556,40 @@ describe('Agent empty conversation lifecycle', () => {
     const json = { headers: { 'content-type': 'application/json' } }
     const fetcher = vi
       .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(replacement), { status: 201, ...json }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ sessions: [], nextCursor: null }), { status: 200, ...json }))
 
     expect(await store.newSession('saved')).toBeUndefined()
 
     expect(fetcher.mock.calls.map(call => [call[0], (call[1] as RequestInit | undefined)?.method ?? 'GET'])).toEqual([
-      ['/_api/agents/sessions/00000000-0000-4000-8000-000000000001', 'DELETE'],
       ['/_api/agents/sessions', 'POST'],
+      ['/_api/agents/sessions/00000000-0000-4000-8000-000000000001', 'DELETE'],
       ['/_api/agents/sessions', 'GET']
     ])
     expect(store.thread?.session.id).toBe('00000000-0000-4000-8000-000000000099')
     expect(store.sessions).toEqual([])
+    expect(store.drafts[empty.session.id]).toBeUndefined()
   })
+  it('retains the current conversation and unsent text when replacement creation fails', async () => {
+    setActivePinia(createPinia())
+    const store = useAgentsStore()
+    store.csrfToken = 'csrf-token'
+    store.routeSync = false
+    const active = activeThread()
+    store.thread = { ...active, session: { ...active.session, currentRun: null } }
+    store.setDraft(active.session.id, 'Do not lose this question')
+    const fetcher = vi.spyOn(window, 'fetch').mockResolvedValueOnce(Response.json({ message: 'Temporarily unavailable' }, { status: 503 }))
+
+    await expect(store.newSession('temporary')).rejects.toThrow('Temporarily unavailable')
+
+    expect(store.thread?.session.id).toBe(active.session.id)
+    expect(store.drafts[active.session.id]).toBe('Do not lose this question')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher.mock.calls[0]?.[1]?.method).toBe('POST')
+    expect(store.sessionMutationBusy).toBe(false)
+  })
+
 })
 
 describe('Agent unfiled history clearing', () => {

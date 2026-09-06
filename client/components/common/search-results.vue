@@ -157,6 +157,7 @@
                         v-icon(icon='mdi-file-document-outline' size='21')
                     v-list-item-title {{ item.title }}
                     v-list-item-subtitle {{ item.description }}
+                    .search-results-match(v-if='matchSummary(item)') {{ matchSummary(item) }}
                     .search-results-path
                       v-icon(icon='mdi-source-branch' size='14')
                       span {{ item.path }}
@@ -432,6 +433,11 @@ export default defineComponent({
     this.deactivateModalLayers(false)
   },
   methods: {
+    matchSummary(item: PageSearchRow): string {
+      const labels = { title: 'title', tag: 'tags', path: 'page path', description: 'description', content: 'page text', graph: 'related links' }
+      const fields = [...new Set(item.matchedFields ?? [])].map(field => labels[field]).filter(Boolean)
+      return fields.length ? `Matches ${fields.slice(0, 3).join(' · ')}` : ''
+    },
     async activateAgentModal(): Promise<void> {
       const activeOpener = this.activeModalOpener()
       const searchOpener = this.searchRestoreTarget ??
@@ -1041,6 +1047,14 @@ export default defineComponent({
     overflow-wrap: anywhere;
     line-height: 1.4;
     white-space: normal;
+  }
+
+  &-match {
+    margin-top: .4rem;
+    color: var(--wiki-accent-ink, rgb(var(--v-theme-primary)));
+    font-size: .72rem;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
   }
 
   &-path {

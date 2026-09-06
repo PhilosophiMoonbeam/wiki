@@ -4,7 +4,7 @@
     class="inline-agent"
     :class="{ 'inline-agent--history': historyOpen, 'inline-agent--memory': memoryOpen }"
     aria-labelledby="inline-agent-title"
-    :aria-busy="loading"
+    :aria-busy="loading || Boolean(creatingRetention)"
   >
     <button
       v-if="panelMode === 'modal' && (historyOpen || memoryOpen)"
@@ -127,9 +127,11 @@
           <v-btn
             class="inline-agent__session-action inline-agent__temporary-session"
             prepend-icon="mdi-clock-outline"
-            variant="text"
+            :variant="isTemporary ? 'tonal' : 'text'"
+            :color="isTemporary ? 'primary' : undefined"
+            :loading="creatingRetention === 'temporary'"
             aria-label="Start a temporary agent conversation"
-            title="Temporary conversations are not saved"
+            title="Start a fresh conversation that stays out of history and expires automatically"
             :disabled="loading || sending || sessionMutationBusy"
             @click="newTemporarySession"
           ><span class="inline-agent__session-action-label">Temporary</span></v-btn>
@@ -137,6 +139,7 @@
             class="inline-agent__session-action inline-agent__new-session"
             prepend-icon="mdi-plus"
             variant="tonal"
+            :loading="creatingRetention === 'saved'"
             aria-label="Start a new saved agent conversation"
             :disabled="loading || sending || sessionMutationBusy"
             @click="newSession"
@@ -155,6 +158,15 @@
 
       <AgentMcpApproval v-if="approvalId" :csrf-token="csrfToken" :proposal-id="approvalId" />
       <template v-else>
+        <div v-if="isTemporary" class="inline-agent__retention" aria-label="Temporary conversation" role="status">
+          <v-icon icon="mdi-clock-outline" size="22" aria-hidden="true" />
+          <div class="inline-agent__retention-copy">
+            <strong>Temporary conversation</strong>
+            <p>Hidden from history<span v-if="temporaryExpiry"> · Expires {{ temporaryExpiry }}</span>. Personal memory still applies.</p>
+          </div>
+          <v-btn variant="text" size="small" prepend-icon="mdi-bookmark-outline" :loading="keepingConversation" :disabled="sessionMutationBusy || loading || sending" @click="keepConversation">Keep conversation</v-btn>
+        </div>
+        <p v-else-if="sessionNotice" class="inline-agent__session-notice" role="status">{{ sessionNotice }}</p>
         <div class="inline-agent__body">
           <v-alert
             v-if="!loading && !providerAvailable"
@@ -295,7 +307,11 @@
               <span>{{ openGoal ? goalSubmitUnavailableReason : submitUnavailableReason }}</span>
             </p>
             <AgentComposer
+              :key="thread?.session.id ?? 'opening'"
               ref="composer"
+              :session-id="thread?.session.id"
+              :initial-draft="thread ? agents.drafts[thread.session.id] : ''"
+              @draft-change="agents.setDraft"
               :sending="sending"
               :can-stop="Boolean(activeRun?.canCancel)"
               :disabled="!canSubmit"
@@ -440,6 +456,9 @@ const clearUnfiledHistoryOpen = ref(false)
 const clearingUnfiledHistory = ref(false)
 const clearUnfiledError = ref('')
 const clearUnfiledCommitted = ref(false)
+const creatingRetention = ref<'saved' | 'temporary' | null>(null)
+const keepingConversation = ref(false)
+const sessionNotice = ref('')
 const historyOpen = ref(false)
 const historyLoadError = ref('')
 const historyLoading = ref(false)
@@ -485,7 +504,14 @@ const goalSubmitUnavailableReason = computed(() => !openGoal.value
 const submitUnavailableReason = computed(() => !providerAvailable.value ? providerUnavailableMessage.value : loading.value ? 'Opening conversation' : sending.value ? 'Sending your message' : sessionMutationBusy.value ? 'Wait for the current conversation update to finish' : activeRun.value ? 'Wait for the current response to finish' : openGoal.value ? goalSubmitUnavailableReason.value : '')
 const preferredSkillIds = computed(() => thread.value?.session.skills.map(skill => skill.skillId) ?? [])
 const invocationLimit = computed(() => Math.max(0, 8 - preferredSkillIds.value.length))
-const sessionTitle = computed(() => thread.value?.session.retention === 'temporary' ? 'Temporary · not saved to history' : thread.value?.session.title || 'New conversation')
+const isTemporary = computed(() => thread.value?.session.retention === 'temporary' && !thread.value.session.folderId)
+const temporaryExpiry = computed(() => {
+  const value = thread.value?.session.expiresAt
+  if (!value) return ''
+  const date = new Date(value)
+  return Number.isNaN(date.valueOf()) ? '' : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+})
+const sessionTitle = computed(() => thread.value?.session.title || (isTemporary.value ? 'Temporary conversation' : 'New conversation'))
 const connectionLabel = computed(() => loading.value
   ? 'Opening'
   : connection.value === 'reconnecting'
@@ -577,15 +603,38 @@ const scrollToLatest = async (): Promise<void> => {
 const reloadSkillCatalog = async (): Promise<void> => {
   await agents.reloadSkills()
 }
+const keepConversation = async (): Promise<void> => {
+  const sessionId = thread.value?.session.id
+  if (!sessionId || sessionMutationBusy.value || keepingConversation.value) return
+  keepingConversation.value = true
+  try {
+    const kept = await agents.setSessionRetention(sessionId, 'saved')
+    if (!kept || thread.value?.session.id !== sessionId) return
+    sessionNotice.value = hasConversation.value ? 'Conversation kept in history.' : 'Conversation kept. It will appear in history after your first message.'
+  } catch (value) {
+    agents.error = value instanceof Error ? value.message : 'The conversation could not be kept.'
+  } finally {
+    keepingConversation.value = false
+  }
+}
 const createSession = async (retention: 'saved' | 'temporary'): Promise<void> => {
-  if (sessionMutationBusy.value) return
+  if (sessionMutationBusy.value || creatingRetention.value) return
+  creatingRetention.value = retention
+  sessionNotice.value = ''
   try {
     await ensureInitialized()
     if (sessionMutationBusy.value) return
     await agents.newSession(retention)
+    if (thread.value?.session.retention === retention) {
+      sessionNotice.value = retention === 'saved' ? 'New conversation ready.' : ''
+      await nextTick()
+      await composer.value?.focusInput()
+    }
   } catch (value) {
     const kind = retention === 'temporary' ? 'temporary conversation' : 'new saved conversation'
     agents.error = value instanceof Error ? value.message : `A ${kind} could not be created.`
+  } finally {
+    creatingRetention.value = null
   }
 }
 const newTemporarySession = (): Promise<void> => createSession('temporary')
@@ -854,7 +903,7 @@ watch([historyOpen, memoryOpen], ([history, memory]) => {
   triggerForPanel(restoreKind)?.focus({ preventScroll: true })
 }, { flush: 'post' })
 watch(() => thread.value?.session.id, (sessionId, previousSessionId) => {
-  if (sessionId !== previousSessionId) goalExpanded.value = false
+  if (sessionId !== previousSessionId) { goalExpanded.value = false; sessionNotice.value = '' }
   if (!sessionId || !previousSessionId || sessionId === previousSessionId) return
   const restoreWorkspaceFocus = !clearUnfiledHistoryOpen.value
   if (historyOpen.value) {
@@ -1075,6 +1124,25 @@ defineExpose({ sendPrompt, focusComposer, focusConversation, scrollToLatest })
   inset-block-start: calc(var(--wiki-control-height) + var(--wiki-space-6) - var(--wiki-space-1));
   inset-inline: 0;
   pointer-events: none;
+}
+
+.inline-agent__retention {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: .75rem;
+  padding: .8rem clamp(1rem, 3vw, 2rem);
+  border-bottom: 1px solid var(--wiki-surface-border);
+  background: var(--wiki-surface-sunken);
+}
+.inline-agent__retention-copy { flex: 1; min-width: 0; }
+.inline-agent__retention strong { font-size: .8rem; font-weight: 650; }
+.inline-agent__retention p { margin: .2rem 0 0; font-size: .75rem; line-height: 1.5; color: color-mix(in srgb, currentColor 70%, transparent); }
+.inline-agent__session-notice { margin: 0; padding: .65rem 1.5rem; font-size: .8rem; color: var(--wiki-accent-ink); }
+@media (max-width: 639.98px) {
+  .inline-agent__retention { flex-wrap: wrap; gap: .5rem; }
+  .inline-agent__retention-copy { flex-basis: calc(100% - 2rem); }
+  .inline-agent__retention > .v-btn { margin-inline-start: 1.9rem; }
 }
 
 .inline-agent__body {

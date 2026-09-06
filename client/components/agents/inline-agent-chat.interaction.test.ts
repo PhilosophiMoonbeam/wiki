@@ -335,7 +335,12 @@ const mountInlineAgent = (lockState?: LockState): MountedInlineAgent => {
     connectionTone: lockState?.connectionTone.value ?? 'ready',
     starters: [],
     emit: () => undefined,
-    agents: {},
+    agents: { drafts: {}, setDraft: () => undefined },
+    creatingRetention: null,
+    keepingConversation: false,
+    isTemporary: false,
+    temporaryExpiry: '',
+    sessionNotice: '',
     closePanels: () => {
       historyOpen.value = false
       memoryOpen.value = false
@@ -379,6 +384,8 @@ const mountInlineAgent = (lockState?: LockState): MountedInlineAgent => {
   const composerComponent = Vue.defineComponent({
     name: 'AgentComposerInteractionHarness',
     props: {
+      sessionId: String,
+      initialDraft: String,
       disabled: Boolean,
       sending: Boolean,
       canStop: Boolean,
@@ -395,7 +402,7 @@ const mountInlineAgent = (lockState?: LockState): MountedInlineAgent => {
       hasMessages: Boolean,
       externalDescriptionId: String
     },
-    emits: ['send', 'stop', 'manageSkills', 'retrySkills', 'updateSkillPreferences'],
+    emits: ['send', 'stop', 'manageSkills', 'retrySkills', 'updateSkillPreferences', 'draftChange'],
     setup(props, { emit, expose }) {
       return evaluateComposer(
         Vue.computed,
@@ -545,7 +552,7 @@ describe('Inline Agent workspace actions', () => {
     ])
     expect(actions[2]?.textContent?.trim()).toBe('Temporary')
     expect(actions[3]?.textContent?.trim()).toBe('New')
-    expect(actions[2]?.getAttribute('title')).toBe('Temporary conversations are not saved')
+    expect(actions[2]?.getAttribute('title')).toBe('Start a fresh conversation that stays out of history and expires automatically')
   })
 
   it('creates temporary and saved conversations with distinct retention', async () => {
