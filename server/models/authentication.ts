@@ -80,8 +80,7 @@ export default class Authentication extends Model {
         let newProps = false
         const strategyDefinition = _.find(wiki.data.authentication, ['key', strategy.strategyKey])
         if (!strategyDefinition) {
-          await wiki.models.authentication.query().delete().where('key', strategy.key)
-          wiki.logger.info(`Authentication strategy ${strategy.strategyKey} was removed from disk: [ REMOVED ]`)
+          wiki.logger.info(`Authentication strategy ${strategy.strategyKey} is missing from disk; its saved configuration is retained for administration.`)
           continue
         }
         strategy.config = _.transform(strategyDefinition.props, (result: ModuleConfig, value, key) => {

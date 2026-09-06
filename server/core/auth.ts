@@ -1,3 +1,4 @@
+import type { AuthenticationRuntime } from '../../shared/authentication-policy.ts'
 import { accountSessionIsCurrent, sessionVersion } from '../helpers/account-session.ts'
 import { tagAliasMap, type TagIdentity } from '../helpers/tag-aliases.ts'
 import passport from 'passport'
@@ -97,6 +98,8 @@ interface StrategyRecord extends UnknownRecord {
   displayName: string
   key: string
   strategyKey: string
+  isEnabled: boolean
+  adminRevision?: string
 }
 
 interface LoadedStrategy extends UnknownRecord {
@@ -228,6 +231,7 @@ interface AuthService {
   revocationList: NodeCache
   revokeUserTokens(request: RevokeRequest): void
   strategies: Record<string, ActiveStrategy>
+  strategyStatus: Record<string, AuthenticationRuntime>
   subscribeToEvents(): void
   validApiKeys: number[]
   _applyPageRuleSpecificity(application: RuleApplication): RuleState
@@ -336,8 +340,11 @@ const userTokenNeedsRevalidation = (user: JwtUser, revocationList: NodeCache, st
   })
 }
 
+let activationQueue: Promise<void> = Promise.resolve()
+
 const auth: AuthService = {
   strategies: {},
+  strategyStatus: {},
   passport,
   guest: { cacheExpiration: DateTime.utc().minus({ days: 1 }) },
   groups: {},
@@ -362,57 +369,70 @@ const auth: AuthService = {
   },
 
   async activateStrategies() {
-    const wiki = getWiki()
-    try {
-      this.strategies = {}
-      for (const strategyName of getPassportStrategyNames()) {
-        if (strategyName !== 'session') passport.unuse(strategyName)
-      }
-
-      passport.use(
-        'jwt',
-        new passportJwt.Strategy(
-          {
-            jwtFromRequest: securityHelper.extractJWT,
-            secretOrKey: wiki.config.certs.public,
-            audience: wiki.config.auth.audience,
-            issuer: 'urn:wiki.js',
-            algorithms: ['RS256']
-          },
-          (jwtPayload: unknown, done) => done(null, jwtPayload)
-        )
-      )
-
-      const enabledStrategies = await wiki.models.authentication.getStrategies()
-      for (const strategyRecord of enabledStrategies) {
-        try {
-          // Strategy key comes from the runtime plugin registry, so this cannot be a static import.
-          const imported: unknown = await import(`../modules/authentication/${strategyRecord.strategyKey}/authentication.ts`)
-          if (!isStrategyModule(imported)) throw new Error(`Invalid authentication strategy module: ${strategyRecord.strategyKey}`)
-          const strategy = imported.default
-          const callbackURL = `${wiki.config.host}/login/${strategyRecord.key}/callback`
-          const config: StrategyConfig = {
-            ...strategyRecord.config,
-            audience: wiki.config.auth.audience,
-            callbackURL,
-            cookieName: 'jwt',
-            key: strategyRecord.key,
-            redirectUri: callbackURL,
-            sessionNamespace: 'wiki'
-          }
-          await strategy.init(passport, config)
-          strategy.config = config
-          this.strategies[strategyRecord.key] = { ...strategy, ...strategyRecord, config }
-          wiki.logger.info(`Authentication Strategy ${strategyRecord.displayName}: [ OK ]`)
-        } catch (error: unknown) {
-          wiki.logger.error(`Authentication Strategy ${strategyRecord.displayName} (${strategyRecord.key}): [ FAILED ]`)
-          wiki.logger.error(error)
+    const activation = activationQueue.then(async () => {
+      const wiki = getWiki()
+      try {
+        this.strategies = {}
+        this.strategyStatus = {}
+        for (const strategyName of getPassportStrategyNames()) {
+          if (strategyName !== 'session') passport.unuse(strategyName)
         }
+
+        passport.use(
+          'jwt',
+          new passportJwt.Strategy(
+            {
+              jwtFromRequest: securityHelper.extractJWT,
+              secretOrKey: wiki.config.certs.public,
+              audience: wiki.config.auth.audience,
+              issuer: 'urn:wiki.js',
+              algorithms: ['RS256']
+            },
+            (jwtPayload: unknown, done) => done(null, jwtPayload)
+          )
+        )
+
+        const records = await wiki.models.authentication.getStrategies()
+        for (const strategyRecord of records) {
+          const observed = { checkedAt: new Date().toISOString(), revision: strategyRecord.adminRevision ?? '' }
+          if (!strategyRecord.isEnabled) {
+            this.strategyStatus[strategyRecord.key] = { ...observed, state: 'disabled' }
+            continue
+          }
+          this.strategyStatus[strategyRecord.key] = { ...observed, state: 'pending' }
+          try {
+            // Strategy key comes from the runtime plugin registry, so this cannot be a static import.
+            const imported: unknown = await import(`../modules/authentication/${strategyRecord.strategyKey}/authentication.ts`)
+            if (!isStrategyModule(imported)) throw new Error(`Invalid authentication strategy module: ${strategyRecord.strategyKey}`)
+            const strategy = imported.default
+            const callbackURL = `${wiki.config.host}/login/${strategyRecord.key}/callback`
+            const config: StrategyConfig = {
+              ...strategyRecord.config,
+              audience: strategyRecord.config.audience ?? wiki.config.auth.audience,
+              callbackURL,
+              cookieName: 'jwt',
+              key: strategyRecord.key,
+              redirectUri: callbackURL,
+              sessionNamespace: 'wiki'
+            }
+            await strategy.init(passport, config)
+            this.strategies[strategyRecord.key] = { ...strategy, ...strategyRecord, config }
+            this.strategyStatus[strategyRecord.key] = { ...observed, checkedAt: new Date().toISOString(), state: 'ready' }
+            wiki.logger.info(`Authentication Strategy ${strategyRecord.displayName}: [ OK ]`)
+          } catch (error: unknown) {
+            this.strategyStatus[strategyRecord.key] = { ...observed, checkedAt: new Date().toISOString(), state: 'failed' }
+            passport.unuse(strategyRecord.key)
+            wiki.logger.error(`Authentication Strategy ${strategyRecord.displayName} (${strategyRecord.key}): [ FAILED ]`)
+            wiki.logger.error(error)
+          }
+        }
+      } catch (error: unknown) {
+        wiki.logger.error('Failed to initialize Authentication Strategies: [ ERROR ]')
+        wiki.logger.error(error)
       }
-    } catch (error: unknown) {
-      wiki.logger.error('Failed to initialize Authentication Strategies: [ ERROR ]')
-      wiki.logger.error(error)
-    }
+    })
+    activationQueue = activation.catch(() => {})
+    await activation
   },
 
   authenticate(req, res, next) {

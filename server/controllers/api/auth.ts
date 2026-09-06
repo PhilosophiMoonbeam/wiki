@@ -7,6 +7,7 @@ import _ from 'lodash'
 import apiOperations from '../../operations/api.ts'
 import { describeApiConnections } from '../../operations/api-connections.ts'
 import authenticationOperations from '../../operations/authentication.ts'
+import { getAuthenticationAdministrationStore } from '../../operations/authentication-administration.ts'
 
 const router = express.Router()
 
@@ -89,6 +90,22 @@ const requireSystemAccess = (req: Request, res: Response): boolean => {
   res.status(403).json({ error: 'manage:system is required' })
   return false
 }
+
+const workspaceError = (res: Response, error: unknown) => {
+  const status = errorStatus(error)
+  const expected = status && [400,403,404,409].includes(status)
+  return res.status(expected ? status : 500).json({ error: expected && error instanceof Error ? error.message : 'Authentication administration is temporarily unavailable.' })
+}
+router.get('/admin/workspace', async (req, res) => {
+  if (!requireSystemAccess(req,res)) return
+  res.set('Cache-Control','no-store')
+  try { res.json(await getAuthenticationAdministrationStore().inspect(req.user)) } catch (error) { workspaceError(res,error) }
+})
+router.put('/admin/workspace', async (req, res) => {
+  if (!requireSystemAccess(req,res)) return
+  res.set('Cache-Control','no-store')
+  try { res.json(await getAuthenticationAdministrationStore().save(req.user, { providers:objectValue(req.body,'providers'),fingerprint:objectValue(req.body,'fingerprint'),reason:objectValue(req.body,'reason') })) } catch (error) { workspaceError(res,error) }
+})
 
 router.get('/admin/strategies', (req, res, next) => {
   if (!requireSystemAccess(req, res)) return

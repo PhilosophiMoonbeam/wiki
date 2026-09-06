@@ -19,6 +19,7 @@ vi.mockModule('express', import.meta.url, () => {
   const router = {
     get: vi.fn(),
     post: vi.fn(),
+    put: vi.fn(),
     use: vi.fn()
   }
   const express = {
