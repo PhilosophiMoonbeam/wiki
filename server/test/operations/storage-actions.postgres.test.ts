@@ -14,6 +14,7 @@ import { createStorageConfigurationStore } from '../../operations/storage-config
 import { createStorageActionStore, type StorageRuntimeTarget } from '../../operations/storage-actions.ts'
 import { DurableJobStore, runDurableJobBatch } from '../../core/durable-jobs.ts'
 import { createStorageActionHandler } from '../../jobs/storage-action.ts'
+import { createStorageWorkspaceStore } from '../../operations/storage-workspace-runtime.ts'
 import type { StorageModuleDefinition } from '../../../shared/storage-workspace.ts'
 const database = process.env.WIKI_TEST_POSTGRES_DATABASE ?? '',
   password = process.env.WIKI_TEST_POSTGRES_PASSWORD
@@ -26,7 +27,7 @@ const suite = connection ? describe : describe.skip,
 const result = { outcome: 'succeeded', message: 'Operation completed.', counts: null, items: [], targets: [] }
 suite('Reviewed storage operations on PostgreSQL', () => {
   let db: Knex, configuration: ReturnType<typeof createStorageConfigurationStore>, actions: ReturnType<typeof createStorageActionStore>, jobs: DurableJobStore
-  let runtime: StorageRuntimeTarget[], definitions: StorageModuleDefinition[], offline: boolean, executing: boolean, clock: Date
+  let runtime: StorageRuntimeTarget[], definitions: StorageModuleDefinition[], rawDefinitions: unknown[], offline: boolean, executing: boolean, clock: Date
   const tables = ['storageOperations', 'durableJobs', 'storage', 'settings', 'userGroups', 'groups', 'users']
   const review = () => configuration.inspect(admin)
   const input = async (targetKey: string | null = 'disk', handler = targetKey === null ? 'activate' : 'dump') => ({
@@ -105,11 +106,13 @@ suite('Reviewed storage operations on PostgreSQL', () => {
       { userId: 3, groupId: 2 }
     ])
     definitions = []
+    rawDefinitions = []
     for (const key of ['disk', 'sftp']) {
       const raw = yaml.load(await fs.readFile(path.resolve('server/modules/storage', key, 'definition.yml'), 'utf8')) as Record<string, unknown> & {
         props: Parameters<typeof common.parseModuleProps>[0]
       }
       raw.props = common.parseModuleProps(raw.props)
+      rawDefinitions.push(raw)
       const definition = storageModuleDefinition(raw)
       definitions.push(definition)
       const config = {
@@ -368,5 +371,73 @@ suite('Reviewed storage operations on PostgreSQL', () => {
     const job = await claim()
     await db('groups').where('id', 1).update({ permissions: '[]', adminRevision: 'revoked' })
     await expect(actions.begin(job)).rejects.toMatchObject({ status: 403 })
+  })
+  const workspaceStore = () =>
+    createStorageWorkspaceStore({
+      models: { knex: db, storage: { runtimeTargets: () => runtime } },
+      config: {
+        sessionSecret: 'test-only-review',
+        get offline() {
+          return offline
+        }
+      },
+      data: { storage: rawDefinitions }
+    } as never)
+  const changedDraft = async () => {
+    const saved = await workspaceStore().configuration.inspect(admin)
+    const targets = saved.targets.map(({ key, isEnabled, mode, syncInterval, config, secrets }) => ({
+      key,
+      isEnabled,
+      mode,
+      syncInterval,
+      config: { ...config },
+      secrets: Object.fromEntries(Object.keys(secrets).map(key => [key, { action: 'keep' }]))
+    }))
+    targets.find(target => target.key === 'disk')!.config.path = '/tmp/staged-storage'
+    return { targets, fingerprint: saved.fingerprint, reason: 'Review and publish storage settings' }
+  }
+  it('publishes settings and their activation job in one transaction', async () => {
+    const workspace = workspaceStore(),
+      receipt = await workspace.save(admin, await changedDraft(), true)
+    expect(receipt.operation?.id).toBeString()
+    expect((await db('storage').where('key', 'disk').first()).config.path).toBe('/tmp/staged-storage')
+    const operation = await db('storageOperations').where('id', receipt.operation!.id).first()
+    expect(operation).toMatchObject({ handler: 'activate', state: 'queued', configurationRevision: receipt.revision })
+    const job = await claim()
+    expect(await workspace.actions.begin(job)).toMatchObject({ targetKey: null, handler: 'activate' })
+  })
+  it('rolls back configuration and history if the activation receipt cannot be queued', async () => {
+    const before = await db('storage').orderBy('key'),
+      settings = await db('settings').orderBy('key')
+    await db.raw('ALTER TABLE "storageOperations" ADD CONSTRAINT fixture_failure CHECK (false)')
+    try {
+      await expect(workspaceStore().save(admin, await changedDraft(), true)).rejects.toBeInstanceOf(Error)
+      expect(await db('storage').orderBy('key')).toEqual(before)
+      expect(await db('settings').orderBy('key')).toEqual(settings)
+      expect(await db('durableJobs')).toHaveLength(0)
+    } finally {
+      await db.raw('ALTER TABLE "storageOperations" DROP CONSTRAINT fixture_failure')
+    }
+  })
+  it('supports staging without activation and exposes only safe saved-versus-runtime observations', async () => {
+    const workspace = workspaceStore(),
+      receipt = await workspace.save(admin, await changedDraft(), false)
+    expect(receipt.operation).toBeNull()
+    expect(await db('durableJobs')).toHaveLength(0)
+    await db('storage')
+      .where('key', 'disk')
+      .update({ state: JSON.stringify({ status: 'error', message: 'provider-secret', lastAttempt: 'invalid' }) })
+    const observed = await workspace.inspect(admin),
+      serialized = JSON.stringify(observed)
+    expect(observed.runtime.find(target => target.key === 'disk')).toMatchObject({
+      state: 'outdated',
+      active: true,
+      matchesSaved: false,
+      lastAttempt: null,
+      lastOutcome: 'error'
+    })
+    for (const privateValue of ['provider-secret', 'configurationKey', 'runtimeGeneration', 'leaseToken']) expect(serialized).not.toContain(privateValue)
+    await db('users').where('id', 1).update({ authVersion: 1 })
+    await expect(workspace.inspect(admin)).rejects.toMatchObject({ status: 403 })
   })
 })

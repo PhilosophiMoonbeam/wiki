@@ -1,59 +1,70 @@
 import express from 'express'
-import { type Request, type Response, getWikiAuth } from '../_types.ts'
-
-import storageOperations from '../../operations/storage.ts'
-
+import { type Request, type Response, getWikiAuth, errorStatus } from '../_types.ts'
+import { storageRecord } from '../../repositories/storage-configuration.ts'
+import { getStorageWorkspaceStore } from '../../operations/storage-workspace-runtime.ts'
 const router = express.Router()
-
-
-const requireSystemAccess = (req: Request, res: Response): boolean => {
-  if (!getWikiAuth().checkAccess(req.user, ['manage:system'])) {
-    res.status(403).json({ error: 'Forbidden' })
-    return false
-  }
-  return true
+const authorized = (req: Request, res: Response): boolean => {
+  res.set('Cache-Control', 'no-store')
+  if (getWikiAuth().checkAccess(req.user, ['manage:system'])) return true
+  res.status(403).json({ error: 'System administration is required.' })
+  return false
 }
-
-
-const sendError = (res: Response, value: unknown, fallback: string) => {
-  const err = value as Error & { status?: number }
-  return res.status(err.status || 500).json({ error: err.message || fallback })
+const failed = (res: Response, error: unknown) => {
+  const status = errorStatus(error),
+    expected = status && [400, 403, 404, 409].includes(status)
+  return res.status(expected ? status : 503).json({
+    error:
+      expected && error instanceof Error ? error.message : 'Storage administration is unavailable. Reload to confirm saved settings and operation outcomes.'
+  })
 }
-router.get('/targets', async (req, res) => {
-  if (!requireSystemAccess(req, res)) return
+router.get('/workspace', async (req, res) => {
+  if (!authorized(req, res)) return
   try {
-    res.json(await storageOperations.listTargets())
-  } catch (err) {
-    sendError(res, err, 'Storage targets failed')
+    res.json(await getStorageWorkspaceStore().inspect(req.user))
+  } catch (error) {
+    failed(res, error)
   }
 })
-
-router.get('/status', async (req, res) => {
-  if (!requireSystemAccess(req, res)) return
+router.put('/workspace', async (req, res) => {
+  if (!authorized(req, res)) return
   try {
-    res.json(await storageOperations.listStatus())
-  } catch (err) {
-    sendError(res, err, 'Storage status failed')
+    const { apply, ...draft } = storageRecord(req.body)
+    if (typeof apply !== 'boolean') return res.status(400).json({ error: 'Choose whether to apply the saved settings.' })
+    res.json(await getStorageWorkspaceStore().save(req.user, draft, apply))
+  } catch (error) {
+    failed(res, error)
   }
 })
-
-router.put('/targets', async (req, res) => {
-  if (!requireSystemAccess(req, res)) return
+router.post('/operations', async (req, res) => {
+  if (!authorized(req, res)) return
   try {
-    await storageOperations.updateTargets(req.body && req.body.targets)
-    res.json({ message: 'Storage targets updated successfully' })
-  } catch (err) {
-    sendError(res, err, 'Storage targets update failed')
+    res.status(202).json(await getStorageWorkspaceStore().actions.enqueue(req.user, req.body))
+  } catch (error) {
+    failed(res, error)
   }
 })
-
-router.post('/actions/execute', async (req, res) => {
-  if (!requireSystemAccess(req, res)) return
+for (const kind of ['cancel', 'resolve'] as const)
+  router.post(`/operations/:id/${kind}`, async (req, res) => {
+    if (!authorized(req, res)) return
+    try {
+      await getStorageWorkspaceStore().actions.decide(req.user, { ...storageRecord(req.body), id: req.params.id }, kind)
+      res.json({ id: req.params.id, state: kind === 'cancel' ? 'cancelled' : 'resolved' })
+    } catch (error) {
+      failed(res, error)
+    }
+  })
+// The previous private endpoints cannot bypass immutable review or execute synchronous effects.
+const retired = async (req: Request, res: Response) => {
+  if (!authorized(req, res)) return
   try {
-    res.json(await storageOperations.executeAction(req.body || {}))
-  } catch (err) {
-    sendError(res, err, 'Storage action failed')
+    await getStorageWorkspaceStore().configuration.inspect(req.user)
+    res.status(410).json({ error: 'Storage now uses reviewed workspace operations. Reload Administration or use /_api/storage/workspace.' })
+  } catch (error) {
+    failed(res, error)
   }
-})
-
+}
+router.get('/targets', retired)
+router.get('/status', retired)
+router.put('/targets', retired)
+router.post('/actions/execute', retired)
 export default router

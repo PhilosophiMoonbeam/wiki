@@ -271,3 +271,16 @@ export interface StorageOperationView {
   canCancel: boolean
   canResolve: boolean
 }
+
+export interface StorageTargetObservation {
+  key: string
+  state: 'disabled' | 'pending' | 'active' | 'paused' | 'failed' | 'outdated'
+  active: boolean
+  matchesSaved: boolean
+  lastAttempt: string | null
+  lastOutcome: 'operational' | 'pending' | 'warning' | 'error' | 'paused' | null
+}
+export interface StorageWorkspace extends StorageConfigurationWorkspace {
+  runtime: StorageTargetObservation[]
+  operations: StorageOperationView[]
+}

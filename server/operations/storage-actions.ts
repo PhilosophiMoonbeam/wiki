@@ -108,26 +108,30 @@ export const createStorageActionStore = (deps: Dependencies) => {
   const assertReview = (actual: string, expected: string) => {
     if (actual !== expected) fail('Storage settings or your access changed. Reload and review again.', 409)
   }
+  const listInTransaction = async (tx: Knex.Transaction): Promise<StorageOperationView[]> => {
+    const recent = await tx<Row>('storageOperations').orderBy('createdAt', 'desc').orderBy('id', 'desc').limit(50)
+    const active = await tx<Row>('storageOperations').whereIn('state', activeStates)
+    const rows = [...new Map([...active, ...recent].map(row => [row.id, row])).values()]
+    const leases = await tx<Lease>('durableJobs')
+      .whereIn(
+        'id',
+        rows.map(row => row.jobId)
+      )
+      .select('id', 'state', 'leaseToken', 'leaseExpiresAt')
+    return rows.map(row =>
+      view(
+        row,
+        leases.find(lease => lease.id === row.jobId)
+      )
+    )
+  }
   return {
+    listInTransaction,
     async list(requester: PagePrincipal): Promise<StorageOperationView[]> {
       const tx = await deps.db.transaction({ isolationLevel: 'repeatable read', readOnly: true })
       try {
         await deps.configuration.reviewState(tx, requester)
-        const recent = await tx<Row>('storageOperations').orderBy('createdAt', 'desc').orderBy('id', 'desc').limit(50)
-        const active = await tx<Row>('storageOperations').whereIn('state', activeStates)
-        const rows = [...new Map([...active, ...recent].map(row => [row.id, row])).values()]
-        const leases = await tx<Lease>('durableJobs')
-          .whereIn(
-            'id',
-            rows.map(row => row.jobId)
-          )
-          .select('id', 'state', 'leaseToken', 'leaseExpiresAt')
-        const result = rows.map(row =>
-          view(
-            row,
-            leases.find(lease => lease.id === row.jobId)
-          )
-        )
+        const result = await listInTransaction(tx)
         await tx.commit()
         return result
       } catch (error) {
@@ -135,10 +139,10 @@ export const createStorageActionStore = (deps: Dependencies) => {
         throw error
       }
     },
-    async enqueue(requester: PagePrincipal, input: unknown): Promise<{ id: string; jobId: string }> {
+    async enqueue(requester: PagePrincipal, input: unknown, transaction?: Knex.Transaction): Promise<{ id: string; jobId: string }> {
       const parsed = enqueueSchema.safeParse(input)
       if (!parsed.success) return fail('Provide a target action, current review, confirmation and administrative reason.')
-      return deps.db.transaction(async tx => {
+      const enqueue = async (tx: Knex.Transaction) => {
         const saved = await deps.configuration.reviewState(tx, requester, true),
           draft = parsed.data
         assertReview(saved.fingerprint, draft.fingerprint)
@@ -185,7 +189,8 @@ export const createStorageActionStore = (deps: Dependencies) => {
           resolution: null
         })
         return { id, jobId: job.id }
-      })
+      }
+      return transaction ? enqueue(transaction) : deps.db.transaction(enqueue)
     },
     /** Called while the runtime queue is owned, immediately before the first plugin effect. */
     async begin(job: DurableJob) {

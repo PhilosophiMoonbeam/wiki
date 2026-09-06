@@ -80,23 +80,26 @@ export const createStorageConfigurationStore = (deps: Dependencies) => {
       .digest('hex')
     return { rows, metadata, definitions, actorId, fingerprint, offline }
   }
+  const presentState = (saved: Awaited<ReturnType<typeof state>>): StorageConfigurationWorkspace => {
+    return {
+      targets: saved.rows.map(row =>
+        storageTargetView(
+          row,
+          saved.definitions.find(d => d.key === row.key)
+        )
+      ),
+      fingerprint: saved.fingerprint,
+      offline: saved.offline,
+      revision: typeof saved.metadata.revision === 'string' ? saved.metadata.revision : '',
+      observedAt: now().toISOString(),
+      history: Array.isArray(saved.metadata.history) ? (saved.metadata.history.slice(0, 50) as StorageConfigurationEvent[]) : []
+    }
+  }
   const inspect = async (requester: PagePrincipal): Promise<StorageConfigurationWorkspace> => {
     const tx = await deps.db.transaction({ isolationLevel: 'repeatable read', readOnly: true })
     try {
       const saved = await state(tx, requester)
-      const result = {
-        targets: saved.rows.map(row =>
-          storageTargetView(
-            row,
-            saved.definitions.find(d => d.key === row.key)
-          )
-        ),
-        fingerprint: saved.fingerprint,
-        offline: saved.offline,
-        revision: typeof saved.metadata.revision === 'string' ? saved.metadata.revision : '',
-        observedAt: now().toISOString(),
-        history: Array.isArray(saved.metadata.history) ? (saved.metadata.history.slice(0, 50) as StorageConfigurationEvent[]) : []
-      }
+      const result = presentState(saved)
       await tx.commit()
       return result
     } catch (error) {
@@ -107,10 +110,11 @@ export const createStorageConfigurationStore = (deps: Dependencies) => {
   return {
     inspect,
     reviewState: state,
-    async save(requester: PagePrincipal, input: unknown): Promise<{ revision: string; changedTargets: string[] }> {
+    presentState,
+    async save(requester: PagePrincipal, input: unknown, transaction?: Knex.Transaction): Promise<{ revision: string; changedTargets: string[] }> {
       const parsed = schema.safeParse(input)
       if (!parsed.success) return fail('Provide a complete storage draft, current review and administrative reason.')
-      return deps.db.transaction(async tx => {
+      const publish = async (tx: Knex.Transaction) => {
         const current = await state(tx, requester, true),
           draft = parsed.data
         if (await tx('storageOperations').whereIn('state', ['queued', 'running', 'interrupted']).first('id'))
@@ -217,7 +221,8 @@ export const createStorageConfigurationStore = (deps: Dependencies) => {
           .onConflict('key')
           .merge(['value', 'updatedAt'])
         return { revision: event.id, changedTargets: changes.map(row => row.key) }
-      })
+      }
+      return transaction ? publish(transaction) : deps.db.transaction(publish)
     }
   }
 }
