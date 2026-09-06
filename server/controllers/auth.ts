@@ -12,7 +12,7 @@ export interface AuthWiki {
   models: {
     authentication: {
       getStrategy(key: string): Promise<{ selfRegistration: boolean }>
-      query(): { orderBy(column: string): { first(): Promise<AuthenticationStrategy> } }
+      query(): { where(column: string, value: boolean): { orderBy(column: string): { first(): Promise<AuthenticationStrategy | undefined> } } }
     }
     users: {
       login(input: Record<string, unknown>, context: { req: Request; res: Response }): Promise<{ jwt: string; redirect?: string }>
@@ -78,9 +78,9 @@ export default function createAuthController(wiki: AuthWiki): express.Router {
 
     // -> Bypass Login
     if (wiki.config.auth.autoLogin && !req.query.all) {
-      const stg = await wiki.models.authentication.query().orderBy('order').first()
-      const stgInfo = _.find(wiki.data.authentication, ['key', stg.strategyKey])
-      if (stgInfo && !stgInfo.useForm) {
+      const stg = await wiki.models.authentication.query().where('isEnabled', true).orderBy('order').first()
+      const stgInfo = stg && _.find(wiki.data.authentication, ['key', stg.strategyKey])
+      if (stg && stgInfo && !stgInfo.useForm) {
         return res.redirect(`/login/${stg.key}`)
       }
     }

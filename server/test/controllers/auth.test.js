@@ -133,6 +133,30 @@ describe('HTML auth controller', () => {
     expect(res.render).not.toHaveBeenCalledWith('legacy/login', expect.anything())
   })
 
+  it('chooses the first enabled provider for automatic login and safely handles an empty or form-first policy', async () => {
+    global.WIKI.config.auth.autoLogin = true
+    global.WIKI.data.authentication = [{ key: 'oidc', useForm: false }, { key: 'local', useForm: true }]
+    let providers = [{ key: 'disabled', strategyKey: 'oidc', isEnabled: false }, { key: 'organization', strategyKey: 'oidc', isEnabled: true }]
+    const where = vi.fn((column, value) => ({ orderBy: () => ({ first: async () => providers.find(provider => provider[column] === value) }) }))
+    global.WIKI.models.authentication.query = () => ({ where })
+    await loadController()
+    const login = express.__router.get.mock.calls.find(([path]) => path === '/login')[1]
+    const res = { locals: {}, redirect: vi.fn(), render: vi.fn() }
+    await login({ query: {} }, res)
+    expect(where).toHaveBeenCalledWith('isEnabled', true)
+    expect(res.redirect).toHaveBeenCalledWith('/login/organization')
+    res.redirect.mockClear()
+    for (const policy of [[], [{ key: 'local', strategyKey: 'local', isEnabled: true }]]) {
+      providers = policy
+      await login({ query: {} }, res)
+      expect(res.render).toHaveBeenCalled()
+    }
+    expect(res.redirect).not.toHaveBeenCalled()
+    providers = [{ key: 'organization', strategyKey: 'oidc', isEnabled: true }]
+    await login({ query: { all: '1' } }, res)
+    expect(res.redirect).not.toHaveBeenCalled()
+  })
+
   it('uses the project splash when registration has no configured background', async () => {
     await loadController()
     const route = express.__router.get.mock.calls.find(([path]) => path === '/register')
