@@ -22,6 +22,7 @@ describe('distributed config reload', () => {
       port: 3000,
       title: 'Before reload',
       host: 'https://before.example.com',
+      banner: { isEnabled: true, title: 'Previous notice', content: '', tone: 'info', startsAt: '2026-09-08T10:00:00Z', endsAt: '2026-09-08T12:00:00Z' },
       auth: { audience: 'old-audience' },
       pageExtensions: ['md', 'html', 'txt'],
       seo: { robots: ['index', 'follow'], description: 'Keep missing defaults' }
@@ -36,6 +37,7 @@ describe('distributed config reload', () => {
       port: 4000,
       title: 'After reload',
       host: 'https://after.example.com',
+      banner: { isEnabled: false, title: '', content: '' },
       auth: { audience: 'new-audience' },
       pageExtensions: ['md'],
       seo: { robots: [] }
@@ -85,9 +87,11 @@ describe('distributed config reload', () => {
       port: 4000,
       title: 'After reload',
       host: 'https://after.example.com',
+      banner: { isEnabled: false, title: '', content: '' },
       pageExtensions: ['md'],
       seo: { robots: [], description: 'Keep missing defaults' }
     })
+    expect(canonicalConfig.banner).toEqual({ isEnabled: false, title: '', content: '' })
     expect(knexConfig.debug).toBe(true)
     expect(setAppSetting.mock.calls).toEqual([['trust proxy', expectedTrustProxy]])
     expect(auth.activateStrategies).toHaveBeenCalledOnce()

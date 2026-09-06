@@ -185,6 +185,8 @@ const configService: ConfigService = {
     if (conf) {
       const canonicalConfig = wiki.config
       const reloadedConfig = mergeSavedConfiguration(conf, canonicalConfig) as AppConfig
+      // An omitted publication-window field means no schedule, not the previous notice’s window.
+      if (Object.hasOwn(conf, 'banner')) reloadedConfig.banner = _.cloneDeep(conf.banner)
       Object.assign(canonicalConfig, reloadedConfig)
       const migratedKeys = normalizeLegacyProductDefaults(canonicalConfig, wiki.product.name)
       if (migratedKeys.length > 0) await this.saveToDb(migratedKeys, false)
