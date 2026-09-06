@@ -8,7 +8,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | --- | --- | --- |
 | Pages | Inventory, filtering, ownership, publication, detail and bulk actions | Implemented; first milestone verified |
 | Tags | Taxonomy, usage, editing and consolidation | Implemented; first milestone verified |
-| Editors | Availability, recommendations, format usage and authoring entry | Implemented; production verification pending |
+| Editors | Availability, recommendations, format usage and authoring entry | Implemented; first milestone verified |
 | Rendering | Pipeline, dependencies, configuration and output | Pending |
 | Comments | Providers, discussion and moderation | Pending |
 | Users | Discovery, details, creation and access lifecycle | Pending |
@@ -179,3 +179,10 @@ Final Tags image `0926086b` is healthy. Its production build/bundle gates and cl
 - Capability limits: this is a workspace recommendation, not a new per-user default, content conversion, or per-editor plugin-settings system. Usage is a current aggregate snapshot. New creation sessions receive the policy; already open sessions still encounter the server’s current creation checks at save time. No database migration is needed.
 
 Validation: all 30 policy/formats/preview/review/chooser width-and-theme browser cases passed without overflow, JavaScript errors or WCAG A/AA violations. Interactions covered recommendation order, the last-editor guard, recommendation clearing, saved/draft preview, navigation protection, conflict recovery, save locking and read retry. Six isolated PostgreSQL tests passed atomic persistence, unrelated-setting preservation, concurrent-save rejection, database rollback, activation warnings and stale fingerprint rejection after an intervening change. Policy, template privacy/availability/access failure, transport, legacy site configuration, creation enforcement and editor-shell regressions passed. Shared/client/server type checks and repository lint passed. Production deployment and unintercepted policy restoration remain pending.
+
+
+Editors deployment `951e3184` is healthy and the container revision matches committed source. The production Docker build and bundle gates passed. Unintercepted browser verification passed 30 creation-policy, formats, preview, review and real chooser cases across desktop/tablet/phone widths in both themes, without overflow, JavaScript errors or WCAG A/AA violations. A recommendation saved through the UI persisted and appeared first in a newly opened chooser; a stale policy write returned HTTP 409 and anonymous access returned HTTP 403. Original availability and recommendation were restored and read back. No pages were created or changed. `compose.before-951e3184.yml` retains the previous healthy image.
+
+## Rendering initial findings
+
+The current interface presents a deeply nested module directory with repeated colored toolbars. It does not distinguish drafts from saved configuration, guard navigation, explain inactive dependencies or show the effective path from source to HTML. Saves update module rows sequentially and accept unknown keys and invalid option values, so failures can leave a partial pipeline. The runtime supports four core source formats and ordered HTML post-processing; several modules produce remote media/diagram references, and image prefetch can perform server requests. An output inspector must distinguish stored output from a fresh render and keep untrusted page HTML isolated. The next implementation will provide a searchable module workspace, explicit dependency/pipeline inspection, atomic validated settings with stale-write protection, and permission-checked stored-output inspection with useful structure diagnostics. Existing content re-rendering will remain an explicit operation with clear effects.
