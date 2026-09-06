@@ -18,7 +18,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | Wiki Agent | Providers/models, skills, browser, tools, memory, MCP and runtime | Implemented; first milestone verified |
 | Search | Providers, retrieval, index lifecycle and evaluation | Implemented; first milestone verified |
 | API | Credentials/scopes, integration setup and reference | Pending |
-| Webhooks | Events, endpoints, deliveries, tests and recovery | Implemented; deployment verification pending |
+| Webhooks | Events, endpoints, deliveries, tests and recovery | Implemented; first milestone verified |
 | General | Identity, announcements, features and defaults | Pending |
 | Theme | Appearance, previews and reversible editing | Pending |
 | Navigation | Structure, ordering, audiences and preview | Pending |
@@ -87,3 +87,9 @@ The old endpoint editor required manually typed event subscriptions, allowed sil
 Validation: targeted queue, operation, authorization, subscription, worker and client workflow tests; shared/client/server type checks; lint; Vite build. Preview browser review covered three sections at 1440px, 900px and 390px in light and dark themes with no overflow, JavaScript errors or WCAG A/AA violations. Controlled fixtures exercised create/save/failure/reset, event selection, endpoint and route draft guards, secret acknowledgement/rotation, test queueing, delivery retry/cancel, refresh recovery, deletion and bookmark restoration. No test messages were sent to external receivers during verification.
 
 The targeted test transaction also passed against PostgreSQL temporary copies of the four relevant tables: one queued delivery, synthetic event marked published, active-test conflict, and disabled-endpoint rejection. No worker was invoked and no live rows were modified.
+
+Webhooks deployment `f247c675` is healthy. Unintercepted browser verification covered all three sections at desktop, tablet and phone widths in both themes with no overflow, JavaScript errors or WCAG A/AA violations. A temporary disabled endpoint verified real creation, persisted hyphenated subscriptions, rotation, deletion, draft protection and server-side rejection of a test while disabled. The fixture was removed. No outbound delivery was sent. Detailed delivery recovery and synthetic sends used controlled browser fixtures plus queue/worker tests, not third-party receivers.
+
+## API access / GraphQL explorer initial findings
+
+The API inventory counts expired keys as active, hides issued group permissions and MCP resource bindings, and mixes key administration with a long integration reference. Key generation has permission selection but no preview of the selected group's effective grant. When MCP is enabled, newly issued keys are automatically bound to its configured resource; the existing reference does not clearly explain this lifecycle or how older keys differ. GraphQL exploration is provided by the server's GraphiQL endpoint, permission-gated separately from API-key enablement. Next work should reorganize credentials and connection setup, expose safe issued-grant metadata and expiry states, improve generation/replacement workflows and integrate usable protocol examples/exploration. Both areas remain pending substantive implementation and verification.
