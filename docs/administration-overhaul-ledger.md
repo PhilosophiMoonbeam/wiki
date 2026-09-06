@@ -11,7 +11,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | Editors | Availability, recommendations, format usage and authoring entry | Implemented; first milestone verified |
 | Rendering | Module configuration, pipeline inspection and stored output | Implemented; first milestone verified |
 | Comments | Providers, discussion and moderation | Implemented; first milestone verified |
-| Users | Discovery, details, creation and access lifecycle | Implemented; deployment verification pending |
+| Users | Discovery, details, creation and access lifecycle | Implemented; first milestone verified |
 | Groups | Membership, permissions, page rules and effective access | Pending |
 | Authentication | Providers, sign-in, provisioning and diagnostics | Pending |
 | Security | Sessions, protections and policies | Pending |
@@ -256,3 +256,18 @@ The Users overhaul should provide a coherent directory and contextual account wo
 A verified database backup is required before the first migration-17 deployment. An older container image alone must not undo persisted revocation or lifecycle history; the down migration refuses such state.
 
 Pre-migration archive verified: `backups/before-account-administration-17-20260906T094735Z.dump` (2,901,868 bytes; 609 archive entries). It includes the deployed discussion lifecycle and precedes account migration 17.
+
+
+Users is deployed as `5b4bac50`, healthy with revision `5b4bac503911afaed29d15ace94c64c836f78861`. Migration 17 and all three account columns were read back from PostgreSQL. The production Docker build and bundle gates passed. `compose.before-5b4bac50.yml` retains the preceding image; the verified pre-migration archive remains available. Restoring an older image alone does not reverse account generations or recorded lifecycle state.
+
+Unintercepted verification passed 42 width/theme views across the directory, creation, profile, security, password review, deletion review and activity. The real UI created an account and cleared optional profile fields through reviewed saves. Real sign-ins verified that ending sessions invalidates existing JWTs, reactivation does not revive a revoked token, password replacement invalidates the previous session, and the new password can sign in. Stale profile reviews returned HTTP 409. Primary and Guest deactivation were rejected. A delegated account manager could not change the primary administrator’s profile or password. Changing the temporary group’s permissions invalidated its member’s prior sign-in. Private pages and retained private history blocked account deletion.
+
+The browser matrix had no document overflow, WCAG A/AA violations or JavaScript errors. A first cold browser load timed out before the app appeared; three subsequent fresh contexts rendered the directory in 533, 968 and 500 milliseconds with no failed requests or JavaScript errors. Eight authenticated `whoami` requests took approximately 3 milliseconds each on the local deployment; these are observations, not a load benchmark.
+
+All three temporary accounts (13–15), two groups (5–6), and private pages (35–36) were removed. The initial ownership test correctly refused account deletion after page deletion because private history was retained; the harness was corrected to expect HTTP 403 and explicitly removed only those two synthetic page-history records before deleting their temporary owners. Original accounts and group memberships remain unchanged. Administrative action metadata remains by design. No real email was sent; no enabled webhook receivers or external rendering inputs were used. The isolated PostgreSQL container and temporary credential/authentication-state files were removed after verification.
+
+## Groups initial findings
+
+The group directory emphasizes numeric IDs and timestamps rather than access purpose or policy breadth. Details split settings, permissions, page rules and membership into legacy panels; policy changes are staged, while member assignment/removal takes effect immediately. The update action lacks a reviewed policy version, so membership and policy changes are difficult to reason about together. Page-rule editing exposes low-level matching controls without an effective-access explanation. The Users milestone now makes existing group changes invalidate affected sessions, but does not complete the Groups workflow.
+
+The next overhaul should make group purpose and scope understandable, separate saved policy from drafts, review permission and membership effects, protect system groups and current administrative authority, and add a useful access evaluation grounded in the actual authorization rules. Private ownership must remain a separate boundary, and any policy preview must state whether it evaluates this group or a person’s combined memberships. Group creation, deletion, membership, page-rule management and recovery states all remain in scope.
