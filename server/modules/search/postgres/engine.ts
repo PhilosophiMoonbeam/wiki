@@ -840,6 +840,38 @@ const plugin: SearchPlugin<PostgresSearchConfig, PostgresSearchContext> & Postgr
     wiki.logger.info('(SEARCH/POSTGRES) Rebuilding hybrid search index...')
     await ensureSearchIndex(knex, this.config.dictLanguage, true)
     wiki.logger.info('(SEARCH/POSTGRES) Hybrid search index rebuilt successfully.')
+  },
+
+  async inspectIndex() {
+    // A single statement observes one database snapshot without modifying the index.
+    const result = await getKnexClient().transaction(async transaction => {
+      await transaction.raw("SET LOCAL statement_timeout = '5s'")
+      return transaction.raw<PostgresRawResult<{
+      publicPages: string; indexedPages: string; missingPages: string; stalePages: string; excludedEntries: string
+      dictionary: string | null; schemaVersion: number | null
+    }>>(`
+      SELECT
+        count(page.id) FILTER (WHERE page.visibility = 'public' AND page."isPublished") AS "publicPages",
+        count(vector."pageId") AS "indexedPages",
+        count(page.id) FILTER (WHERE page.visibility = 'public' AND page."isPublished" AND vector."pageId" IS NULL) AS "missingPages",
+        count(page.id) FILTER (WHERE page.visibility = 'public' AND page."isPublished" AND vector."pageId" IS NOT NULL
+          AND vector."sourceRevision" IS DISTINCT FROM page."sourceRevision") AS "stalePages",
+        count(vector."pageId") FILTER (WHERE page.id IS NULL OR page.visibility IS DISTINCT FROM 'public'
+          OR page."isPublished" IS DISTINCT FROM true) AS "excludedEntries",
+        (SELECT dictionary FROM "pagesSearchMetadata" WHERE "contractId" = 1) AS dictionary,
+        (SELECT "schemaVersion" FROM "pagesSearchMetadata" WHERE "contractId" = 1) AS "schemaVersion"
+      FROM pages page FULL OUTER JOIN "pagesVector" vector ON vector."pageId" = page.id
+    `)
+    })
+    const row = result.rows[0]
+    if (!row) throw new Error('Search index inspection returned no data')
+    return {
+      checkedAt: new Date().toISOString(),
+      publicPages: Number(row.publicPages), indexedPages: Number(row.indexedPages),
+      missingPages: Number(row.missingPages), stalePages: Number(row.stalePages), excludedEntries: Number(row.excludedEntries),
+      configuredDictionary: this.config.dictLanguage, indexedDictionary: row.dictionary,
+      schemaVersion: row.schemaVersion, expectedSchemaVersion: SEARCH_SCHEMA_VERSION
+    }
   }
 }
 

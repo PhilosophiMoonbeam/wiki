@@ -463,6 +463,7 @@ export interface SearchResult {
 }
 
 export interface SearchPlugin<C extends SearchConfig = SearchConfig, Context extends SearchContext<C> = SearchContext<C>> {
+  inspectIndex?(this: Context): Promise<import('../../shared/search-admin.ts').SearchIndexInspection>
   supportsPageFilters?: boolean
   activate(this: Context): Promise<void>
   deactivate(this: Context): Promise<void>

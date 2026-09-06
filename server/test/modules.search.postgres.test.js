@@ -7,6 +7,7 @@ const knexHarness = (options = {}) => {
   const rebuildPages = options.rebuildPages ?? []
   const transactionRaw = vi.fn().mockImplementation(async (sql, bindings = []) => {
     const statement = String(sql)
+    if (statement.includes('AS "publicPages"')) return { rows: options.inspectionRow ? [options.inspectionRow] : [] }
     if (statement.includes('pg_try_advisory_xact_lock')) return { rows: [{ value: options.lockAcquired !== false }] }
     if (statement.includes('WITH expected_columns')) return { rows: [{ value: options.schemaCurrent !== false }] }
     if (statement.includes('FROM "pagesSearchMetadata"')) {
@@ -97,6 +98,17 @@ afterEach(() => {
 })
 
 describe('PostgreSQL hybrid search', () => {
+  it('inspects coverage and dictionary metadata without rebuilding or modifying page data', async () => {
+    const harness = knexHarness({ inspectionRow: { publicPages: '10', indexedPages: '9', missingPages: '2', stalePages: '1', excludedEntries: '1', dictionary: 'english', schemaVersion: 2 } })
+    installWiki(harness.knex)
+    const plugin = (await vi.importFresh('../modules/search/postgres/engine.ts', import.meta.url)).default
+    Object.assign(plugin, { config: { dictLanguage: 'simple' } })
+    const status = await plugin.inspectIndex()
+    expect(status).toMatchObject({ publicPages: 10, indexedPages: 9, missingPages: 2, stalePages: 1, excludedEntries: 1, configuredDictionary: 'simple', indexedDictionary: 'english', schemaVersion: 2, expectedSchemaVersion: 2 })
+    expect(Number.isNaN(Date.parse(status.checkedAt))).toBe(false)
+    expect(harness.truncate).not.toHaveBeenCalled()
+    expect(harness.dropTableIfExists).not.toHaveBeenCalled()
+  })
   it('atomically repairs schema, constraint, and invalid same-name index drift', async () => {
     const harness = knexHarness({ schemaCurrent: false })
     installWiki(harness.knex)

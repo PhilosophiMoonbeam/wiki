@@ -1,4 +1,4 @@
-import { fetchSearchEngines, rebuildSearchIndex, saveSearchEngines } from './search-api.ts'
+import { fetchSearchEngines, inspectSearchIndex, rebuildSearchIndex, saveSearchEngines } from './search-api.ts'
 
 function createJsonResponse (payload, ok = true) {
   return {
@@ -11,6 +11,13 @@ function createJsonResponse (payload, ok = true) {
 }
 
 describe('search api helper', () => {
+  test('preserves an unsupported inspection and rejects incomplete coverage data', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse({ engine: 'custom', inspection: null }))
+    expect(await inspectSearchIndex(fetchImpl)).toEqual({ engine: 'custom', inspection: null })
+    fetchImpl.mockResolvedValue(createJsonResponse({ engine: 'postgres', inspection: { publicPages: 0 } }))
+    await expect(inspectSearchIndex(fetchImpl)).rejects.toThrow()
+  })
+
   test('requests search engines with same-origin JSON options', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse([]))
 

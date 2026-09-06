@@ -1,6 +1,7 @@
 import _ from 'lodash'
 
 import configuration, { validateRows } from './configuration.ts'
+import errors from './errors.ts'
 
 const { parseConfig, serializeConfig } = configuration
 
@@ -30,6 +31,7 @@ interface ActiveSearchEngine {
   key: string
   deactivate(): Promise<unknown>
   rebuild(): unknown
+  inspectIndex?(): Promise<import('../../shared/search-admin.ts').SearchIndexInspection>
 }
 
 const searchEngineModel = (WIKI.models as { searchEngines: SearchEngineModel }).searchEngines
@@ -66,6 +68,14 @@ const updateEngines = async (engines: unknown): Promise<void> => {
     isEnabled: engine.isEnabled,
     config: parseConfig(engine.config, { errorMessage: 'Invalid search engines payload' })
   }))
+  const definitions = (WIKI.data as { searchEngines: Array<{ key: string; props?: Record<string, { enum?: unknown[] }> }> }).searchEngines
+  for (const update of updates) {
+    const definition = definitions.find(item => item.key === update.key)
+    for (const [key, value] of Object.entries(update.config)) {
+      const choices = definition?.props?.[key]?.enum
+      if (choices && !choices.includes(value)) throw new errors.ApplicationError(`Invalid value for search setting ${key}`, { code: 'INVALID_CONFIGURATION' })
+    }
+  }
   let newActiveEngine = ''
   const activeSearchEngine = (WIKI.data as { searchEngine: ActiveSearchEngine }).searchEngine
   for (const engine of updates) {
@@ -86,5 +96,9 @@ const updateEngines = async (engines: unknown): Promise<void> => {
 }
 
 const rebuildIndex = (): unknown => (WIKI.data as { searchEngine: ActiveSearchEngine }).searchEngine.rebuild()
+const inspectIndex = async () => {
+  const engine = (WIKI.data as { searchEngine: ActiveSearchEngine }).searchEngine
+  return { engine: engine.key, inspection: engine.inspectIndex ? await engine.inspectIndex() : null }
+}
 
-export default { listEngines, rebuildIndex, updateEngines }
+export default { listEngines, rebuildIndex, updateEngines, inspectIndex }

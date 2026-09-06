@@ -13,6 +13,13 @@ const requireSystemAccess = (req: Request, res: Response, json = false): boolean
 }
 return true }
 
+router.get('/index-status', async (req, res) => {
+  if (!requireSystemAccess(req, res, true)) return
+  res.set('Cache-Control', 'private, no-store')
+  try { res.json(await searchOperations.inspectIndex()) }
+  catch { res.status(503).json({ error: 'Index inspection is unavailable. Check the search engine and database logs, then try again.' }) }
+})
+
 router.get('/engines', async (req, res, next) => {
   if (!requireSystemAccess(req, res)) return
   try {

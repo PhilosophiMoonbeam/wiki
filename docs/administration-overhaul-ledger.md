@@ -16,7 +16,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | Authentication | Providers, sign-in, provisioning and diagnostics | Pending |
 | Security | Sessions, protections and policies | Pending |
 | Wiki Agent | Providers/models, skills, browser, tools, memory, MCP and runtime | Implemented; first milestone verified |
-| Search | Providers, retrieval, index lifecycle and evaluation | Pending |
+| Search | Providers, retrieval, index lifecycle and evaluation | Implemented; deployment verification pending |
 | API | Credentials/scopes, integration setup and reference | Pending |
 | Webhooks | Events, endpoints, deliveries, tests and recovery | Pending |
 | General | Identity, announcements, features and defaults | Pending |
@@ -54,6 +54,16 @@ Verification and implementation evidence will be recorded as each area is comple
 
 Validation: client/shared/server type checks, repository lint, Agent component tests, administration integration tests and server controller/catalog tests. Browser preview reviewed all seven sections at 1440px and 390px in dark and light themes: no page overflow, JavaScript errors or WCAG A/AA violations after corrections. Interactive checks covered provider and destination filters, history, direct provider editing/discard, source selection, tool disclosure and section persistence after reload. Source selection used controlled metadata without creating a production skill. Deployed milestone `d49ac379` passed a second browser review without asset or API interception: all seven sections at desktop/phone in both themes, real tool policy and source-search responses, provider filtering/history, source-search empty state, section persistence and keyboard navigation. Container health is healthy. Final cross-administration review remains pending with the other areas.
 
-## Next: Search
+## Search findings
 
 Initial code review confirms that engine selection/configuration and rebuilding work, but Apply is enabled even without changes; no draft reset or query evaluation is available. The next implementation should separate saved engine state from configuration drafts, make maintenance understandable, and add a real query-evaluation workflow showing results and match evidence from the actual search service. Index health must be measured from supported server state, never inferred from a selected engine alone.
+
+### Search implementation and verification
+
+- Three directly addressable workspaces: Configuration, Evaluate queries and Index maintenance. Engine configuration has a saved baseline, dirty gating, reset, an accessible leave confirmation and a save bar outside the panel transition container.
+- Query evaluation uses the same permission-filtered page-search API as readers. It displays the submitted query/scope, actual matching fields, relative scores, spelling suggestions, round-trip duration, bounded-window guidance and further result pages. Draft configuration never silently changes an evaluation.
+- A new system-administrator endpoint projects PostgreSQL index coverage: published public pages, indexed entries, missing pages, stale source revisions and entries that no longer belong in the public index. Dictionary and schema metadata are compared with the running engine. Inspection uses one query snapshot with a five-second statement timeout and makes no index changes. Unsupported inspection is explicit, not an empty healthy result.
+- Rebuilding has a review step, server-confirmed completion, an explicit uncertain-outcome state after a failed request and guidance that leaving the page does not cancel the server operation. Inspection is on demand; this is not a persistent rebuild-job history or a latency/service-health monitor.
+- Enumerated configuration settings are validated before any engine rows are changed, preventing an invalid dictionary selection from being persisted through the API.
+
+Verification: draft/reset/save-failure/navigation tests; REST transport and schema tests; administrator access and error-redaction tests; engine inspection tests; shared/client/server type checks, lint, build and bundle budgets. The exact inspection SQL was also executed against isolated PostgreSQL temporary tables covering current, missing, stale, private, unpublished and orphaned entries. All three sections passed browser preview at 1440px, 900px and 390px in light/dark themes with no page overflow, JavaScript errors or WCAG A/AA violations. Interactive checks covered a real query, configuration reset, navigation cancellation, inspection failure/retry, rebuild review cancellation and section persistence. Production verification is the next gate.

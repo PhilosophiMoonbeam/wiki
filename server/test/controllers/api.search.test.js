@@ -131,6 +131,7 @@ describe('controllers/api search endpoints', () => {
     const router = express.__routers[0]
     return {
       engines: router.get.mock.calls.find(([path]) => path === '/engines')[1],
+      indexStatus: router.get.mock.calls.find(([path]) => path === '/index-status')[1],
       saveEngines: router.post.mock.calls.find(([path]) => path === '/engines')[1],
       rebuildIndex: router.post.mock.calls.find(([path]) => path === '/rebuild-index')[1]
     }
@@ -144,6 +145,28 @@ describe('controllers/api search endpoints', () => {
     expect(typeof handlers.engines).toBe('function')
     expect(typeof handlers.saveEngines).toBe('function')
     expect(typeof handlers.rebuildIndex).toBe('function')
+    expect(typeof handlers.indexStatus).toBe('function')
+  })
+
+  it('restricts index inspection and reports unsupported engines without a fabricated status', async () => {
+    const { indexStatus } = await loadHandlers()
+    const res = { status: vi.fn().mockReturnThis(), json: vi.fn(), set: vi.fn() }
+    await indexStatus({ user: {} }, res)
+    expect(res.status).toHaveBeenCalledWith(403)
+    WIKI.auth.checkAccess.mockReturnValue(true)
+    await indexStatus({ user: { permissions: ['manage:system'] } }, res)
+    expect(res.set).toHaveBeenCalledWith('Cache-Control', 'private, no-store')
+    expect(res.json).toHaveBeenLastCalledWith({ engine: 'beta', inspection: null })
+  })
+
+  it('returns an unavailable response when inspection fails without exposing database details', async () => {
+    WIKI.auth.checkAccess.mockReturnValue(true)
+    WIKI.data.searchEngine.inspectIndex = vi.fn().mockRejectedValue(new Error('internal database connection information'))
+    const { indexStatus } = await loadHandlers()
+    const res = { status: vi.fn().mockReturnThis(), json: vi.fn(), set: vi.fn() }
+    await indexStatus({ user: { permissions: ['manage:system'] } }, res)
+    expect(res.status).toHaveBeenCalledWith(503)
+    expect(JSON.stringify(res.json.mock.calls)).not.toContain('internal database connection information')
   })
 
 
@@ -394,6 +417,17 @@ describe('controllers/api search endpoints', () => {
     expect(res.status).toHaveBeenCalledWith(400)
     expect(res.json).toHaveBeenCalledWith({ error: 'Invalid search engines payload' })
     expect(global.WIKI.models.searchEngines.initEngine).not.toHaveBeenCalled()
+  })
+
+  it('rejects unsupported enumerated settings before changing the saved configuration', async () => {
+    global.WIKI.auth.checkAccess.mockReturnValue(true)
+    WIKI.data.searchEngines.find(engine => engine.key === 'alpha').props.endpoint = { enum: ['supported'] }
+    const { saveEngines } = await loadHandlers()
+    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() }
+    await saveEngines(createSavePayload(), res)
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(WIKI.models.searchEngines.query).not.toHaveBeenCalled()
+    expect(WIKI.models.searchEngines.initEngine).not.toHaveBeenCalled()
   })
 
   it('returns JSON 500 for unexpected engine save failures', async () => {

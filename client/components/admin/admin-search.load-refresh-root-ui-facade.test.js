@@ -80,15 +80,13 @@ describe('admin-search load/refresh/save/rebuild root UI facade migration guard'
     expect(script).toMatch(
       /beforeUnmount\s*\(\s*\)\s*\{[\s\S]*?this\.isUnmounted\s*=\s*true[\s\S]*?this\.loadController\?\.abort\(\)[\s\S]*?this\.saveController\?\.abort\(\)[\s\S]*?this\.rebuildController\?\.abort\(\)/
     )
-    expect(source).toMatch(/@click=['"]refresh['"][^)]*:loading=['"]enginesLoading['"][^)]*:disabled=['"]saving \|\| rebuilding['"]/)
-    expect(source).toMatch(/@click=['"]rebuild['"][^)]*:loading=['"]rebuilding['"][^)]*:disabled=['"]saving \|\| enginesLoading['"]/)
-    expect(source).toMatch(
-      /@click=['"]selectedEngine = eng\.key['"][\s\S]*?:disabled=['"]!eng\.isAvailable \|\| saving['"][\s\S]*?:aria-disabled=['"]!eng\.isAvailable \|\| saving \? `true` : undefined['"][\s\S]*?role=['"]radio['"]/
-    )
-    expect(source).toContain("prepend-icon='mdi-cached'")
-    expect(source).toMatch(/v-else-if=['"]eng\.key === selectedEngine['"]\)\s+mdi-radiobox-marked/)
-    expect(source).toMatch(/v-icon\(color=['"]grey['"],\s*v-else\)\s+mdi-radiobox-blank/)
-    expect(source).toMatch(/@click=['"]save['"][^)]*:disabled=['"]!canSave['"][^)]*:loading=['"]saving['"]/)
+    expect(source).toContain(':disabled="saving || rebuilding || dirty" @click="refresh"')
+    expect(source).toContain('<v-radio-group v-model="selectedEngine"')
+    expect(source).toContain(':disabled="!eng.isAvailable"')
+    expect(source).toContain('prepend-icon="mdi-cached"')
+    expect(source).toContain(':disabled="!canSave" :loading="saving" @click="save"')
+    expect(source).toContain('aria-labelledby="rebuild-confirm-title"')
+    expect(source).toContain('aria-labelledby="search-discard-title"')
     expect(script).not.toMatch(/search-mutation-(?:save-engines|rebuild-index)\.gql|engines(?:Save|Rebuild)Mutation/)
   })
 
