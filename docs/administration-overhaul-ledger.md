@@ -21,7 +21,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | Webhooks | Events, endpoints, deliveries, tests and recovery | Implemented; first milestone verified |
 | General | Identity, announcements, features and defaults | Deployed and verified; reviewed identity/publishing, scheduled announcements, logo review and runtime recovery |
 | Theme | Palette library, reader typography/layout, local previews, custom source and reviewed publication | Implemented and verified |
-| Navigation | Structure, ordering, audiences and preview | Pending |
+| Navigation | Structure, ordering, audiences and preview | Implemented, deployed and verified |
 | Locale | Languages, defaults and multilingual operation | Pending |
 | Analytics | Providers, insight and collection controls | Pending |
 | System | Environment, health and diagnostics | Pending |
@@ -493,3 +493,18 @@ The reader's Browse API previously exposed public page metadata without applying
 Browse evaluates lightweight metadata in batches of 1,000 without fetching content or truncating access checks. Evaluation is linear in the scoped locale's page count, with no stale per-user authorization cache; very large locale trees remain a performance consideration. Static-menu audience preview is illustrative, not impersonation or a page-rule simulator. Existing headers/dividers/links and the built-in Home destination remain the supported structure; nested menus and synthetic search destinations are not claimed. Peer configuration notifications retain the existing best-effort transport.
 
 Verification before deployment: 12 Navigation PostgreSQL tests (49 assertions) and 7 Browse PostgreSQL tests (22 assertions), including transaction rollback, current authority, concurrent/stale reviews, inactive locales, activation retry, 50-event retention, tag-only access, ownership, publication and multi-batch traversal. Focused API, model, shared policy, reader-mode, page API/search and page-rule suites pass; obsolete source-string Navigation tests were replaced. Shared/client/server typechecks, lint, Vite build and bundle budget checks pass. The browser preview audit passed 60 views across 1440/900/390 widths and light/dark, with no audited WCAG A/AA violations or overflow. Workflow coverage includes keyboard reorder and cancellation, private-page selection, audience pruning, locale copying, stale reload, publication, activation retry and dirty navigation protection. Live deployment verification follows.
+
+
+### Navigation deployed verification
+
+Implementation `36097ac7` and reader identity follow-up `f2eb2ace` are committed/pushed. Healthy deployed image: `tsepistle:f2eb2ace`, full revision `f2eb2ace48ba9c146d7f404954ae861d12e34233`. `/healthz` returns OK and migration 20 remains latest. Backup `/home/bbferko/.local/state/wiki-tailnet/backups/before-navigation-administration-20260906T163027Z.dump` is 2,917,702 bytes, mode 600, with 639 archive lines validated. `compose.before-f2eb2ace.yml` retains verified Theme image `90201271`.
+
+The live browser audited 54 views across 1440/900/390 widths and light/dark, covering structure, link/audience editing, all four display previews, activity and immutable review. No audited WCAG A/AA violations, document overflow or JavaScript exceptions occurred. A temporary link was published through the actual UI, a temporary structured/audience menu was persisted, and the reader on existing page 1 rendered real menu destinations and Browse results. All four modes were published and verified in the reader. Stale reviews, unsafe destinations and anonymous administrative reads were rejected.
+
+Original settings were restored. A fresh reader confirmed the restored menu/cache and functioning Browse. Every original nav field and the exact stored navigation structure match the pre-release backup; only the new publication revision was added. Activity retains truthful verification reasons. Evidence: `.playwright-cli/admin-review/navigation-live-report.json`, `navigation-live-*.png`, and `navigation-live-restored-reader.png`. Navigation is the seventeenth deployed and verified subsection milestone.
+
+## Locale initial findings
+
+Locale is next. The live workspace has English installed, a 70-package cached catalog, English as default, multilingual routing disabled, and automatic updates enabled. The current colored settings/table composition mixes language selection, routing and package operations. Its save mutates runtime before confirming an installed default, ignores false persistence results, and lacks a reviewed revision or current-authority transaction. Download waits on an in-memory scheduler promise without a durable operation receipt. The available catalog can omit installed languages because it maps only remote rows. Package refresh merges runtime resources, which can retain deleted translation keys.
+
+The overhaul will distinguish installed interface packages, enabled reading languages, URL behavior and page translations; provide meaningful locale/content/navigation coverage without implying machine translation; and make configuration review, installation/update, progress/failure, offline fallback and runtime activation concrete. Catalog percentages describe upstream interface translations, not this fork's newer administration labels or translated page content. English is bundled locally. Locale remains pending; no Locale implementation or deployment is claimed yet.
