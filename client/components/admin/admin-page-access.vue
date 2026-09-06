@@ -1,0 +1,32 @@
+<template>
+  <v-dialog :model-value="modelValue" max-width="720" persistent aria-labelledby="page-access-title">
+    <v-card class="page-access-dialog"><header><span class="access-kicker">{{ mode === 'owner' ? 'Private ownership' : 'Page visibility' }}</span><h2 id="page-access-title">{{ mode === 'owner' ? 'Transfer the private namespace.' : 'Review who can reach this page.' }}</h2><p>{{ page.title || page.path }}<br />{{ page.locale }} / {{ page.path }}</p></header>
+      <v-card-text><v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
+        <template v-if="mode === 'visibility'"><v-radio-group v-model="visibility" label="Page namespace" :disabled="busy"><v-radio label="Workspace · group permissions and page rules apply" value="public" /><v-radio :label="page.visibility === 'private' ? `Private · current owner #${page.ownerId}` : `Private · owned by you (#${userId})`" value="private" /></v-radio-group><p>{{ visibility === 'public' ? 'Moving to the workspace namespace removes private ownership. Readers allowed by page rules can access it when publication permits.' : 'Moving to your private namespace changes its URL and removes it from normal workspace discovery. Existing workspace links may no longer reach it.' }}</p><p>Publication state and its schedule remain unchanged. A path collision or a newer revision stops the change.</p></template>
+        <template v-else><p>Current owner: #{{ page.ownerId }}. The page and its private history move to the selected owner’s namespace. The previous owner may lose access.</p><form class="access-search" @submit.prevent="search"><v-text-field v-model="query" label="Find an owner by name or email" variant="outlined" hide-details :disabled="busy" /><v-btn type="submit" variant="outlined" :loading="searching" :disabled="busy || query.trim().length < 2">Search</v-btn></form><v-radio-group v-if="users.length" v-model="ownerId" label="New owner" :disabled="busy"><v-radio v-for="user in users" :key="user.id" :value="user.id" :label="`${user.name} · ${user.email} · #${user.id}`" /></v-radio-group><p v-else-if="searched && !searching">No eligible accounts matched. Try another name or email.</p><small>Search returns up to ten accounts. System guest accounts and the current owner are excluded.</small></template>
+        <v-checkbox v-model="confirmed" :disabled="busy || !changed" label="I have reviewed the access change and want to apply it." hide-details class="mt-4" />
+      </v-card-text><v-card-actions><v-spacer /><v-btn :disabled="busy" @click="$emit('update:modelValue', false)">Cancel</v-btn><v-btn color="primary" variant="flat" :loading="busy" :disabled="busy || !changed || !confirmed" @click="save">{{ mode === 'owner' ? 'Transfer ownership' : 'Change visibility' }}</v-btn></v-card-actions>
+    </v-card>
+  </v-dialog>
+</template>
+<script lang="ts">
+import { defineComponent, type PropType } from 'vue'
+import { changePageVisibility, type PageDetails } from '../../helpers/pages-api'
+import { searchUsers, type UserSearchRow } from '../../helpers/users-api'
+import { transferPageOwner } from '../../helpers/admin-pages'
+import { wikiStore } from '@/store/index.ts'
+export default defineComponent({
+  props: { modelValue: Boolean, page: { type: Object as PropType<PageDetails>, required: true }, mode: { type: String, default: 'visibility' } }, emits: ['update:modelValue', 'busy', 'changed'],
+  data: () => ({ visibility: 'public' as 'public' | 'private', confirmed: false, ownerId: null as number | null, query: '', users: [] as UserSearchRow[], searched: false, searching: false, searchGeneration: 0, error: '', busy: false }),
+  computed: { userId(): number { return wikiStore.user.id }, changed(): boolean { return this.mode === 'owner' ? Boolean(this.ownerId && this.ownerId !== this.page.ownerId) : this.visibility !== this.page.visibility } },
+  methods: {
+    async search() { if (this.busy || this.query.trim().length < 2) return; const generation = ++this.searchGeneration; this.searching = true; this.error = ''; this.ownerId = null; try { const users = await searchUsers(window.fetch.bind(window), this.query); if (generation === this.searchGeneration) { this.users = users.filter(user => user.id !== 2 && user.id !== this.page.ownerId); this.searched = true } } catch (error) { if (generation === this.searchGeneration) { this.users = []; this.error = error instanceof Error ? error.message : 'Account search failed.' } } finally { if (generation === this.searchGeneration) this.searching = false } },
+    async save() { if (this.busy || !this.changed || !this.confirmed) return; this.busy = true; this.error = ''; try { if (this.mode === 'owner') await transferPageOwner(this.page.id, this.page.sourceRevision, this.ownerId!); else await changePageVisibility(window.fetch.bind(window), this.page.id, this.visibility, this.page.sourceRevision, this.visibility === 'public'); this.$emit('update:modelValue', false); this.$emit('changed') } catch (error) { this.error = error instanceof Error ? error.message : 'Access could not be changed.' } finally { this.busy = false } }
+  },
+  watch: { modelValue(open: boolean) { if (open) { this.searchGeneration++; this.searching = false; this.visibility = this.page.visibility; this.ownerId = null; this.query = ''; this.users = []; this.searched = false; this.confirmed = false; this.error = '' } }, busy(value: boolean) { this.$emit('busy', value) }, visibility() { this.confirmed = false }, ownerId() { this.confirmed = false } },
+  beforeUnmount() { this.searchGeneration++; this.$emit('busy', false) }
+})
+</script>
+<style scoped lang="scss">
+.page-access-dialog header { padding:2rem 2rem 0; }.access-kicker { font-size:.7rem; letter-spacing:.13em; text-transform:uppercase; }h2 { font:500 2rem/1.2 var(--font-family-serif,Georgia,serif); margin:.7rem 0; }p { line-height:1.7; margin-bottom:1rem; overflow-wrap:anywhere; }.access-search { display:flex; align-items:center; gap:1rem; margin:1.5rem 0; }small { color:rgb(var(--v-theme-on-surface-variant)); }.v-card-actions { padding:1rem; flex-wrap:wrap; }@media(max-width:600px) { .access-search { flex-direction:column; align-items:stretch; } }
+</style>

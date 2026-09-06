@@ -336,6 +336,8 @@ export type PageListRow = {
   title: string | null
   description: string | null
   isPublished: boolean
+  publishStartDate?: string | null
+  publishEndDate?: string | null
   visibility: 'public' | 'private'
   ownerId: number | null
   contentType: string
@@ -605,6 +607,8 @@ function normalizePageListRow(row: unknown, fallbackMessage: string): PageListRo
     title: pageRow.title,
     description: pageRow.description,
     isPublished: pageRow.isPublished,
+    ...(pageRow.publishStartDate === null || typeof pageRow.publishStartDate === 'string' ? { publishStartDate: pageRow.publishStartDate } : {}),
+    ...(pageRow.publishEndDate === null || typeof pageRow.publishEndDate === 'string' ? { publishEndDate: pageRow.publishEndDate } : {}),
     visibility: pageRow.visibility,
     ownerId,
     contentType: pageRow.contentType,

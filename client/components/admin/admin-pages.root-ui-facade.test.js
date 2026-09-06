@@ -72,21 +72,15 @@ describe('admin-pages root UI facade migration guard', () => {
     expect(script).toContain("import { wikiStore } from '@/store/index.ts'")
     expect(script).not.toMatch(/\$store\.commit/)
     expect(script).not.toMatch(/pages-query-list\.gql|apollo\s*:|this\.\$apollo|pagesQuery/)
-    expect(source.match(/router-link\.admin-(?:record-link|mobile-record-title)\s*\(\s*:to=['"]`\/pages\/\$\{props\.item\.id\}`['"]\s*\)/g) || []).toHaveLength(
-      2
-    )
+    expect(source).toMatch(/:to="`\/pages\/\$\{page.id\}`"/)
   })
 
-  test('uses Vuetify 4 bottom-slot pagination with fixed sorting and no removed page-count event', () => {
-    expect(source).toMatch(
-      /v-data-table\.admin-responsive-table\([\s\S]*?v-model:page=['"]pagination['"][\s\S]*?:items-per-page=['"]15['"][\s\S]*?must-sort[\s\S]*?:sort-by=['"]sortBy['"][\s\S]*?hide-default-footer[\s\S]*?\)/
-    )
-    expect(source).toMatch(/template\(v-slot:bottom=['"]\{\s*pageCount\s*\}['"]\)/)
-    expect(source).toMatch(/v-if=['"]pageCount\s*>\s*1['"]/)
-    expect(source).toMatch(/v-pagination\(v-model=['"]pagination['"]\s+:length=['"]pageCount['"]/)
-    expect(source).not.toMatch(/@update:page-count|@page-count|:page-count/)
-    expect(script).toMatch(/sortBy:\s*\[\{\s*key:\s*['"]updatedAt['"],\s*order:\s*['"]desc['"]\s+as\s+const\s*\}\]/)
-    expect(source).toMatch(/@update:model-value=['"]pagination\s*=\s*1['"]/)
+  test('offers explicit sorting, bounded selection and publication review', () => {
+    expect(source).toContain('label="Order pages"')
+    expect(source).toContain('aria-label="Pages pagination"')
+    expect(source).toContain('Review publication')
+    expect(source).toContain('selectedIds.length >= 25')
+    expect(source).toContain('outside these filters')
   })
 
   test('applies only the latest page-list response and balances loading for superseded requests', async () => {
@@ -191,6 +185,6 @@ describe('admin-pages root UI facade migration guard', () => {
         icon: 'cached'
       }
     ])
-    expect(script).toMatch(/beforeUnmount\s*\(\s*\)\s*\{\s*this\.loadRequestId\+\+\s*\}/)
+    expect(script).toContain('this.loadRequestId++')
   })
 })

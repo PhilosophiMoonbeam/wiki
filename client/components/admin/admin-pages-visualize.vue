@@ -1,65 +1,12 @@
-<template lang='pug'>
-  v-container(fluid)
-    v-row
-      v-col(cols='12')
-        admin-hero(
-          title='Visualize Pages'
-          description='Dendrogram representation of your pages'
-          icon='mdi-graph-outline'
-        )
-          template(v-slot:actions)
-            .admin-pages-visualize-controls
-              v-select.animated.fadeInDown.wait-p1s(
-                v-if='locales.length > 0'
-                v-model='currentLocale'
-                :items='locales'
-                label='Locale'
-                variant="outlined"
-                density="compact"
-                hide-details
-                item-value='code'
-                item-title='name'
-              )
-              v-btn-toggle.animated.fadeInDown(
-                v-model='graphMode'
-                color='primary'
-                density="compact"
-                rounded
-                mandatory
-                aria-label='Visualization mode'
-              )
-                v-btn.px-5(value='htree', aria-label='Hierarchical Tree')
-                  v-icon(start) mdi-sitemap
-                  span.text-none Hierarchical Tree
-                v-btn.px-5(value='hradial', aria-label='Hierarchical Radial')
-                  v-icon(start) mdi-chart-donut-variant
-                  span.text-none Hierarchical Radial
-                v-btn.px-5(value='rradial', aria-label='Relational Radial')
-                  v-icon(start) mdi-blur-radial
-                  span.text-none Relational Radial
-        async-state(
-          v-if='loading'
-          state='loading'
-          title='Loading page visualization'
-          message='Fetching pages for the selected locale.'
-        )
-        async-state(
-          v-else-if='errorMessage'
-          state='error'
-          title='Page visualization could not be loaded'
-          :message='errorMessage'
-          retry-label='Try again'
-          @retry='loadPages'
-        )
-        template(v-else-if='pages.length < 1')
-          async-state(
-            state='empty'
-            :title='`No pages for ${currentLocale}`'
-            message='Create a page in this locale or return to Pages.'
-          )
-          v-btn(to='/pages', color='primary', variant='text') Return to Pages
-        .admin-pages-visualize-svg(v-else, ref='svgContainer')
-
+<template>
+  <v-container fluid class="pages-atlas">
+    <admin-hero title="Page atlas" description="See how knowledge is organized and connected." icon="mdi-graph-outline"><template #actions><v-btn variant="text" prepend-icon="mdi-arrow-left" to="/pages">Page register</v-btn><v-btn variant="outlined" prepend-icon="mdi-refresh" :disabled="loading" @click="loadPages">Refresh</v-btn></template></admin-hero>
+    <section class="atlas-intro"><div><span class="atlas-kicker">Structure &amp; relationships</span><h2>Follow the shape of your knowledge.</h2><p>Folders reveal organization. Page links reveal connections. Explore a diagram or use the searchable connection directory.</p></div><dl><div><dt>Pages in {{ currentLocale }}</dt><dd>{{ pages.length }}</dd></div><div><dt>Links within this view</dt><dd>{{ internalLinkCount }}</dd></div></dl></section>
+    <div class="atlas-controls"><v-select v-model="currentLocale" :items="locales" item-value="code" item-title="name" label="Language" variant="outlined" density="compact" hide-details /><v-btn-toggle v-model="directory" mandatory color="primary" aria-label="Atlas view"><v-btn :value="false">Diagram</v-btn><v-btn :value="true">Connection directory</v-btn></v-btn-toggle><v-select v-if="!directory" v-model="graphMode" :items="[{ title: 'Folder tree', value: 'htree' }, { title: 'Radial folders', value: 'hradial' }, { title: 'Page relationships', value: 'rradial' }]" label="Diagram structure" variant="outlined" density="compact" hide-details /><v-btn v-if="!directory" variant="text" :disabled="loading" @click="redraw">Reset view</v-btn></div>
+    <async-state v-if="loading" state="loading" title="Loading the atlas" message="Fetching accessible page connections." /><async-state v-else-if="errorMessage" state="error" title="The atlas could not be loaded" :message="errorMessage" retry-label="Try again" @retry="loadPages" /><async-state v-else-if="!pages.length" state="empty" :title="`No pages for ${currentLocale}`" message="Choose another language or return to the page register." />
+    <template v-else><div v-show="!directory" class="atlas-diagram"><p>{{ graphMode === 'rradial' ? 'Focus a page label to highlight its incoming and outgoing links. Drag to pan and scroll to zoom.' : 'Page labels open their administration details. Folder nodes organize paths and do not represent pages.' }} Use Tab to focus a page, then Enter to open it.</p><div ref="svgContainer" class="admin-pages-visualize-svg" /></div><section v-show="directory" class="atlas-directory" aria-label="Page connection directory"><v-text-field v-model="search" label="Find a page or linked path" prepend-inner-icon="mdi-magnify" variant="outlined" hide-details clearable /><p role="status">{{ directoryPages.length }} pages</p><article v-for="page in directoryPages" :key="page.id"><div><router-link :to="`/pages/${page.id}`">{{ page.title }}</router-link><code>{{ page.path }}</code></div><div><span>{{ page.links.length }} {{ page.links.length === 1 ? 'outgoing link' : 'outgoing links' }}</span><ul v-if="page.links.length"><li v-for="link in page.links" :key="link"><router-link v-if="pages.some(item => item.path === link)" :to="`/pages/${pages.find(item => item.path === link)?.id}`">{{ link }}</router-link><code v-else>{{ link }}</code></li></ul><small v-else>No outgoing page links recorded.</small></div></article></section></template>
+    <p class="atlas-footnote">Only pages and links visible to your account are included. A linked path outside this view may belong to another language or a page you cannot access; this view does not infer whether it exists.</p>
+  </v-container>
 </template>
 <script lang='ts'>
 import { defineComponent, markRaw } from 'vue'
@@ -114,6 +61,8 @@ type TreePointRoot = d3.HierarchyPointNode<PageGraphNode> & TreeRootMetadata
 
 type AdminPagesVisualizeState = {
   graphMode: GraphMode
+  directory: boolean
+  search: string
   width: number
   radius: number
   pages: PageLinkRow[]
@@ -134,6 +83,8 @@ export default defineComponent({
   data (): AdminPagesVisualizeState {
     return {
       graphMode: 'htree',
+      directory: false,
+      search: '',
       width: 800,
       radius: 400,
       pages: [],
@@ -144,6 +95,10 @@ export default defineComponent({
       loading: false,
       errorMessage: ''
     }
+  },
+  computed: {
+    directoryPages(): PageLinkRow[] { const term = (this.search || '').trim().toLocaleLowerCase(); return this.pages.filter(page => !term || [page.title, page.path, ...page.links].some(value => value.toLocaleLowerCase().includes(term))) },
+    internalLinkCount(): number { const paths = new Set(this.pages.map(page => page.path)); return this.pages.reduce((count, page) => count + page.links.filter(path => paths.has(path)).length, 0) }
   },
   watch: {
     loading: {
@@ -212,10 +167,10 @@ export default defineComponent({
         event.preventDefault()
       }
       if (event.ctrlKey || event.metaKey) {
-        const { href } = this.$router.resolve(String(id))
+        const { href } = this.$router.resolve(`/pages/${id}`)
         window.open(href, '_blank', 'noopener')
       } else {
-        this.$router.push(String(id))
+        this.$router.push(`/pages/${id}`)
       }
     },
     bilink (root: d3.HierarchyNode<PageGraphNode>): BilinkHierarchyNode {
@@ -653,4 +608,7 @@ export default defineComponent({
     flex: 1 0 auto;
   }
 }
+</style>
+<style scoped lang="scss">
+.pages-atlas { max-width:1600px; padding-bottom:4rem !important; }.atlas-intro { display:flex; align-items:center; justify-content:space-between; gap:3rem; padding:2rem .5rem; }.atlas-kicker { font-size:.7rem; text-transform:uppercase; letter-spacing:.13em; }h2 { font:500 clamp(1.7rem,2.5vw,2.5rem)/1.15 var(--font-family-serif,Georgia,serif); margin:.7rem 0 1rem; }.atlas-intro p { line-height:1.7; max-width:45rem; color:rgb(var(--v-theme-on-surface-variant)); }.atlas-intro dl { display:flex; flex-shrink:0; gap:2rem; }.atlas-intro dt { font-size:.75rem; }.atlas-intro dd { font:500 2.2rem Georgia,serif; margin:.4rem 0 0; }.atlas-controls { display:flex; flex-wrap:wrap; align-items:center; gap:1rem; padding:1rem 0; }.atlas-controls .v-select { flex:1 1 12rem; max-width:20rem; }.atlas-diagram,.atlas-directory { border:1px solid rgba(var(--v-border-color),.18); border-radius:12px; background:rgb(var(--v-theme-surface)); padding:1.5rem; }.atlas-diagram>p,.atlas-footnote { font-size:.8rem; line-height:1.7; color:rgb(var(--v-theme-on-surface-variant)); }.atlas-directory>p { padding:1rem 0; font-size:.8rem; }.atlas-directory article { display:grid; grid-template-columns:1fr 1fr; gap:2rem; border-top:1px solid rgba(var(--v-border-color),.18); padding:1.4rem 0; }.atlas-directory article>div { min-width:0; }.atlas-directory code { display:block; font-size:.8rem; overflow-wrap:anywhere; margin-top:.4rem; }.atlas-directory a { color:rgb(var(--v-theme-on-surface)); text-decoration:underline; overflow-wrap:anywhere; }.atlas-directory ul { padding-left:1.1rem; margin-top:.6rem; font-size:.8rem; line-height:1.8; }.atlas-directory small { display:block; margin-top:.5rem; }.atlas-footnote { margin:1.5rem 0; }.atlas-directory a:focus-visible { outline:2px solid rgb(var(--v-theme-primary)); outline-offset:3px; }@media(max-width:900px) { .atlas-intro { align-items:start; flex-direction:column; gap:1.5rem; } }@media(max-width:600px) { .atlas-directory article { grid-template-columns:1fr; gap:1rem; }.atlas-controls .v-select { max-width:none; }.atlas-diagram,.atlas-directory { padding:1rem; } }
 </style>

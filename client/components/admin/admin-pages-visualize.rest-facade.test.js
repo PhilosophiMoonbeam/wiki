@@ -94,7 +94,7 @@ describe('admin pages visualize REST facade', () => {
     expect(goToPageBody).toContain('event.preventDefault()')
     expect(goToPageBody).toContain('event.ctrlKey || event.metaKey')
     expect(goToPageBody).toContain("window.open(href, '_blank', 'noopener')")
-    expect(goToPageBody).toContain('this.$router.push(String(id))')
+    expect(goToPageBody).toMatch(/this\.\$router\.push\(`\/pages\/\$\{id\}`\)/)
     expect(script.match(/\.on\('keydown'/g)).toHaveLength(3)
     expect(script.match(/\.on\('click'/g)).toHaveLength(3)
   })

@@ -259,6 +259,8 @@ const list = async ({ requester, ...rawArgs }: OperationInput) => {
       'title',
       'description',
       'isPublished',
+      'publishStartDate',
+      'publishEndDate',
       'visibility',
       'ownerId',
       'contentType',
@@ -1172,6 +1174,34 @@ const update = async (input: OperationInput): Promise<unknown> => {
     }, input.requester)
   )
 }
+const setPublication = async (input: OperationInput): Promise<unknown> => {
+  const id = positiveInteger(input.id, 'id')
+  const expected = expectedSourceRevision(input.expectedSourceRevision)
+  if (!expected) throw new ApplicationError('Review the current page revision before changing publication.', { code: 'INVALID_INPUT' })
+  if (typeof input.isPublished !== 'boolean') throw new ApplicationError('Publication state must be a boolean.', { code: 'INVALID_INPUT' })
+  const validDate = (value: string): boolean => {
+    const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/.exec(value)
+    if (!parts) return false
+    const [, year, month, day, hour, minute, second, , offsetHour, offsetMinute] = parts
+    const y = Number(year), m = Number(month), d = Number(day)
+    const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)
+    const days = m === 2 ? (leap ? 29 : 28) : [4, 6, 9, 11].includes(m) ? 30 : 31
+    return m >= 1 && m <= 12 && d >= 1 && d <= days && Number(hour) <= 23 && Number(minute) <= 59 && Number(second) <= 59 && Number(offsetHour || 0) <= 14 && Number(offsetMinute || 0) <= 59 && (Number(offsetHour) !== 14 || Number(offsetMinute) === 0) && Number.isFinite(Date.parse(value))
+  }
+  const dates: Record<string, string> = {}
+  for (const field of ['publishStartDate', 'publishEndDate']) {
+    if (input[field] === undefined) continue
+    const value = input[field]
+    if (value === null || value === '') dates[field] = ''
+    else if (typeof value === 'string' && validDate(value)) dates[field] = new Date(value).toISOString()
+    else throw new ApplicationError('Publication dates must be valid ISO timestamps or empty.', { code: 'INVALID_INPUT' })
+  }
+  if (Object.keys(dates).length === 1) throw new ApplicationError('Supply both publication boundaries when changing the schedule.', { code: 'INVALID_INPUT' })
+  if (dates.publishStartDate && dates.publishEndDate && Date.parse(dates.publishEndDate) <= Date.parse(dates.publishStartDate)) throw new ApplicationError('Publication end must be after its start.', { code: 'INVALID_INPUT' })
+  // Delegate authorization, password protection, revision checks, history,
+  // rendering, indexing and durable events to the normal editor update path.
+  return update({ ...input, input: { id, expectedSourceRevision: expected, isPublished: input.isPublished, ...dates } })
+}
 const convert = async (input: OperationInput): Promise<unknown> => {
   const payload = mutationPayload(input, ['visibility', 'ownerId', 'isPrivate', 'privateNS'])
   await assertUnlocked(input, positiveInteger(payload.id, 'id'))
@@ -1296,6 +1326,7 @@ const restore = async (input: OperationInput): Promise<void> => {
 
 const getPageTags = (value: unknown): RelatedTagQuery => wiki.models.pages.relatedQuery('tags').for(positiveInteger(value, 'pageId'))
 export default {
+  setPublication,
   preview,
   authorizeMutation,
   changeVisibility,

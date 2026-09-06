@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from '@vue/compiler-sfc'
-import lexPug from 'pug-lexer'
 import { describe, expect, test } from '../../../server/test/bun-test.mts'
 
 const adminComponentDirectory = join(process.cwd(), 'client/components/admin')
@@ -45,72 +44,6 @@ const legacyHeaderClass = /\.admin-header(?![\w-])/
 const legacyHeaderTitleClass = /\.admin-header-title(?![\w-])/
 const adminHeroElement = /(?:^|\n)\s*<?(?:admin-hero|AdminHero)(?=[.(\s>/]|$)/
 
-interface DirectPugChild {
-  attributes: string[]
-  tag: string | null
-  type: string
-}
-
-const getDirectPugChildren = (template: string, parentTags: readonly string[]): DirectPugChild[] => {
-  const tokens = lexPug(template)
-  const parentIndex = tokens.findIndex(token => token.type === 'tag' && parentTags.includes(token.val))
-  const blockStartIndex = tokens.findIndex((token, index) => index > parentIndex && token.type === 'indent')
-
-  if (parentIndex === -1 || blockStartIndex === -1) {
-    return []
-  }
-
-  const children: DirectPugChild[] = []
-  let currentChild: DirectPugChild | null = null
-  let depth = 0
-  let startsChild = false
-
-  for (const token of tokens.slice(blockStartIndex)) {
-    if (token.type === 'indent') {
-      depth += 1
-      currentChild = null
-      startsChild = depth === 1
-      continue
-    }
-
-    if (token.type === 'outdent') {
-      if (depth === 1) {
-        break
-      }
-      depth -= 1
-      currentChild = null
-      startsChild = depth === 1
-      continue
-    }
-
-    if (depth !== 1) {
-      continue
-    }
-
-    if (token.type === 'newline') {
-      currentChild = null
-      startsChild = true
-      continue
-    }
-
-    if (startsChild) {
-      currentChild = {
-        attributes: [],
-        tag: token.type === 'tag' ? token.val : null,
-        type: token.type
-      }
-      children.push(currentChild)
-      startsChild = false
-    }
-
-    if (currentChild && token.type === 'attribute') {
-      currentChild.attributes.push(token.name)
-    }
-  }
-
-  return children
-}
-
 describe('routed administration page AdminHero migration', () => {
   test('enumerates the complete routed page set without nested components or the orphan stats page', () => {
     const filesFromRouter = Array.from(
@@ -138,11 +71,13 @@ describe('routed administration page AdminHero migration', () => {
     const componentPath = join(adminComponentDirectory, 'admin-pages.vue')
     const source = readFileSync(componentPath, 'utf8')
     const { descriptor, errors } = parse(source, { filename: componentPath })
-    const heroChildren = getDirectPugChildren(descriptor.template?.content ?? '', ['admin-hero', 'AdminHero'])
+    const container = descriptor.template?.ast?.children.find(node => node.type === 1 && node.tag === 'v-container')
+    const hero = container?.type === 1 ? container.children.find(node => node.type === 1 && node.tag === 'admin-hero') : undefined
+    const heroChildren = hero?.type === 1 ? hero.children.filter(node => node.type !== 3 && !(node.type === 2 && !node.content.trim())) : []
 
     expect(errors).toEqual([])
-    expect(heroChildren.some(child => child.tag === 'template' && child.attributes.includes('v-slot:actions'))).toBe(true)
-    expect(heroChildren.every(child => child.tag === 'template' && child.attributes.some(attribute => attribute.startsWith('v-slot:')))).toBe(true)
+    expect(heroChildren.length).toBeGreaterThan(0)
+    expect(heroChildren.every(child => child.type === 1 && child.tag === 'template' && child.props.some(prop => prop.type === 7 && prop.name === 'slot' && prop.arg?.type === 4 && prop.arg.content === 'actions'))).toBe(true)
   })
 
   test('removes shared legacy header CSS while preserving artifact-free route heading focus', () => {

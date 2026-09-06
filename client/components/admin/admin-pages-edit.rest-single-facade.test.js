@@ -22,20 +22,20 @@ const deferred = () => {
 }
 
 const createComponentOptions = ({ fetchPage, wikiStore }) => {
-  const executableScript = script
-    .replace(/^import .*$/gm, '')
-    .replace('export default', 'return')
-    .replace(/ as (?:PageDetails \| null|number \| null)/g, '')
+  const executableScript = new Bun.Transpiler({ loader: 'ts' }).transformSync(script.replace(/^import .*$/gm, '').replace('export default', 'return'))
 
-  return new Function('_', 'AsyncState', 'getErrorMessage', 'StatusIndicator', 'deletePageById', 'fetchPage', 'wikiStore', 'window', executableScript)(
+  return new Function('_', 'AsyncState', 'getErrorMessage', 'AdminPagePublicationSettings', 'AdminPageAccess', 'pageHref', 'publicationState', 'deletePageById', 'fetchPage', 'wikiStore', 'window', executableScript)(
     { toSafeInteger: Number },
     {},
     err => (err instanceof Error ? err.message : String(err)),
     {},
+    {},
+    () => '/',
+    () => 'Published',
     async () => {},
     fetchPage,
     wikiStore,
-    { fetch: async () => {} }
+    { fetch: async () => {}, removeEventListener() {} }
   )
 }
 

@@ -191,6 +191,7 @@ describe('controllers/api pages endpoints', () => {
     return {
       deletePage: express.__router.delete.mock.calls.find(([path]) => path === '/:id')[1],
       deleteTag: express.__router.delete.mock.calls.find(([path]) => path === '/tags/:id')[1],
+      publication: express.__router.patch.mock.calls.find(([path]) => path === '/:id/publication')[1],
       updatePage: express.__router.put.mock.calls.find(([path]) => path === '/:id')[1],
       getPage: express.__router.get.mock.calls.find(([path]) => path === '/:id')[1],
       links: express.__router.get.mock.calls.find(([path]) => path === '/links')[1],
@@ -732,6 +733,8 @@ describe('controllers/api pages endpoints', () => {
       'title',
       'description',
       'isPublished',
+      'publishStartDate',
+      'publishEndDate',
       'visibility',
       'ownerId',
       'contentType',
@@ -761,6 +764,17 @@ describe('controllers/api pages endpoints', () => {
         tags: ['alpha', 'docs']
       }
     ])
+  })
+
+  it('routes publication through the protected mutation with server-controlled identity and strips unrelated edits', async () => {
+    const { publication } = await loadHandler()
+    const user = { id: 2, permissions: ['manage:system'] }
+    const req = { params: { id: '7' }, sessionID: 'session', user, body: { expectedSourceRevision: '8', isPublished: false, content: 'not a content edit', visibility: 'public' } }
+    const res = { json: vi.fn(), set: vi.fn().mockReturnThis(), status: vi.fn().mockReturnThis() }, next = vi.fn()
+    await publication(req, res, next)
+    expect(next).not.toHaveBeenCalled()
+    expect(global.WIKI.models.pages.updatePage).toHaveBeenCalledWith({ id: 7, expectedSourceRevision: '8', isPublished: false, user })
+    expect(res.set).toHaveBeenCalledWith('Cache-Control', 'private, no-store')
   })
 
   it('returns 403 for unauthorized page list requests', async () => {

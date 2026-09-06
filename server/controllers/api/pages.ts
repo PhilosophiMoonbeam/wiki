@@ -304,6 +304,7 @@ router.get('/', async (req, res, next) => {
           title: page.title ?? null,
           description: page.description ?? null,
           ...(hasRestrictedPageFieldAccess(req) ? { isPublished: Boolean(page.isPublished) } : {}),
+          ...(hasRestrictedPageFieldAccess(req) ? { publishStartDate: page.publishStartDate ?? null, publishEndDate: page.publishEndDate ?? null } : {}),
           visibility: page.visibility,
           ownerId: page.ownerId,
           contentType: page.contentType,
@@ -458,6 +459,20 @@ router.post('/', async (req, res, next) => {
   } catch (err) {
     sendOperationError(res, next, err, 'Page creation failed')
   }
+})
+
+router.patch('/:id/publication', async (req, res, next) => {
+  const id = parsePositiveIntegerParam(req, res)
+  if (id === null) return
+  const expectedSourceRevision = requiredSourceRevision(req, res)
+  if (expectedSourceRevision === null) return
+  const body = requestBody(req)
+  try {
+    const page = await pageOperations.setPublication({ ...pageOperationContext(req), id, expectedSourceRevision, isPublished: body.isPublished,
+      ...(Object.hasOwn(body, 'publishStartDate') ? { publishStartDate: body.publishStartDate } : {}),
+      ...(Object.hasOwn(body, 'publishEndDate') ? { publishEndDate: body.publishEndDate } : {}) })
+    res.set('Cache-Control', 'private, no-store').json({ page: pageResponse(req, page) })
+  } catch (err) { sendOperationError(res, next, err, 'Page publication update failed') }
 })
 
 router.put('/:id', async (req, res, next) => {
