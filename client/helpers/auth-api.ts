@@ -1,3 +1,4 @@
+import { ApiKeyGrantSchema, ApiConnectionInfoSchema, type ApiKeyGrant, type ApiConnectionInfo } from '../../shared/api-admin.ts'
 import { sameOriginJsonFetch } from './json-transport.ts'
 import { isRecord } from './type-guards'
 
@@ -375,6 +376,7 @@ export async function fetchAdminAuthProviders(
 }
 
 export type AdminApiKey = {
+  grant: ApiKeyGrant
   id: number
   name: string
   keyShort: string
@@ -416,6 +418,7 @@ function normalizeAdminApiKey(value: unknown, fallbackMessage: string): AdminApi
     id: value.id,
     name: value.name,
     keyShort: value.keyShort,
+    grant: ApiKeyGrantSchema.parse(value.grant ?? { groupId: null, mcpResource: null, mcpResourceVersion: null }),
     isRevoked: value.isRevoked,
     expiration: value.expiration,
     createdAt: value.createdAt,
@@ -447,6 +450,7 @@ export type StatusResponse = Record<string, unknown> & {
 }
 
 export type AdminApiKeyInput = {
+  mcpAccess?: boolean
   name: string
   expiration: string
   fullAccess: boolean
@@ -528,7 +532,8 @@ export async function createAdminApiKey(
       name: payload.name,
       expiration: payload.expiration,
       fullAccess: payload.fullAccess,
-      group: payload.group
+      group: payload.group,
+      ...(payload.mcpAccess === undefined ? {} : { mcpAccess: payload.mcpAccess })
     },
     fallbackMessage
   )
@@ -557,4 +562,9 @@ export async function registerAccount(
   fallbackMessage = 'Registration failed'
 ): Promise<StatusResponse> {
   return submitStatusRequest(fetchImpl, '/_api/auth/register', input, fallbackMessage)
+}
+
+export async function fetchApiConnections(fetchImpl: FetchImpl): Promise<ApiConnectionInfo> {
+  const response = await sameOriginJsonFetch(fetchImpl, '/_api/auth/api/connections', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+  return ApiConnectionInfoSchema.parse(await parseJsonResponse(response, 'Connection information is unavailable'))
 }

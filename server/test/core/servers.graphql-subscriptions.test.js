@@ -40,7 +40,7 @@ describe('core/servers GraphQL transports', () => {
       return wsServer
     })
 
-    vi.mockModule('graphql-yoga', import.meta.url, () => ({ createYoga, maskError }))
+    vi.mockModule('graphql-yoga', import.meta.url, () => ({ createYoga, maskError, renderGraphiQL: vi.fn(() => '<html><head></head><body><noscript></noscript></body></html>') }))
     vi.mockModule('graphql-ws/use/ws', import.meta.url, () => ({ useServer }))
     vi.mockModule('ws', import.meta.url, () => ({
       default: { Server: WebSocketServer },
@@ -172,7 +172,7 @@ describe('core/servers GraphQL transports', () => {
     const request = {}
     const permissions = ['manage:system', 'manage:api']
 
-    expect(graphiql(request, { req: { user: { permissions: ['manage:api'] } } })).toEqual({ subscriptionsProtocol: 'WS' })
+    expect(graphiql(request, { req: { user: { permissions: ['manage:api'] } } })).toEqual(expect.objectContaining({ subscriptionsProtocol: 'WS', credentials: 'same-origin', shouldPersistHeaders: false }))
     expect(graphiql(request, { req: { user: { permissions: ['read:pages'] } } })).toBe(false)
     expect(graphiql(request, {})).toBe(false)
     expect(checkAccess).toHaveBeenCalledWith({ permissions: ['manage:api'] }, permissions)

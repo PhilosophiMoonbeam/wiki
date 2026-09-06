@@ -5,6 +5,7 @@ import type { Knex } from 'knex'
 import _ from 'lodash'
 
 import apiOperations from '../../operations/api.ts'
+import { describeApiConnections } from '../../operations/api-connections.ts'
 import authenticationOperations from '../../operations/authentication.ts'
 
 const router = express.Router()
@@ -137,6 +138,8 @@ router.get('/providers', async (req, res, next) => {
   }
 })
 
+router.use('/api', (_req, res, next) => { res.set('Cache-Control', 'private, no-store'); next() })
+
 router.get('/api', async (req, res, next) => {
   if (!requireAdminApiAccess(req, res)) return
   try {
@@ -144,6 +147,12 @@ router.get('/api', async (req, res, next) => {
   } catch (err) {
     next(err)
   }
+})
+
+router.get('/api/connections', async (req, res, next) => {
+  if (!requireAdminApiAccess(req, res)) return
+  res.set('Cache-Control', 'private, no-store')
+  try { res.json(await describeApiConnections()) } catch (error) { next(error) }
 })
 
 router.post('/api/state', async (req, res) => {
@@ -164,7 +173,8 @@ router.post('/api/keys', async (req, res) => {
       name: objectValue(req.body, 'name'),
       expiration: objectValue(req.body, 'expiration'),
       fullAccess: objectValue(req.body, 'fullAccess'),
-      group: objectValue(req.body, 'group')
+      group: objectValue(req.body, 'group'),
+      ...(objectValue(req.body, 'mcpAccess') !== undefined ? { mcpAccess: objectValue(req.body, 'mcpAccess') } : {})
     })
     res.json({ key, message: 'API Key created successfully' })
   } catch (err) {

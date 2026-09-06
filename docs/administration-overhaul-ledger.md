@@ -17,7 +17,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | Security | Sessions, protections and policies | Pending |
 | Wiki Agent | Providers/models, skills, browser, tools, memory, MCP and runtime | Implemented; first milestone verified |
 | Search | Providers, retrieval, index lifecycle and evaluation | Implemented; first milestone verified |
-| API | Credentials/scopes, integration setup and reference | Pending |
+| API | Credentials/scopes, integration setup and reference | Implemented; deployment verification pending |
 | Webhooks | Events, endpoints, deliveries, tests and recovery | Implemented; first milestone verified |
 | General | Identity, announcements, features and defaults | Pending |
 | Theme | Appearance, previews and reversible editing | Pending |
@@ -32,7 +32,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | Extensions | Availability, configuration and dependencies | Pending |
 | Utilities | Import, export and maintenance workflows | Pending |
 | Developer flags | Constraints, dependencies and activation | Pending |
-| GraphQL explorer | Integration, authentication and exploration | Pending |
+| GraphQL explorer | Integration, authentication and exploration | Implemented; deployment verification pending |
 
 ## Wiki Agent findings
 
@@ -92,4 +92,24 @@ Webhooks deployment `f247c675` is healthy. Unintercepted browser verification co
 
 ## API access / GraphQL explorer initial findings
 
-The API inventory counts expired keys as active, hides issued group permissions and MCP resource bindings, and mixes key administration with a long integration reference. Key generation has permission selection but no preview of the selected group's effective grant. When MCP is enabled, newly issued keys are automatically bound to its configured resource; the existing reference does not clearly explain this lifecycle or how older keys differ. GraphQL exploration is provided by the server's GraphiQL endpoint, permission-gated separately from API-key enablement. Next work should reorganize credentials and connection setup, expose safe issued-grant metadata and expiry states, improve generation/replacement workflows and integrate usable protocol examples/exploration. Both areas remain pending substantive implementation and verification.
+The API inventory counts expired keys as active, hides issued group permissions and MCP resource bindings, and mixes key administration with a long integration reference. Key generation has permission selection but no preview of the selected group's effective grant. When MCP is enabled, newly issued keys are automatically bound to its configured resource; the existing reference does not clearly explain this lifecycle or how older keys differ. GraphQL exploration is provided by the server's GraphiQL endpoint, permission-gated separately from API-key enablement. The implementation separates credential administration from connection setup and preserves the standalone schema-aware editor.
+
+
+### API access implementation and verification
+
+- Three directly linked sections: Credentials, Connect a client and GraphQL explorer. Searchable credential register distinguishes active, expired, revoked and unknown expiry; expandable records show issued group identity, current group grants, dates and MCP resource binding. Global API state is separate from credential validity.
+- Guided Identity / Access / Review issuance with a 90-day default, non-system group selection, current permission/page-rule preview and explicit MCP opt-in. Replacement carries forward scope and MCP intent, and leaves the old credential valid until separately revoked. One-time credentials remain visible even if inventory refresh fails. Draft/error recovery and navigation protection cover issuance and secret acknowledgement.
+- Administrator-only connection metadata exposes configured MCP resource and group grants without secrets. Existing callers that omit MCP intent retain automatic binding behavior; new UI callers can explicitly exclude MCP. Creation validates lifetime, group existence and explicit MCP configuration. API responses are private/no-store. Failed global-state persistence restores runtime state; concurrent state writes serialize.
+- Protocol-specific REST, GraphQL and MCP connection guidance uses real endpoint/configuration data, copyable examples with environment-variable placeholders, grant requirements and authentication diagnostics. Configuration evidence is explicitly distinguished from a successful connection test.
+- Limits: there is no fabricated last-use telemetry, per-credential request history or immutable permission snapshot. Scoped credentials continue to inherit their group's current access. Protocol entitlement is bounded by actual server authentication rules; MCP resource binding is separate from the group's use:mcp permission.
+
+Validation: 48 controlled browser cases across three widths and both themes, including all issuance stages and protocol guides; no overflow, JavaScript errors or WCAG A/AA violations. Lifecycle checks exercised creation, replacement, issuance failure, refresh failure without losing the secret, revocation and global state changes. Eleven targeted test files passed, along with shared/client/server type checks and repository lint. Production lifecycle verification is pending deployment.
+
+### GraphQL explorer implementation and verification
+
+- Integrated workspace navigation and a collapsible guide with three read-only starter queries validated against the actual server schema. Signed-in session authentication, optional bearer headers, real mutation effects and local query-history behavior are explained. Header persistence is disabled.
+- Retains the full Yoga GraphiQL editor, query execution, variables, headers, schema documentation and subscriptions. Supplies an immediately executable page inventory instead of a welcome comment. Document selection/closing retains native React handlers and exposes independent accessible controls with keyboard navigation.
+- Ships the pinned Yoga IDE 4.4.4 script, styles and Monaco workers as same-origin container assets. Build-time version checks prevent mismatched bundles. The build copies the MIT notice and the license inventory accounts for the prebuilt renderer's dependencies. Exact reviewed peer attribution exceptions record upstream package-range mismatches without changing application dependency resolution.
+- Responsive workspace chrome, readable dark editor annotations, visible documentation links and theme-aware guide controls. No external script/style dependency is needed to open the editor.
+
+Validation: six responsive/theme browser cases with no overflow, JavaScript errors or WCAG A/AA violations; actual permission-filtered page query, schema documentation, multiple documents and keyboard selection. Asset lifecycle/version mismatch tests, schema validation, subscription configuration regression tests, dependency and license checks passed. Production verification is pending deployment.

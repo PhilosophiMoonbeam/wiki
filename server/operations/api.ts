@@ -1,4 +1,6 @@
 import _ from 'lodash'
+import { describeApiKeyGrant } from './api-connections.ts'
+import ms from 'ms'
 
 import errors from './errors.ts'
 
@@ -21,7 +23,7 @@ interface ApiKeyQuery {
 
 interface ApiKeyModel {
   query(): ApiKeyQuery
-  createNewKey(input: { name: string, expiration: string, fullAccess: boolean, group: number | null | undefined }): Promise<unknown>
+  createNewKey(input: { name: string, expiration: string, fullAccess: boolean, group: number | null | undefined, mcpAccess?: boolean }): Promise<unknown>
 }
 
 const apiConfig = (WIKI.config as { api: { isEnabled: boolean } }).api
@@ -37,6 +39,7 @@ const serializeKey = (key: ApiKey) => ({
   id: key.id,
   name: key.name,
   keyShort: redactedSuffix(key.key),
+  grant: describeApiKeyGrant(key.key),
   isRevoked: key.isRevoked === true || key.isRevoked === 1,
   expiration: key.expiration,
   createdAt: key.createdAt,
@@ -48,19 +51,31 @@ const getConfig = async () => ({
   keys: (await apiKeyModel.query().orderBy(['isRevoked', 'name'])).map(serializeKey)
 })
 
+let stateWrite: Promise<void> = Promise.resolve()
 const setState = async (enabled: unknown): Promise<void> => {
   if (!_.isBoolean(enabled)) throw new ApplicationError('enabled must be a boolean', { code: 'INVALID_API_STATE' })
-  apiConfig.isEnabled = enabled
-  await configService.saveToDb(['api'])
+  const write = stateWrite.then(async () => {
+    const previous = apiConfig.isEnabled
+    apiConfig.isEnabled = enabled
+    try { await configService.saveToDb(['api']) } catch (error) { apiConfig.isEnabled = previous; throw error }
+  })
+  stateWrite = write.catch(() => {})
+  return write
 }
 
-const createKey = async (input: { name: unknown, expiration: unknown, fullAccess: unknown, group: unknown }): Promise<unknown> => {
+const createKey = async (input: { name: unknown, expiration: unknown, fullAccess: unknown, group: unknown, mcpAccess?: unknown }): Promise<unknown> => {
   const { name, expiration, fullAccess, group } = input
-  if (!_.isString(name) || name.length < 1) throw new ApplicationError('name must be a non-empty string', { code: 'INVALID_API_KEY_NAME' })
+  if (!_.isString(name) || name.trim().length < 2 || name.trim().length > 255) throw new ApplicationError('name must contain 2 through 255 characters', { code: 'INVALID_API_KEY_NAME' })
   if (!_.isString(expiration) || expiration.length < 1) throw new ApplicationError('expiration must be a non-empty string', { code: 'INVALID_API_KEY_EXPIRATION' })
   if (!_.isBoolean(fullAccess)) throw new ApplicationError('fullAccess must be a boolean', { code: 'INVALID_API_KEY_ACCESS' })
   if (!_.isNil(group) && !Number.isInteger(group)) throw new ApplicationError('group must be an integer or null', { code: 'INVALID_API_KEY_GROUP' })
-  const key = await apiKeyModel.createNewKey({ name, expiration, fullAccess, group: group as number | null | undefined })
+  const lifetime = ms(expiration)
+  if (!Number.isFinite(lifetime) || lifetime < 1000 || lifetime > ms('3y')) throw new ApplicationError('Expiration must be a duration from one second through three years', { code: 'INVALID_API_KEY_EXPIRATION' })
+  if (!fullAccess && (typeof group !== 'number' || group <= 1 || group === 2)) throw new ApplicationError('Choose a non-system group for scoped access', { code: 'INVALID_API_KEY_GROUP' })
+  if (!fullAccess && !(await (WIKI.models as { groups: { query(): { findById(id: number): Promise<unknown> } } }).groups.query().findById(group as number))) throw new ApplicationError('The selected group no longer exists', { code: 'INVALID_API_KEY_GROUP' })
+  if (input.mcpAccess !== undefined && typeof input.mcpAccess !== 'boolean') throw new ApplicationError('mcpAccess must be a boolean', { code: 'INVALID_API_KEY_MCP' })
+  if (input.mcpAccess === true && !(WIKI.config as { agents?: { mcp?: { enabled?: boolean } } }).agents?.mcp?.enabled) throw new ApplicationError('MCP is not enabled in this deployment', { code: 'MCP_DISABLED' })
+  const key = await apiKeyModel.createNewKey({ name: name.trim(), expiration, fullAccess, group: group as number | null | undefined, ...(typeof input.mcpAccess === 'boolean' ? { mcpAccess: input.mcpAccess } : {}) })
   await getAuth().reloadApiKeys()
   outboundEvents.emit('reloadApiKeys')
   return key
@@ -68,7 +83,8 @@ const createKey = async (input: { name: unknown, expiration: unknown, fullAccess
 
 const revokeKey = async (id: unknown): Promise<void> => {
   if (!Number.isSafeInteger(id) || typeof id !== 'number' || id < 1) throw new ApplicationError('id must be a positive integer', { code: 'INVALID_API_KEY_ID' })
-  await apiKeyModel.query().findById(id).patch({ isRevoked: true })
+  const updated = await apiKeyModel.query().findById(id).patch({ isRevoked: true })
+  if (updated !== 1) throw new ApplicationError('API key no longer exists', { status: 404, code: 'API_KEY_NOT_FOUND' })
   await getAuth().reloadApiKeys()
   outboundEvents.emit('reloadApiKeys')
 }

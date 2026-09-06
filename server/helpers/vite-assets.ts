@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import { cp, mkdir } from 'node:fs/promises'
 import path from 'node:path'
+import { GRAPHQL_IDE_VERSION } from '../../shared/graphql-ide.ts'
 
 type Manifest = Record<string, unknown>
 interface ManifestChunk extends Record<string, unknown> {
@@ -26,11 +27,22 @@ export const copyPrismAssets = async (root: string): Promise<void> => {
   await cp(path.resolve(root, 'node_modules/prismjs/components'), output, { recursive: true })
 }
 
+export const copyGraphiqlAssets = async (root: string): Promise<void> => {
+  const source = path.resolve(root, 'node_modules/@graphql-yoga/graphiql')
+  const manifest = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8')) as { version: string }
+  if (manifest.version !== GRAPHQL_IDE_VERSION) throw new Error('GraphQL IDE assets and renderer versions must match')
+  const output = path.resolve(root, 'assets/graphiql', GRAPHQL_IDE_VERSION)
+  await mkdir(output, { recursive: true })
+  await cp(path.join(source, 'LICENSE'), path.join(output, 'LICENSE'))
+  for (const file of ['yoga-graphiql.umd.js', 'graphiql.css', 'monacoeditorwork']) await cp(path.join(source, 'dist', file), path.join(output, file), { recursive: true })
+}
+
 export const provisionDevelopmentAssets = async (root: string): Promise<void> => {
   const output = path.resolve(root, 'assets')
   await mkdir(output, { recursive: true })
   await cp(path.resolve(root, 'client/static'), output, { recursive: true })
   await copyPrismAssets(root)
+  await copyGraphiqlAssets(root)
 }
 
 const loadManifest = (): Manifest => {

@@ -1,3 +1,4 @@
+import { GRAPHQL_EXPLORER_OPTIONS, renderWorkspaceGraphiQL } from './graphql-explorer.ts'
 import fs from 'fs-extra'
 import http from 'node:http'
 import https from 'node:https'
@@ -69,7 +70,7 @@ interface YogaUserContext extends Record<string, unknown> {
 }
 type YogaServer = YogaServerInstance<YogaServerContext, YogaUserContext>
 const GRAPHQL_EXPLORER_PERMISSIONS = ['manage:system', 'manage:api']
-const GRAPHIQL_OPTIONS = Object.freeze({ subscriptionsProtocol: 'WS' as const })
+const GRAPHIQL_OPTIONS = GRAPHQL_EXPLORER_OPTIONS
 
 type SubscriptionCleanup = Disposable
 
@@ -247,6 +248,7 @@ export default function createServersCore(wiki: ServerWiki): ServersCore {
           isDev: false,
           maskError: (error, message) => (isPublicGraphError(error) ? error : maskError(error, message))
         },
+        renderGraphiQL: renderWorkspaceGraphiQL,
         graphiql: (_request, serverContext) => {
           const req = serverContext?.req as { user?: SubscriptionPrincipal } | undefined
           return wiki.IS_DEBUG || wiki.auth.checkAccess(req?.user, GRAPHQL_EXPLORER_PERMISSIONS) ? GRAPHIQL_OPTIONS : false

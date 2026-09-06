@@ -14,6 +14,11 @@ const createProjectRoot = (): string => {
   fs.mkdirSync(path.join(root, 'node_modules/prismjs/components'), { recursive: true })
   fs.writeFileSync(path.join(root, 'client/static/svg/icon-tsepistle.svg'), '<svg />')
   fs.writeFileSync(path.join(root, 'node_modules/prismjs/components/prism-javascript.min.js'), 'Prism.languages.javascript={};')
+  const ide = path.join(root, 'node_modules/@graphql-yoga/graphiql')
+  fs.mkdirSync(path.join(ide, 'dist/monacoeditorwork'), { recursive: true })
+  fs.writeFileSync(path.join(ide, 'package.json'), '{"version":"4.4.4"}')
+  fs.writeFileSync(path.join(ide, 'LICENSE'), 'MIT fixture')
+  for (const file of ['yoga-graphiql.umd.js', 'graphiql.css', 'monacoeditorwork/editor.worker.bundle.js']) fs.writeFileSync(path.join(ide, 'dist', file), 'fixture asset')
   return root
 }
 
@@ -36,6 +41,8 @@ describe('Vite runtime asset lifecycle', () => {
 
     expect(fs.readFileSync(path.join(root, 'assets/svg/icon-tsepistle.svg'), 'utf8')).toBe('<svg />')
     expect(fs.readFileSync(path.join(root, 'assets/js/prism/prism-javascript.min.js'), 'utf8')).toBe('Prism.languages.javascript={};')
+    expect(fs.readFileSync(path.join(root, 'assets/graphiql/4.4.4/yoga-graphiql.umd.js'), 'utf8')).toBe('fixture asset')
+    expect(fs.readFileSync(path.join(root, 'assets/graphiql/4.4.4/monacoeditorwork/editor.worker.bundle.js'), 'utf8')).toBe('fixture asset')
   })
 
   it('retains Prism copying at production closeBundle without a development startup hook', async () => {
@@ -46,6 +53,14 @@ describe('Vite runtime asset lifecycle', () => {
     await invokeHook(plugin.closeBundle)
 
     expect(fs.readFileSync(path.join(root, 'assets/js/prism/prism-javascript.min.js'), 'utf8')).toBe('Prism.languages.javascript={};')
+    expect(fs.readFileSync(path.join(root, 'assets/graphiql/4.4.4/yoga-graphiql.umd.js'), 'utf8')).toBe('fixture asset')
+    expect(fs.readFileSync(path.join(root, 'assets/graphiql/4.4.4/monacoeditorwork/editor.worker.bundle.js'), 'utf8')).toBe('fixture asset')
     expect(fs.existsSync(path.join(root, 'assets/svg/icon-tsepistle.svg'))).toBe(false)
+  })
+
+  it('rejects mismatched IDE assets before shipping a broken editor', async () => {
+    const root = createProjectRoot()
+    fs.writeFileSync(path.join(root, 'node_modules/@graphql-yoga/graphiql/package.json'), '{"version":"4.4.3"}')
+    await expect(invokeHook(runtimeAssetsPlugin('build', root).closeBundle)).rejects.toThrow('GraphQL IDE assets and renderer versions must match')
   })
 })

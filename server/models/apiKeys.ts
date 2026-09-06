@@ -10,6 +10,7 @@ interface CreateKeyOptions {
   expiration: string
   fullAccess: boolean
   group: number
+  mcpAccess?: boolean
 }
 type WikiRuntime = {
   config: {
@@ -64,7 +65,7 @@ export default class ApiKey extends Model {
     this.updatedAt = moment.utc().toISOString()
   }
 
-  static async createNewKey ({ name, expiration, fullAccess, group }: CreateKeyOptions): Promise<string> {
+  static async createNewKey ({ name, expiration, fullAccess, group, mcpAccess }: CreateKeyOptions): Promise<string> {
     const wiki = getWiki()
     const entry = await wiki.models.apiKeys.query().insert({
       name,
@@ -72,7 +73,7 @@ export default class ApiKey extends Model {
       expiration: moment.utc().add(ms(expiration), 'ms').toISOString(),
       isRevoked: true
     })
-    const configuredMcpResource = wiki.config.agents?.mcp?.enabled ? canonicalMcpResource(wiki.config.host).href : undefined
+    const configuredMcpResource = wiki.config.agents?.mcp?.enabled && mcpAccess !== false ? canonicalMcpResource(wiki.config.host).href : undefined
     const key = jwt.sign({
       api: entry.id,
       grp: fullAccess ? 1 : group,

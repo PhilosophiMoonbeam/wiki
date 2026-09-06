@@ -10,7 +10,7 @@ describe('MCP API-key resource binding', () => {
     Reflect.deleteProperty(globalThis, 'WIKI')
   })
 
-  it('derives the resource claim from the active runtime configuration', async () => {
+  it.each([undefined, true, false])('derives resource binding from current configuration and explicit opt-out: %s', async mcpAccess => {
     const patch = vi.fn().mockResolvedValue(undefined)
     const query = vi.fn()
       .mockReturnValueOnce({ insert: vi.fn().mockResolvedValue({ id: 17 }) })
@@ -37,14 +37,14 @@ describe('MCP API-key resource binding', () => {
       models: { apiKeys: { query } }
     })
 
-    expect(await ApiKey.createNewKey({ name: 'MCP', expiration: '1h', fullAccess: false, group: 3 })).toBe('signed-key')
+    expect(await ApiKey.createNewKey({ name: 'MCP', expiration: '1h', fullAccess: false, group: 3, ...(mcpAccess === undefined ? {} : { mcpAccess }) })).toBe('signed-key')
 
     expect(sign).toHaveBeenCalledWith(expect.objectContaining({
       api: 17,
       grp: 3,
-      mcpResource: 'https://docs.example.co.uk/mcp',
-      mcpResourceVersion: 1
+      ...(mcpAccess === false ? {} : { mcpResource: 'https://docs.example.co.uk/mcp', mcpResourceVersion: 1 })
     }), expect.any(Object), expect.objectContaining({ audience: 'urn:wiki:test' }))
+    if (mcpAccess === false) expect(sign.mock.calls[0]?.[0]).not.toHaveProperty('mcpResource')
     expect(patch).toHaveBeenCalledWith({ key: 'signed-key', isRevoked: false })
   })
 })

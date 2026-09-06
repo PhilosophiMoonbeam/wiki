@@ -103,10 +103,24 @@ if (!rootWorkspace) throw new Error('bun.lock does not define the root workspace
 // These build-time dependencies are bundled into shipped renderer code. Keep
 // this reviewed allowlist exact rather than traversing all development tooling.
 const reviewedRendererRootDevDependencies = {
+  '@graphql-yoga/graphiql': '4.4.4',
   '@tresjs/core': '5.8.3',
   '@types/three': '0.184.1',
   three: '0.184.0'
 } as const
+
+// Yoga 4.4.4 ships a prebuilt IDE with these peer ranges out of step with
+// its own dependency graph. Attribute the installed providers without changing
+// dependency resolution or treating other unsatisfied peers as acceptable.
+const reviewedPrebuiltIdePeers: Record<string, Record<string, { range: string; provider: string }>> = {
+  '@graphiql/plugin-doc-explorer@0.4.4': { '@graphiql/react': { range: '^0.39.0', provider: '0.37.7' } },
+  '@graphiql/plugin-history@0.4.4': { '@graphiql/react': { range: '^0.39.0', provider: '0.37.7' } },
+  'graphiql-explorer@0.9.0': {
+    graphql: { range: '^0.6.0 || ^0.7.0 || ^0.8.0-b || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0', provider: '16.12.0' },
+    react: { range: '^15.6.0 || ^16.0.0', provider: '19.2.0' },
+    'react-dom': { range: '^15.6.0 || ^16.0.0', provider: '19.2.0' }
+  }
+}
 
 const trackedPackages = new Map<string, ResolvedPackage>()
 const pending = Object.entries({
@@ -135,7 +149,13 @@ while (pending.length > 0) {
     const identity = `${candidate.name}@${candidate.version}`
     if (trackedPackages.has(identity)) continue
     trackedPackages.set(identity, candidate)
-    const requiredPeers = Object.entries(candidate.metadata.peerDependencies ?? {}).filter(([name]) => !candidate.metadata.optionalPeers?.includes(name))
+    const requiredPeers = Object.entries(candidate.metadata.peerDependencies ?? {})
+      .filter(([name]) => !candidate.metadata.optionalPeers?.includes(name))
+      .map(([name, peerRange]): [string, string] => {
+        const reviewed = reviewedPrebuiltIdePeers[identity]?.[name]
+        if (reviewed && peerRange !== reviewed.range) throw new Error(`Reviewed prebuilt IDE peer range changed: ${identity} / ${name}`)
+        return [name, reviewed?.provider ?? peerRange]
+      })
     pending.push(...Object.entries(candidate.metadata.dependencies ?? {}), ...Object.entries(candidate.metadata.optionalDependencies ?? {}), ...requiredPeers)
   }
 }

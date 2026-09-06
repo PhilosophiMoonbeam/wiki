@@ -110,6 +110,7 @@ describe('controllers/api auth endpoints', () => {
       },
       models: {
         knex: {},
+        groups: { query: vi.fn(() => ({ findById: vi.fn().mockResolvedValue({ id: 7, name: 'Integrations' }) })) },
         authentication: {
           query: vi.fn(() => ({
             patch: vi.fn(() => ({ where: vi.fn().mockResolvedValue(1) })),
@@ -195,6 +196,7 @@ describe('controllers/api auth endpoints', () => {
       providers: getRouteHandler('/providers'),
       updateStrategies: postRouteHandler('/strategies'),
       api: getRouteHandler('/api'),
+      apiConnections: getRouteHandler('/api/connections'),
       setApiState: postRouteHandler('/api/state'),
       createApiKey: postRouteHandler('/api/keys'),
       revokeApiKey: postRouteHandler('/api/keys/:id/revoke'),
@@ -593,6 +595,7 @@ describe('controllers/api auth endpoints', () => {
           id: 7,
           name: 'Deploy',
           keyShort: '...' + fullKey.substring(fullKey.length - 20),
+          grant: { groupId: null, mcpResource: null, mcpResourceVersion: null },
           isRevoked: false,
           expiration: '2026-01-01T00:00:00.000Z',
           createdAt: '2025-01-01T00:00:00.000Z',
@@ -746,6 +749,7 @@ describe('controllers/api auth endpoints', () => {
 
     expect(res.status).toHaveBeenCalledWith(500)
     expect(res.json).toHaveBeenCalledWith({ error: 'api save failed' })
+    expect(global.WIKI.config.api.isEnabled).toBe(true)
   })
 
   it('creates admin API keys after runtime auth initializes and reloads the active-key cache', async () => {
@@ -818,6 +822,39 @@ describe('controllers/api auth endpoints', () => {
 
     expect(res.status).toHaveBeenCalledWith(500)
     expect(res.json).toHaveBeenCalledWith({ error: 'key backend failed' })
+  })
+
+  it('rejects invalid lifetimes, missing groups and disabled MCP before key issuance', async () => {
+    const { createApiKey } = await loadHandlers()
+    for (const input of [
+      { expiration: 'forever' }, { expiration: '-1h' }, { expiration: '10y' },
+      { fullAccess: false, group: 2 }, { fullAccess: false, group: null },
+      { mcpAccess: 'yes' }, { mcpAccess: true }
+    ]) {
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+      await createApiKey({ user: {}, body: { name: 'Indexer', expiration: '90d', fullAccess: true, group: null, ...input } }, res)
+      expect(res.status).toHaveBeenCalledWith(400)
+    }
+    global.WIKI.models.groups.query.mockReturnValue({ findById: vi.fn().mockResolvedValue(undefined) })
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await createApiKey({ user: {}, body: { name: 'Indexer', expiration: '1h', fullAccess: false, group: 99 } }, res)
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(global.WIKI.models.apiKeys.createNewKey).not.toHaveBeenCalled()
+  })
+
+  it('preserves explicit MCP opt-out and useful short lifetimes', async () => {
+    const { createApiKey } = await loadHandlers()
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await createApiKey({ user: {}, body: { name: '  Indexer  ', expiration: '1h', fullAccess: false, group: 7, mcpAccess: false } }, res)
+    expect(global.WIKI.models.apiKeys.createNewKey).toHaveBeenCalledWith({ name: 'Indexer', expiration: '1h', fullAccess: false, group: 7, mcpAccess: false })
+  })
+
+  it('requires API administration permissions before inspecting connections', async () => {
+    global.WIKI.auth.checkAccess.mockReturnValue(false)
+    const { apiConnections } = await loadHandlers()
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), set: vi.fn() }
+    await apiConnections({ user: {} }, res, vi.fn())
+    expect(res.status).toHaveBeenCalledWith(403)
   })
 
   it('revokes admin API keys through REST and reloads runtime keys', async () => {

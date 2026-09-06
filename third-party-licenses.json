@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "source": {
     "lockfile": "bun.lock",
-    "sha256": "9bec446ce2c563ac17f423aa64d3b482b82f102ac2f772cd1c8115b53b293907",
+    "sha256": "56f98f58c5b8141f5010f801be6804bce00ab1f0942ed0ae6af223e7def8f478",
     "scope": "production dependencies and reviewed renderer build inputs",
     "policy": {
       "file": "license-policy.json",
@@ -658,12 +658,151 @@
       "homepage": "https://github.com/fastify/busboy#readme"
     },
     {
+      "name": "@floating-ui/core",
+      "versions": [
+        "1.8.0"
+      ],
+      "license": "MIT",
+      "author": "atomiks",
+      "homepage": "https://floating-ui.com"
+    },
+    {
+      "name": "@floating-ui/dom",
+      "versions": [
+        "1.8.0"
+      ],
+      "license": "MIT",
+      "author": "atomiks",
+      "homepage": "https://floating-ui.com"
+    },
+    {
+      "name": "@floating-ui/react",
+      "versions": [
+        "0.26.28"
+      ],
+      "license": "MIT",
+      "author": "atomiks",
+      "homepage": "https://floating-ui.com/docs/react"
+    },
+    {
+      "name": "@floating-ui/react-dom",
+      "versions": [
+        "2.1.9"
+      ],
+      "license": "MIT",
+      "author": "atomiks",
+      "homepage": "https://floating-ui.com/docs/react-dom"
+    },
+    {
+      "name": "@floating-ui/utils",
+      "versions": [
+        "0.2.12"
+      ],
+      "license": "MIT",
+      "author": "atomiks",
+      "homepage": "https://floating-ui.com"
+    },
+    {
+      "name": "@graphiql/plugin-doc-explorer",
+      "versions": [
+        "0.4.4"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/graphql/graphiql/tree/master/packages/graphiql-plugin-doc-explorer#readme"
+    },
+    {
+      "name": "@graphiql/plugin-explorer",
+      "versions": [
+        "5.1.1"
+      ],
+      "license": "MIT"
+    },
+    {
+      "name": "@graphiql/plugin-history",
+      "versions": [
+        "0.4.4"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/graphql/graphiql/tree/master/packages/graphiql-plugin-history#readme"
+    },
+    {
+      "name": "@graphiql/react",
+      "versions": [
+        "0.37.7"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/graphql/graphiql/tree/master/packages/graphiql-react#readme"
+    },
+    {
+      "name": "@graphiql/toolkit",
+      "versions": [
+        "0.11.3",
+        "0.12.1"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/graphql/graphiql/tree/master/packages/graphiql-toolkit#readme"
+    },
+    {
+      "name": "@graphql-hive/signal",
+      "versions": [
+        "2.0.0"
+      ],
+      "license": "MIT",
+      "author": "The Guild"
+    },
+    {
+      "name": "@graphql-tools/batch-execute",
+      "versions": [
+        "10.0.9"
+      ],
+      "license": "MIT"
+    },
+    {
+      "name": "@graphql-tools/delegate",
+      "versions": [
+        "12.1.3"
+      ],
+      "license": "MIT"
+    },
+    {
       "name": "@graphql-tools/executor",
       "versions": [
         "1.5.7"
       ],
       "license": "MIT",
       "author": "Saihajpreet Singh <saihajpreet.singh@gmail.com>"
+    },
+    {
+      "name": "@graphql-tools/executor-common",
+      "versions": [
+        "1.0.6"
+      ],
+      "license": "MIT",
+      "author": "Arda TANRIKULU <ardatanrikulu@gmail.com>"
+    },
+    {
+      "name": "@graphql-tools/executor-graphql-ws",
+      "versions": [
+        "3.1.5"
+      ],
+      "license": "MIT",
+      "author": "Arda TANRIKULU <ardatanrikulu@gmail.com>"
+    },
+    {
+      "name": "@graphql-tools/executor-http",
+      "versions": [
+        "3.3.0"
+      ],
+      "license": "MIT",
+      "author": "Arda TANRIKULU <ardatanrikulu@gmail.com>"
+    },
+    {
+      "name": "@graphql-tools/executor-legacy-ws",
+      "versions": [
+        "1.1.33"
+      ],
+      "license": "MIT",
+      "author": "Arda TANRIKULU <ardatanrikulu@gmail.com>"
     },
     {
       "name": "@graphql-tools/merge",
@@ -681,6 +820,14 @@
       "license": "MIT"
     },
     {
+      "name": "@graphql-tools/url-loader",
+      "versions": [
+        "9.0.4"
+      ],
+      "license": "MIT",
+      "author": "Dotan Simha <dotansimha@gmail.com>"
+    },
+    {
       "name": "@graphql-tools/utils",
       "versions": [
         "10.11.0",
@@ -691,12 +838,27 @@
       "author": "Dotan Simha <dotansimha@gmail.com>"
     },
     {
+      "name": "@graphql-tools/wrap",
+      "versions": [
+        "11.1.23"
+      ],
+      "license": "MIT"
+    },
+    {
       "name": "@graphql-typed-document-node/core",
       "versions": [
         "3.2.0"
       ],
       "license": "MIT",
       "author": "Dotan Simha <dotansimha@gmail.com>"
+    },
+    {
+      "name": "@graphql-yoga/graphiql",
+      "versions": [
+        "4.4.4"
+      ],
+      "license": "MIT",
+      "author": "Laurin Quast <laurinquast@googlemail.com>"
     },
     {
       "name": "@graphql-yoga/logger",
@@ -720,6 +882,13 @@
       ],
       "license": "MIT",
       "author": "Laurin Quast <laurinquast@googlemail.com>"
+    },
+    {
+      "name": "@headlessui/react",
+      "versions": [
+        "2.2.10"
+      ],
+      "license": "MIT"
     },
     {
       "name": "@heroku/socksv5",
@@ -977,6 +1146,27 @@
       "homepage": "https://sharp.pixelplumbing.com"
     },
     {
+      "name": "@internationalized/date",
+      "versions": [
+        "3.12.4"
+      ],
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "@internationalized/number",
+      "versions": [
+        "3.6.8"
+      ],
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "@internationalized/string",
+      "versions": [
+        "3.2.10"
+      ],
+      "license": "Apache-2.0"
+    },
+    {
       "name": "@joplin/turndown-plugin-gfm",
       "versions": [
         "1.0.67"
@@ -1135,6 +1325,14 @@
       "homepage": "https://github.com/mongodb-js/devtools-shared/tree/main/packages/saslprep"
     },
     {
+      "name": "@n1ru4l/push-pull-async-iterable-iterator",
+      "versions": [
+        "3.2.0"
+      ],
+      "license": "MIT",
+      "author": "Laurin Quast"
+    },
+    {
       "name": "@nodable/entities",
       "versions": [
         "3.0.0"
@@ -1248,6 +1446,259 @@
       "license": "Apache-2.0",
       "author": "Twitter Inc.",
       "homepage": "https://github.com/ProfoundLogic/hogan.js-ProfoundLogic#readme"
+    },
+    {
+      "name": "@radix-ui/primitive",
+      "versions": [
+        "1.1.7"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-arrow",
+      "versions": [
+        "1.1.15"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-collection",
+      "versions": [
+        "1.1.15"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-compose-refs",
+      "versions": [
+        "1.1.5"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-context",
+      "versions": [
+        "1.2.2"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-dialog",
+      "versions": [
+        "1.1.23"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-direction",
+      "versions": [
+        "1.1.4"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-dismissable-layer",
+      "versions": [
+        "1.1.19"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-dropdown-menu",
+      "versions": [
+        "2.1.24"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-focus-guards",
+      "versions": [
+        "1.1.6"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-focus-scope",
+      "versions": [
+        "1.1.16"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-id",
+      "versions": [
+        "1.1.4"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-menu",
+      "versions": [
+        "2.1.24"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-popper",
+      "versions": [
+        "1.3.7"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-portal",
+      "versions": [
+        "1.1.17"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-presence",
+      "versions": [
+        "1.1.10"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-primitive",
+      "versions": [
+        "2.1.10"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-roving-focus",
+      "versions": [
+        "1.1.19"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-slot",
+      "versions": [
+        "1.3.3"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-tooltip",
+      "versions": [
+        "1.2.16"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-use-callback-ref",
+      "versions": [
+        "1.1.4"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-use-controllable-state",
+      "versions": [
+        "1.2.6"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-use-effect-event",
+      "versions": [
+        "0.0.5"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-use-is-hydrated",
+      "versions": [
+        "0.1.3"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-use-layout-effect",
+      "versions": [
+        "1.1.4"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-use-rect",
+      "versions": [
+        "1.1.4"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-use-size",
+      "versions": [
+        "1.1.4"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/react-visually-hidden",
+      "versions": [
+        "1.2.11"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@radix-ui/rect",
+      "versions": [
+        "1.1.3"
+      ],
+      "license": "MIT",
+      "homepage": "https://radix-ui.com/primitives"
+    },
+    {
+      "name": "@react-aria/focus",
+      "versions": [
+        "3.22.1"
+      ],
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "@react-aria/interactions",
+      "versions": [
+        "3.28.1"
+      ],
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "@react-types/shared",
+      "versions": [
+        "3.36.1"
+      ],
+      "license": "Apache-2.0"
     },
     {
       "name": "@repeaterjs/repeater",
@@ -1450,6 +1901,33 @@
       "license": "MIT",
       "author": "Arnout Kazemier",
       "homepage": "https://github.com/so-ric/colorspace"
+    },
+    {
+      "name": "@swc/helpers",
+      "versions": [
+        "0.5.23"
+      ],
+      "license": "Apache-2.0",
+      "author": "강동윤 <kdy1997.dev@gmail.com>",
+      "homepage": "https://swc.rs"
+    },
+    {
+      "name": "@tanstack/react-virtual",
+      "versions": [
+        "3.14.10"
+      ],
+      "license": "MIT",
+      "author": "Tanner Linsley",
+      "homepage": "https://tanstack.com/virtual"
+    },
+    {
+      "name": "@tanstack/virtual-core",
+      "versions": [
+        "3.17.8"
+      ],
+      "license": "MIT",
+      "author": "Tanner Linsley",
+      "homepage": "https://tanstack.com/virtual"
     },
     {
       "name": "@tresjs/core",
@@ -1668,6 +2146,14 @@
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/whatwg-url"
+    },
+    {
+      "name": "@types/ws",
+      "versions": [
+        "8.18.1"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/ws"
     },
     {
       "name": "@types/xml-encryption",
@@ -2006,6 +2492,15 @@
         "2.0.1"
       ],
       "license": "Python-2.0"
+    },
+    {
+      "name": "aria-hidden",
+      "versions": [
+        "1.2.6"
+      ],
+      "license": "MIT",
+      "author": "Anton Korzunov <thekashey@gmail.com>",
+      "homepage": "https://github.com/theKashey/aria-hidden#readme"
     },
     {
       "name": "asap",
@@ -2391,6 +2886,15 @@
       "author": "Paul Vorbach <paul@vorba.ch> (http://paul.vorba.ch/)"
     },
     {
+      "name": "clsx",
+      "versions": [
+        "1.2.1",
+        "2.1.1"
+      ],
+      "license": "MIT",
+      "author": "Luke Edwards"
+    },
+    {
       "name": "codemirror",
       "versions": [
         "6.0.2"
@@ -2633,12 +3137,29 @@
       "homepage": "https://github.com/Gi60s/custom-error-instance#readme"
     },
     {
+      "name": "data-uri-to-buffer",
+      "versions": [
+        "4.0.1"
+      ],
+      "license": "MIT",
+      "author": "Nathan Rajlich <nathan@tootallnate.net> (http://n8.io/)",
+      "homepage": "https://github.com/TooTallNate/node-data-uri-to-buffer"
+    },
+    {
       "name": "data-urls",
       "versions": [
         "7.0.0"
       ],
       "license": "MIT",
       "author": "Domenic Denicola <d@domenic.me> (https://domenic.me/)"
+    },
+    {
+      "name": "dataloader",
+      "versions": [
+        "2.2.3"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/graphql/dataloader"
     },
     {
       "name": "db-errors",
@@ -2648,6 +3169,15 @@
       "license": "MIT",
       "author": "Sami Koskimäki",
       "homepage": "https://github.com/Vincit/db-errors#readme"
+    },
+    {
+      "name": "debounce-promise",
+      "versions": [
+        "3.1.2"
+      ],
+      "license": "MIT",
+      "author": "Bjørge Næss",
+      "homepage": "https://github.com/bjoerge/debounce-promise"
     },
     {
       "name": "debug",
@@ -2707,6 +3237,15 @@
       ],
       "license": "Apache-2.0",
       "author": "Lovell Fuller <npm@lovell.info>"
+    },
+    {
+      "name": "detect-node-es",
+      "versions": [
+        "1.1.0"
+      ],
+      "license": "MIT",
+      "author": "Ilya Kantor",
+      "homepage": "https://github.com/thekashey/detect-node"
     },
     {
       "name": "diff",
@@ -3077,6 +3616,15 @@
       "homepage": "https://github.com/taylorhakes/fecha"
     },
     {
+      "name": "fetch-blob",
+      "versions": [
+        "3.2.0"
+      ],
+      "license": "MIT",
+      "author": "Jimmy Wärting <jimmy@warting.se> (https://jimmy.warting.se)",
+      "homepage": "https://github.com/node-fetch/fetch-blob#readme"
+    },
+    {
       "name": "fflate",
       "versions": [
         "0.8.3"
@@ -3137,11 +3685,28 @@
       "author": "Felix Geisendörfer <felix@debuggable.com> (http://debuggable.com/)"
     },
     {
+      "name": "formdata-polyfill",
+      "versions": [
+        "4.0.10"
+      ],
+      "license": "MIT",
+      "author": "Jimmy Wärting",
+      "homepage": "https://github.com/jimmywarting/FormData#readme"
+    },
+    {
       "name": "forwarded",
       "versions": [
         "0.2.0"
       ],
       "license": "MIT"
+    },
+    {
+      "name": "framer-motion",
+      "versions": [
+        "12.43.0"
+      ],
+      "license": "MIT",
+      "author": "Matt Perry"
     },
     {
       "name": "fresh",
@@ -3198,6 +3763,15 @@
       "homepage": "https://github.com/ljharb/get-intrinsic#readme"
     },
     {
+      "name": "get-nonce",
+      "versions": [
+        "1.0.1"
+      ],
+      "license": "MIT",
+      "author": "Anton Korzunov <thekashey@gmail.com>",
+      "homepage": "https://github.com/theKashey/get-nonce"
+    },
+    {
       "name": "get-package-type",
       "versions": [
         "0.1.0"
@@ -3214,6 +3788,15 @@
       "license": "MIT",
       "author": "Jordan Harband <ljharb@gmail.com>",
       "homepage": "https://github.com/ljharb/get-proto#readme"
+    },
+    {
+      "name": "get-value",
+      "versions": [
+        "3.0.1"
+      ],
+      "license": "MIT",
+      "author": "Jon Schlinkert (https://github.com/jonschlinkert)",
+      "homepage": "https://github.com/jonschlinkert/get-value"
     },
     {
       "name": "getopts",
@@ -3249,12 +3832,37 @@
       "license": "ISC"
     },
     {
+      "name": "graphiql",
+      "versions": [
+        "5.2.0"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/graphql/graphiql/tree/master/packages/graphiql#readme"
+    },
+    {
+      "name": "graphiql-explorer",
+      "versions": [
+        "0.9.0"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/onegraph/graphiql-explorer"
+    },
+    {
       "name": "graphql",
       "versions": [
+        "16.12.0",
         "16.14.2"
       ],
       "license": "MIT",
       "homepage": "https://github.com/graphql/graphql-js"
+    },
+    {
+      "name": "graphql-language-service",
+      "versions": [
+        "5.7.0"
+      ],
+      "license": "MIT",
+      "homepage": "https://github.com/graphql/graphiql/tree/main/packages/graphql-language-service#readme"
     },
     {
       "name": "graphql-subscriptions",
@@ -3483,6 +4091,15 @@
       "author": "Sindre Sorhus"
     },
     {
+      "name": "is-plain-object",
+      "versions": [
+        "2.0.4"
+      ],
+      "license": "MIT",
+      "author": "Jon Schlinkert (https://github.com/jonschlinkert)",
+      "homepage": "https://github.com/jonschlinkert/is-plain-object"
+    },
+    {
       "name": "is-potential-custom-element-name",
       "versions": [
         "1.0.1"
@@ -3490,6 +4107,15 @@
       "license": "MIT",
       "author": "Mathias Bynens",
       "homepage": "https://github.com/mathiasbynens/is-potential-custom-element-name"
+    },
+    {
+      "name": "is-primitive",
+      "versions": [
+        "3.0.1"
+      ],
+      "license": "MIT",
+      "author": "Jon Schlinkert (https://github.com/jonschlinkert)",
+      "homepage": "https://github.com/jonschlinkert/is-primitive"
     },
     {
       "name": "is-promise",
@@ -3526,6 +4152,24 @@
       "author": "Amit Gupta (https://solothought.com/)"
     },
     {
+      "name": "isobject",
+      "versions": [
+        "3.0.1"
+      ],
+      "license": "MIT",
+      "author": "Jon Schlinkert (https://github.com/jonschlinkert)",
+      "homepage": "https://github.com/jonschlinkert/isobject"
+    },
+    {
+      "name": "isomorphic-ws",
+      "versions": [
+        "5.0.0"
+      ],
+      "license": "MIT",
+      "author": "@heineiuo",
+      "homepage": "https://github.com/heineiuo/isomorphic-ws#readme"
+    },
+    {
       "name": "isomorphic.js",
       "versions": [
         "0.2.5"
@@ -3533,6 +4177,13 @@
       "license": "MIT",
       "author": "Kevin Jahns <kevin.jahns@protonmail.com>",
       "homepage": "https://github.com/dmonad/isomorphic.js#readme"
+    },
+    {
+      "name": "isows",
+      "versions": [
+        "1.0.7"
+      ],
+      "license": "MIT"
     },
     {
       "name": "jose",
@@ -3583,6 +4234,14 @@
       "license": "MIT"
     },
     {
+      "name": "json-bigint-patch",
+      "versions": [
+        "0.0.8"
+      ],
+      "license": "MIT",
+      "author": "Arda TANRIKULU <ardatanrikulu@gmail.com>"
+    },
+    {
       "name": "json-schema-traverse",
       "versions": [
         "1.0.0"
@@ -3590,6 +4249,14 @@
       "license": "MIT",
       "author": "Evgeny Poberezkin",
       "homepage": "https://github.com/epoberezkin/json-schema-traverse#readme"
+    },
+    {
+      "name": "jsonc-parser",
+      "versions": [
+        "3.3.1"
+      ],
+      "license": "MIT",
+      "author": "Microsoft Corporation"
     },
     {
       "name": "jsonfile",
@@ -3689,6 +4356,7 @@
     {
       "name": "linkify-it",
       "versions": [
+        "5.0.2",
         "6.1.0"
       ],
       "license": "MIT"
@@ -3826,6 +4494,7 @@
     {
       "name": "markdown-it",
       "versions": [
+        "14.3.1",
         "15.0.0"
       ],
       "license": "MIT"
@@ -3981,6 +4650,14 @@
       "homepage": "https://github.com/meriyah/meriyah"
     },
     {
+      "name": "meros",
+      "versions": [
+        "1.3.2"
+      ],
+      "license": "MIT",
+      "author": "Marais Rossouw <me@marais.dev> (https://marais.io)"
+    },
+    {
       "name": "meshoptimizer",
       "versions": [
         "1.1.1"
@@ -4041,6 +4718,22 @@
       "homepage": "http://momentjs.com/timezone/"
     },
     {
+      "name": "monaco-editor",
+      "versions": [
+        "0.52.2"
+      ],
+      "license": "MIT",
+      "author": "Microsoft Corporation",
+      "homepage": "https://github.com/microsoft/monaco-editor"
+    },
+    {
+      "name": "monaco-graphql",
+      "versions": [
+        "1.9.0"
+      ],
+      "license": "MIT"
+    },
+    {
       "name": "mongodb",
       "versions": [
         "7.5.0"
@@ -4056,6 +4749,22 @@
       ],
       "license": "Apache-2.0",
       "homepage": "https://github.com/mongodb-js/mongodb-connection-string-url"
+    },
+    {
+      "name": "motion-dom",
+      "versions": [
+        "12.43.0"
+      ],
+      "license": "MIT",
+      "author": "Matt Perry"
+    },
+    {
+      "name": "motion-utils",
+      "versions": [
+        "12.39.0"
+      ],
+      "license": "MIT",
+      "author": "Matt Perry"
     },
     {
       "name": "ms",
@@ -4115,9 +4824,19 @@
       "homepage": "https://github.com/node-cache/node-cache"
     },
     {
+      "name": "node-domexception",
+      "versions": [
+        "1.0.0"
+      ],
+      "license": "MIT",
+      "author": "Jimmy Wärting",
+      "homepage": "https://github.com/jimmywarting/node-domexception#readme"
+    },
+    {
       "name": "node-fetch",
       "versions": [
-        "2.7.0"
+        "2.7.0",
+        "3.3.2"
       ],
       "license": "MIT",
       "author": "David Frank",
@@ -4158,6 +4877,14 @@
       "license": "BSD-2-Clause",
       "author": "Felix Boehm <me@feedic.com>",
       "homepage": "https://github.com/fb55/nth-check"
+    },
+    {
+      "name": "nullthrows",
+      "versions": [
+        "1.1.1"
+      ],
+      "license": "MIT",
+      "author": "Andres Suarez <zertosh@gmail.com>"
     },
     {
       "name": "oauth",
@@ -4615,6 +5342,15 @@
       "author": "Alexey Raspopov"
     },
     {
+      "name": "picomatch-browser",
+      "versions": [
+        "2.2.6"
+      ],
+      "license": "MIT",
+      "author": "Jon Schlinkert (https://github.com/jonschlinkert)",
+      "homepage": "https://github.com/acao/picomatch"
+    },
+    {
       "name": "pkginfo",
       "versions": [
         "0.2.3"
@@ -4690,6 +5426,15 @@
       ],
       "license": "MIT",
       "author": "Ben Drucker"
+    },
+    {
+      "name": "prettier",
+      "versions": [
+        "3.9.6"
+      ],
+      "license": "MIT",
+      "author": "James Long",
+      "homepage": "https://prettier.io"
     },
     {
       "name": "prom-client",
@@ -4925,6 +5670,68 @@
       "author": "Jonathan Ong <me@jongleberry.com> (http://jongleberry.com)"
     },
     {
+      "name": "react",
+      "versions": [
+        "19.2.0"
+      ],
+      "license": "MIT",
+      "homepage": "https://react.dev/"
+    },
+    {
+      "name": "react-aria",
+      "versions": [
+        "3.52.1"
+      ],
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "react-compiler-runtime",
+      "versions": [
+        "19.1.0-rc.1"
+      ],
+      "license": "MIT"
+    },
+    {
+      "name": "react-dom",
+      "versions": [
+        "19.2.0"
+      ],
+      "license": "MIT",
+      "homepage": "https://react.dev/"
+    },
+    {
+      "name": "react-remove-scroll",
+      "versions": [
+        "2.7.2"
+      ],
+      "license": "MIT",
+      "author": "Anton Korzunov <thekashey@gmail.com>"
+    },
+    {
+      "name": "react-remove-scroll-bar",
+      "versions": [
+        "2.3.8"
+      ],
+      "license": "MIT",
+      "author": "Anton Korzunov <thekashey@gmail.com>"
+    },
+    {
+      "name": "react-stately",
+      "versions": [
+        "3.50.0"
+      ],
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "react-style-singleton",
+      "versions": [
+        "2.2.3"
+      ],
+      "license": "MIT",
+      "author": "Anton Korzunov (thekashey@gmail.com)",
+      "homepage": "https://github.com/theKashey/react-style-singleton#readme"
+    },
+    {
       "name": "readable-stream",
       "versions": [
         "3.6.2"
@@ -5076,6 +5883,14 @@
       "author": "Louis-Dominique Dubeau <ldd@lddubeau.com>"
     },
     {
+      "name": "scheduler",
+      "versions": [
+        "0.27.0"
+      ],
+      "license": "MIT",
+      "homepage": "https://react.dev/"
+    },
+    {
       "name": "semifies",
       "versions": [
         "1.0.0"
@@ -5124,6 +5939,15 @@
       "license": "ISC",
       "author": "Ben Coe <ben@npmjs.com>",
       "homepage": "https://github.com/yargs/set-blocking#readme"
+    },
+    {
+      "name": "set-value",
+      "versions": [
+        "4.1.0"
+      ],
+      "license": "MIT",
+      "author": "Jon Schlinkert <jon.schlinkert@sellside.com> (https://github.com/jonschlinkert)",
+      "homepage": "https://github.com/jonschlinkert/set-value"
     },
     {
       "name": "setprototypeof",
@@ -5351,6 +6175,24 @@
       "homepage": "https://github.com/jsdom/js-symbol-tree#symbol-tree"
     },
     {
+      "name": "sync-fetch",
+      "versions": [
+        "0.6.0-2"
+      ],
+      "license": "MIT",
+      "author": "Lars Willighagen",
+      "homepage": "https://github.com/larsgw/sync-fetch#readme"
+    },
+    {
+      "name": "tabbable",
+      "versions": [
+        "6.5.0"
+      ],
+      "license": "MIT",
+      "author": "David Clark",
+      "homepage": "https://github.com/focus-trap/tabbable#readme"
+    },
+    {
       "name": "tar-fs",
       "versions": [
         "3.1.3"
@@ -5437,6 +6279,14 @@
       ],
       "license": "MIT",
       "author": "Sindre Sorhus"
+    },
+    {
+      "name": "timeout-signal",
+      "versions": [
+        "2.0.0"
+      ],
+      "license": "MIT",
+      "author": "Richie Bendall"
     },
     {
       "name": "tldts",
@@ -5572,6 +6422,7 @@
     {
       "name": "uc.micro",
       "versions": [
+        "2.1.0",
         "3.0.0"
       ],
       "license": "MIT"
@@ -5643,6 +6494,30 @@
       "license": "MIT"
     },
     {
+      "name": "use-callback-ref",
+      "versions": [
+        "1.3.3"
+      ],
+      "license": "MIT",
+      "author": "theKashey <thekashey@gmail.com>"
+    },
+    {
+      "name": "use-sidecar",
+      "versions": [
+        "1.1.3"
+      ],
+      "license": "MIT",
+      "author": "theKashey <thekashey@gmail.com>",
+      "homepage": "https://github.com/theKashey/use-sidecar"
+    },
+    {
+      "name": "use-sync-external-store",
+      "versions": [
+        "1.6.0"
+      ],
+      "license": "MIT"
+    },
+    {
       "name": "uslug",
       "versions": [
         "1.0.4"
@@ -5703,6 +6578,15 @@
       "homepage": "https://github.com/jadejs/void-elements"
     },
     {
+      "name": "vscode-languageserver-types",
+      "versions": [
+        "3.17.5",
+        "3.18.3"
+      ],
+      "license": "MIT",
+      "author": "Microsoft Corporation"
+    },
+    {
       "name": "vue",
       "versions": [
         "3.5.41"
@@ -5726,6 +6610,15 @@
         "5.0.0"
       ],
       "license": "MIT"
+    },
+    {
+      "name": "web-streams-polyfill",
+      "versions": [
+        "3.3.3"
+      ],
+      "license": "MIT",
+      "author": "Mattias Buelens <mattias@buelens.com>",
+      "homepage": "https://github.com/MattiasBuelens/web-streams-polyfill#readme"
     },
     {
       "name": "webidl-conversions",
@@ -5960,6 +6853,15 @@
       "license": "MIT",
       "author": "Colin McDonnell <zod@colinhacks.com>",
       "homepage": "https://zod.dev"
+    },
+    {
+      "name": "zustand",
+      "versions": [
+        "5.0.15"
+      ],
+      "license": "MIT",
+      "author": "Paul Henschel",
+      "homepage": "https://github.com/pmndrs/zustand"
     }
   ]
 }

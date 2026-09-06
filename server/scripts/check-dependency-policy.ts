@@ -138,6 +138,7 @@ if (inventory.source?.lockfile !== 'bun.lock' || inventory.source.sha256 !== loc
   throw new Error('third-party-licenses.json must identify the current bun.lock')
 }
 const requiredLicenseRecords = [
+  ['@graphql-yoga/graphiql', '4.4.4', 'MIT'],
   ['sharp', '0.35.4', 'Apache-2.0'],
   ['@img/sharp-linuxmusl-x64', '0.35.4', 'Apache-2.0'],
   ['@img/sharp-linuxmusl-arm64', '0.35.4', 'Apache-2.0'],

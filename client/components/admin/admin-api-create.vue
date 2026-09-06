@@ -1,125 +1,35 @@
-<template lang="pug">
-  div
-    v-dialog(v-model='isShown', max-width='650', persistent, aria-labelledby='api-key-create-title')
-      v-form(ref='createForm', @submit.prevent='generate')
-        v-card.admin-dialog--scrollable
-          .dialog-header.is-short
-            v-icon.mr-3(color='white') mdi-plus
-            span#api-key-create-title {{$t('admin:api.newKeyTitle')}}
-          v-card-text.pt-5.admin-dialog--scrollable__body
-            v-text-field(
-              ref='keyNameInput'
-              v-model='name'
-              variant='outlined'
-              prepend-icon='mdi-format-title'
-              :label='$t(`admin:api.newKeyName`)'
-              :hint='$t(`admin:api.newKeyNameHint`)'
-              :rules='nameRules'
-              :disabled='loading'
-              persistent-hint
-              counter='255'
-              autocomplete='off'
-            )
-            v-select.mt-3(
-              ref='expirationInput'
-              v-model='expiration'
-              :items='expirations'
-              variant='outlined'
-              prepend-icon='mdi-clock'
-              :label='$t(`admin:api.newKeyExpiration`)'
-              :hint='$t(`admin:api.newKeyExpirationHint`)'
-              :rules='[requiredRule]'
-              :disabled='loading'
-              persistent-hint
-            )
-            v-divider.mt-4
-            v-list-subheader.pl-2: strong.text-indigo {{$t('admin:api.newKeyPermissionScopes')}}
-            v-radio-group.pl-4(
-              ref='scopeInput'
-              v-model='scope'
-              :rules='[scopeRule]'
-              :disabled='loading'
-            )
-              v-radio(value='full', color='indigo', label='System administrator permissions', aria-describedby='api-key-full-scope-description')
-              #api-key-full-scope-description.text-body-small.text-medium-emphasis.ml-10.mb-3 Grants the key unrestricted system-administrator authority.
-              v-radio(value='group', color='indigo', label='Use a group’s permissions', aria-describedby='api-key-group-scope-description')
-              #api-key-group-scope-description.text-body-small.text-medium-emphasis.ml-10 The key is limited to the selected group’s permissions and page rules.
-            v-alert.ml-8.mt-2(
-              v-if='scope === `group` && groupLoadState === `error`'
-              type='error'
-              variant='tonal'
-              density='compact'
-              icon='mdi-alert-circle-outline'
-            )
-              .text-body-small {{ groupLoadError }}
-              v-btn.mt-2(
-                type='button'
-                size='small'
-                variant='outlined'
-                prepend-icon='mdi-refresh'
-                @click='loadGroups(true)'
-              ) Retry groups
-            v-select.ml-8.mt-2(
-              v-if='scope === `group`'
-              ref='groupInput'
-              v-model='group'
-              :items='groups'
-              item-title='name'
-              item-value='id'
-              variant='outlined'
-              color='indigo'
-              :label='$t(`admin:api.newKeyGroup`)'
-              :hint='$t(`admin:api.newKeyGroupHint`)'
-              :rules='groupRules'
-              :loading='groupLoadState === `loading`'
-              :disabled='loading || groupLoadState !== `success`'
-              persistent-hint
-            )
-          v-card-chin.admin-dialog-actions
-            v-spacer
-            v-btn(type='button', variant='text', @click='isShown = false', :disabled='loading') {{$t('common:actions.cancel')}}
-            v-btn.px-3(
-              type='submit'
-              variant='flat'
-              color='primary'
-              prepend-icon='mdi-chevron-right'
-              :loading='loading'
-              :disabled='loading || (scope === `group` && groupLoadState !== `success`)'
-            ) {{$t('common:actions.generate')}}
-
-    v-dialog(
-      v-model='isCopyKeyDialogShown'
-      max-width='750'
-      persistent
-      aria-labelledby='api-key-copy-title'
-      )
-      v-card
-        v-toolbar(density="compact", :elevation='0', color='primary')
-          v-toolbar-title#api-key-copy-title 2. Copy key
-        v-card-text.pt-5
-          .text-body-medium.text-center
-            i18next(tag='span', path='admin:api.newKeyCopyWarn')
-              strong(place='bold') {{$t('admin:api.newKeyCopyWarnBold')}}
-          v-textarea.mt-3(
-            ref='keyContentsIpt'
-            variant="outlined"
-            no-resize
-            readonly
-            aria-label='Generated API key'
-            :model-value='key'
-            :rows='5'
-            hide-details
-            class='api-key-value'
-          )
-          .d-flex.align-center.flex-wrap.ga-2.mt-3
-            v-btn(variant="outlined", color='primary', prepend-icon='mdi-content-copy', @click='copyKey') {{ copied ? 'Copied' : 'Copy key' }}
-            span.text-body-small.text-medium-emphasis(v-if='copied', role='status', aria-live='polite') Key copied. Store it somewhere safe before continuing.
-        v-card-chin
-          v-spacer
-          v-btn.px-3(variant="flat", color='primary', @click='finishCopyKey') I’ve saved this key
+<template>
+  <div>
+    <v-dialog v-model="isShown" max-width="760" persistent aria-labelledby="api-key-create-title">
+      <v-form ref="createForm" @submit.prevent="generate">
+        <v-card class="api-key-dialog">
+          <header class="key-dialog-heading"><span class="key-kicker">{{ seed ? 'Credential replacement' : 'New integration identity' }}</span><h2 id="api-key-create-title">{{ step === 1 ? 'Name this connection.' : step === 2 ? 'Define its authority.' : 'Review before issuing.' }}</h2><p>{{ seed ? 'The existing key stays valid until you revoke it. Configure and verify the replacement first.' : 'Create a dedicated credential with the access this integration needs.' }}</p></header>
+          <ol class="key-progress" aria-label="Key creation steps"><li v-for="(label, index) in ['Identity', 'Access', 'Review']" :key="label" :aria-current="step === index + 1 ? 'step' : undefined" :class="{ current: step === index + 1 }"><span>{{ index + 1 }}</span>{{ label }}</li></ol>
+          <v-card-text class="key-dialog-body">
+            <v-alert v-if="formError" type="error" variant="tonal" class="mb-4">{{ formError }}</v-alert>
+            <section v-show="step === 1" aria-label="Credential identity"><v-text-field ref="keyNameInput" v-model="name" label="Integration name" hint="Use a name that identifies the application, agent or workflow." persistent-hint variant="outlined" :rules="nameRules" :disabled="loading" maxlength="255" autocomplete="off" /><v-select ref="expirationInput" v-model="expiration" :items="expirations" label="Key lifetime" hint="Plan to replace this key before it expires." persistent-hint variant="outlined" :rules="[requiredRule]" :disabled="loading" class="mt-4" /></section>
+            <section v-show="step === 2" aria-label="Credential authority">
+              <v-radio-group ref="scopeInput" v-model="scope" label="Permission source" :rules="[scopeRule]" :disabled="loading" color="primary"><v-radio value="group" label="Use a group’s permissions" /><v-radio value="full" label="System administrator permissions" /></v-radio-group>
+              <v-alert v-if="scope === 'full'" type="warning" variant="tonal" class="mb-4">This key receives unrestricted system-administrator authority. Choose a scoped group when the integration needs less access.</v-alert>
+              <template v-if="scope === 'group'"><v-alert v-if="groupLoadState === 'error'" type="error" variant="tonal" class="mb-3">{{ groupLoadError }} <v-btn variant="text" @click="loadGroups(true)">Retry groups</v-btn></v-alert><v-select ref="groupInput" v-model="group" :items="selectableGroups" item-title="name" item-value="id" variant="outlined" color="primary" label="Permission group" :rules="groupRules" :loading="groupLoadState === 'loading'" :disabled="loading || groupLoadState !== 'success'" />
+                <div v-if="selectedGrant" class="grant-preview"><strong>{{ selectedGrant.name }}</strong><p>{{ selectedGrant.permissions.length }} current permissions · {{ selectedGrant.pageRuleCount }} page rules</p><div class="grant-permissions"><code v-for="permission in selectedGrant.permissions" :key="permission">{{ permission }}</code></div><details v-if="selectedGrant.pageRules.length" class="grant-rules"><summary>Review page access rules</summary><ul><li v-for="(rule, index) in selectedGrant.pageRules" :key="index"><strong>{{ rule.deny ? 'Deny' : 'Allow' }} · {{ rule.match }}</strong><code>{{ rule.path || '/' }}</code><small>{{ rule.roles.join(', ') || 'No actions' }} · {{ rule.locales.join(', ') || 'All languages' }}</small></li></ul></details><p class="key-note">This is the group’s current grant. Future group changes apply to the key.</p></div><v-alert v-else-if="group" type="info" variant="tonal" class="mb-3">Permission details are unavailable. <v-btn variant="text" @click="$emit('retry-connections')">Reload grant details</v-btn></v-alert>
+              </template>
+              <div class="mcp-key-choice"><v-checkbox v-model="mcpAccess" label="Allow this key to connect through MCP" color="primary" hide-details :disabled="loading || (!mcpAccess && (!connections?.mcpEnabled || connections.mcpConfigurationError))" /><p class="key-note">{{ connections?.mcpEnabled ? 'The key will be bound to the configured MCP resource below. REST and GraphQL access also remain available.' : 'MCP must be enabled in the deployment before issuing an MCP-capable key.' }}</p><p v-if="mcpAccess && scope === 'group' && selectedGrant && !selectedGrant.permissions.some(permission => ['use:mcp', 'manage:system'].includes(permission))" class="key-note">This group does not currently grant use:mcp or manage:system. The binding alone will not authorize MCP requests.</p><code v-if="mcpAccess">{{ connections?.mcpResource }}</code></div>
+            </section>
+            <section v-if="step === 3" aria-label="Credential review"><dl class="key-review"><div><dt>Integration</dt><dd>{{ name.trim() }}</dd></div><div><dt>Lifetime</dt><dd>{{ expirations.find(item => item.value === expiration)?.title }}</dd></div><div><dt>Authority</dt><dd>{{ scope === 'full' ? 'System administrator' : groups.find(item => item.id === group)?.name || `Group ${group}` }}</dd></div><div><dt>Protocols</dt><dd>{{ mcpAccess ? 'REST v1 · GraphQL · MCP' : 'REST v1 · GraphQL' }}</dd></div><div v-if="mcpAccess"><dt>MCP resource</dt><dd>{{ connections?.mcpResource }}</dd></div></dl><p>After issuing, save the key in your client’s secret storage. This interface will show the complete credential only once.</p></section>
+          </v-card-text>
+          <v-card-actions class="key-dialog-actions"><v-btn variant="text" :disabled="loading" @click="isShown = false">Cancel</v-btn><v-spacer /><v-btn v-if="step > 1" variant="text" :disabled="loading" @click="step--">Back</v-btn><v-btn v-if="step < 3" color="primary" variant="flat" :disabled="loading" @click="nextStep">Continue</v-btn><v-btn v-else type="submit" color="primary" variant="flat" :loading="loading" :disabled="loading || (scope === 'group' && groupLoadState !== 'success')">Issue key</v-btn></v-card-actions>
+        </v-card>
+      </v-form>
+    </v-dialog>
+    <v-dialog v-model="isCopyKeyDialogShown" max-width="760" persistent aria-labelledby="api-key-copy-title"><v-card class="api-key-dialog"><header class="key-dialog-heading"><span class="key-kicker">Credential issued</span><h2 id="api-key-copy-title">Save your new key.</h2><p>Copy it to your client’s secret storage before continuing. The complete key will not be displayed again here.</p></header><v-card-text><v-textarea ref="keyContentsIpt" readonly no-resize label="Generated API key" :model-value="key" :rows="5" variant="outlined" hide-details class="api-key-value" /><div class="key-copy-actions"><v-btn variant="outlined" prepend-icon="mdi-content-copy" @click="copyKey">{{ copied ? 'Copied' : 'Copy key' }}</v-btn><span v-if="copied" role="status">Key copied.</span></div><v-alert v-if="seed" type="info" variant="tonal" class="mt-4">Configure and verify this replacement, then revoke {{ seed.name }} from the credential register.</v-alert></v-card-text><v-card-actions><v-spacer /><v-btn color="primary" variant="flat" :disabled="loading" @click="finishCopyKey">I’ve saved this key</v-btn></v-card-actions></v-card></v-dialog>
+  </div>
 </template>
 
 <script lang='ts'>
+import type { PropType } from 'vue'
+import type { ApiConnectionInfo } from '../../../shared/api-admin.ts'
+import type { AdminApiKey } from '../../helpers/auth-api'
 import { wikiStore } from '@/store/index.ts'
 
 import { createAdminApiKey } from '../../helpers/auth-api'
@@ -127,8 +37,10 @@ import { fetchGroupOptions, type GroupOption } from '../../helpers/groups-api'
 import { getErrorMessage } from '../../helpers/root-ui-store'
 
 export default {
-  emits: ['update:modelValue'],
+  emits: ['update:modelValue', 'sensitive-state', 'retry-connections'],
   props: {
+    connections: { type: Object as PropType<ApiConnectionInfo | null>, default: null },
+    seed: { type: Object as PropType<AdminApiKey | null>, default: null },
     modelValue: {
       type: Boolean,
       default: false
@@ -140,10 +52,13 @@ export default {
   },
   data() {
     return {
+      step: 1,
+      formError: '',
+      mcpAccess: false,
       loading: false,
       name: '',
-      expiration: '1y',
-      scope: null as 'full' | 'group' | null,
+      expiration: '90d',
+      scope: 'group' as 'full' | 'group' | null,
       groups: [] as GroupOption[],
       group: null as number | null,
       groupLoadState: 'idle' as 'idle' | 'loading' | 'success' | 'error',
@@ -154,6 +69,9 @@ export default {
     }
   },
   computed: {
+    selectableGroups (): GroupOption[] { return this.groups.filter(group => group.id > 2) },
+    selectedGrant () { return this.connections?.groups.find(group => group.id === this.group) },
+    flowProtected (): boolean { return this.loading || this.isCopyKeyDialogShown },
     isShown: {
       get() { return this.modelValue },
       set(val: boolean) { this.$emit('update:modelValue', val) }
@@ -186,16 +104,24 @@ export default {
         (value: number | null) => {
           if (this.scope !== 'group') return true
           if (value === null) return String(this.$t('admin:api.newKeyGroupError'))
-          return value !== 2 || String(this.$t('admin:api.newKeyGuestGroupError'))
+          return (value > 2 && this.groups.some(group => group.id === value)) || String(this.$t('admin:api.newKeyGuestGroupError'))
         }
       ]
     }
   },
   watch: {
+    flowProtected (value: boolean) { this.$emit('sensitive-state', value) },
     modelValue: {
       immediate: true,
       handler (newValue: boolean) {
         if (newValue) {
+          this.step = 1; this.formError = ''
+          this.name = this.seed ? `${this.seed.name} replacement`.slice(0, 255) : ''
+          this.expiration = '90d'
+          this.scope = this.seed?.grant.groupId === 1 ? 'full' : 'group'
+          this.group = this.seed?.grant.groupId && this.seed.grant.groupId > 2 ? this.seed.grant.groupId : null
+          this.groupLoadState = 'idle'
+          this.mcpAccess = Boolean(this.seed?.grant.mcpResource)
           if (this.scope === 'group') void this.loadGroups()
           this.$nextTick(() => {
             if (this.modelValue) this.focusFormControl('keyNameInput')
@@ -214,6 +140,14 @@ export default {
     }
   },
   methods: {
+    warnBeforeUnload (event: BeforeUnloadEvent) { if (this.modelValue || this.flowProtected) { event.preventDefault(); event.returnValue = '' } },
+    nextStep () {
+      this.formError = ''
+      if (this.step === 1 && (this.name.trim().length < 2 || this.name.trim().length > 255 || !this.expiration)) { this.formError = 'Enter a name with 2–255 characters and choose a lifetime.'; this.focusFormControl('keyNameInput'); return }
+      if (this.step === 2 && (!this.scope || (this.scope === 'group' && (this.groupLoadState !== 'success' || !this.selectableGroups.some(group => group.id === this.group))))) { this.formError = 'Choose an available permission group or administrator access.'; return }
+      if (this.step === 2 && this.mcpAccess && (!this.connections?.mcpEnabled || this.connections.mcpConfigurationError)) { this.formError = 'MCP configuration is unavailable. Reload connection details or turn off MCP access.'; return }
+      this.step++
+    },
     async copyKey () {
       try {
         await navigator.clipboard.writeText(this.key)
@@ -261,6 +195,8 @@ export default {
     },
     async generate () {
       if (this.loading) return
+      if (this.step < 3) { this.nextStep(); return }
+      if (this.mcpAccess && (!this.connections?.mcpEnabled || this.connections.mcpConfigurationError)) { this.step = 2; this.formError = 'MCP configuration is unavailable. Reload connection details or turn off MCP access.'; return }
       const form = this.$refs.createForm as {
         validate?: () => Promise<{ valid: boolean }>
       } | undefined
@@ -273,6 +209,7 @@ export default {
           else if (!this.scope) firstInvalid = 'scopeInput'
           else if (this.scope === 'group' && (this.group === null || this.group === 2)) firstInvalid = 'groupInput'
         }
+        this.step = ['keyNameInput', 'expirationInput'].includes(firstInvalid) ? 1 : 2
         this.$nextTick(() => this.focusFormControl(firstInvalid))
         return
       }
@@ -286,18 +223,17 @@ export default {
           name: this.name,
           expiration: this.expiration,
           fullAccess: this.scope === 'full',
-          group: this.scope === 'group' ? this.group : null
+          group: this.scope === 'group' ? this.group : null,
+          mcpAccess: this.mcpAccess
         })
-        const refreshed = this.refreshApiKeys ? await (this.refreshApiKeys as (notify: boolean) => Promise<boolean>)(false) : true
-
-        this.name = ''
-        this.expiration = '1y'
-        this.scope = null
-        this.group = null
-        this.isShown = false
-
         this.key = resp.key
         this.isCopyKeyDialogShown = true
+        this.isShown = false
+        this.name = ''
+        this.expiration = '90d'
+        this.scope = 'group'
+        this.group = null
+        const refreshed = this.refreshApiKeys ? await (this.refreshApiKeys as (notify: boolean) => Promise<boolean>)(false).catch(() => false) : true
 
         if (refreshed) {
           wikiStore.showNotification({
@@ -308,6 +244,7 @@ export default {
         }
 
       } catch (err) {
+        this.formError = getErrorMessage(err)
         wikiStore.showError(err)
       } finally {
         wikiStore.stopLoading('admin-api-create')
@@ -315,5 +252,16 @@ export default {
       }
     }
   },
+  mounted () { window.addEventListener('beforeunload', this.warnBeforeUnload) },
+  beforeUnmount () { window.removeEventListener('beforeunload', this.warnBeforeUnload); this.key = '' }
 }
 </script>
+<style scoped>
+.api-key-dialog { max-height: min(850px, calc(100dvh - 3rem)); display: flex; flex-direction: column; }
+.key-dialog-heading { padding: 1.75rem 1.75rem .5rem; }.key-kicker { font-size: .7rem; letter-spacing: .09em; text-transform: uppercase; color: var(--wiki-accent-ink); }.key-dialog-heading h2 { font: 500 clamp(1.6rem, 4vw, 2rem) var(--wiki-font-display); margin-block: .6rem .75rem; }p { font-size: .85rem; line-height: 1.7; margin-bottom: 1rem; }
+.key-progress { display: flex; list-style: none; gap: 1.5rem; padding: .75rem 1.75rem 1.25rem; border-bottom: 1px solid var(--wiki-surface-border); }.key-progress li { display: flex; align-items: center; gap: .5rem; font-size: .8rem; }.key-progress span { display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border: 1px solid var(--wiki-surface-border); border-radius: 50%; font-size: .7rem; }.key-progress .current { color: var(--wiki-accent-ink); }.key-progress .current span { border-color: currentColor; }
+.key-dialog-body { overflow-y: auto; padding: 1.5rem 1.75rem; }.key-dialog-actions { flex-shrink: 0; padding: 1rem 1.25rem; border-top: 1px solid var(--wiki-surface-border); }.grant-preview { padding: 1rem; border: 1px solid var(--wiki-surface-border); border-radius: var(--wiki-control-radius); }.grant-preview strong { font-size: .9rem; }.grant-preview p { margin-block: .4rem; }.grant-permissions { display: flex; flex-wrap: wrap; gap: .4rem; }.grant-permissions code { border: 1px solid var(--wiki-surface-border); padding: .25rem .4rem; border-radius: .3rem; font-size: .72rem; overflow-wrap: anywhere; }.grant-rules { margin-top: 1rem; }.grant-rules summary { cursor: pointer; font-size: .8rem; }.grant-rules ul { list-style: none; padding: 0; }.grant-rules li { display: grid; gap: .3rem; padding-block: .75rem; border-bottom: 1px solid var(--wiki-surface-border); font-size: .75rem; }.grant-rules code { overflow-wrap: anywhere; }.grant-rules small { font-size: .7rem; }
+.key-note { font-size: .75rem; }.mcp-key-choice { margin-top: 1.5rem; padding-top: .5rem; border-top: 1px solid var(--wiki-surface-border); }.mcp-key-choice > code { display: block; font-size: .8rem; overflow-wrap: anywhere; }
+.key-review { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1.5rem; margin-bottom: 1.5rem; }.key-review dt { font-size: .7rem; }.key-review dd { font-size: .9rem; margin: .5rem 0 0; overflow-wrap: anywhere; }.key-copy-actions { display: flex; align-items: center; gap: 1rem; margin-top: 1rem; font-size: .8rem; }
+@media(max-width: 600px) { .key-dialog-heading { padding: 1.25rem 1rem .5rem; }.key-dialog-body { padding: 1rem; }.key-progress { padding-inline: 1rem; gap: 1rem; }.key-review { grid-template-columns: 1fr; } }
+</style>

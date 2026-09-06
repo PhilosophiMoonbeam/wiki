@@ -3,7 +3,7 @@ import templateCompilerOptions from '@tresjs/core/template-compiler-options'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig, type Plugin } from 'vite'
 import vuetify from 'vite-plugin-vuetify'
-import { copyPrismAssets, provisionDevelopmentAssets } from './server/helpers/vite-assets.ts'
+import { copyGraphiqlAssets, copyPrismAssets, provisionDevelopmentAssets } from './server/helpers/vite-assets.ts'
 
 const root = import.meta.dirname
 
@@ -19,6 +19,7 @@ export function runtimeAssetsPlugin(command: 'build' | 'serve', projectRoot = ro
         name: 'wiki-runtime-assets',
         async closeBundle() {
           await copyPrismAssets(projectRoot)
+          await copyGraphiqlAssets(projectRoot)
         }
       }
 }
