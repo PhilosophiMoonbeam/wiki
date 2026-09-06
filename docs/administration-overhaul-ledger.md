@@ -15,7 +15,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | Groups | Membership, permissions, page rules and effective access | Pending |
 | Authentication | Providers, sign-in, provisioning and diagnostics | Pending |
 | Security | Sessions, protections and policies | Pending |
-| Wiki Agent | Providers/models, skills, browser, tools, memory, MCP and runtime | Implemented; deployment verification pending |
+| Wiki Agent | Providers/models, skills, browser, tools, memory, MCP and runtime | Implemented; first milestone verified |
 | Search | Providers, retrieval, index lifecycle and evaluation | Pending |
 | API | Credentials/scopes, integration setup and reference | Pending |
 | Webhooks | Events, endpoints, deliveries, tests and recovery | Pending |
@@ -52,4 +52,8 @@ Verification and implementation evidence will be recorded as each area is comple
 - Runtime now projects tool descriptors and transport-specific deployment blockers directly from the action catalog. The new tool directory filters by capability, interface and eligibility and explains permissions/effects. Personal memory is explicitly unavailable over MCP. MCP currently exposes the wiki to clients; arbitrary outbound MCP server execution is not part of the runtime architecture and no nonfunctional connection editor is offered.
 - Knowledge/memory explains authoritative pages, approved skills, owner-private memory snapshots and the actual retention configuration. Deployment gates and personal-memory ownership remain intact.
 
-Validation: client/shared/server type checks, repository lint, Agent component tests, administration integration tests and server controller/catalog tests. Browser preview reviewed all seven sections at 1440px and 390px in dark and light themes: no page overflow, JavaScript errors or WCAG A/AA violations after corrections. Interactive checks covered provider and destination filters, history, direct provider editing/discard, source selection, tool disclosure and section persistence after reload. Source selection used controlled metadata without creating a production skill. Production deployment and verification remain the next gate.
+Validation: client/shared/server type checks, repository lint, Agent component tests, administration integration tests and server controller/catalog tests. Browser preview reviewed all seven sections at 1440px and 390px in dark and light themes: no page overflow, JavaScript errors or WCAG A/AA violations after corrections. Interactive checks covered provider and destination filters, history, direct provider editing/discard, source selection, tool disclosure and section persistence after reload. Source selection used controlled metadata without creating a production skill. Deployed milestone `d49ac379` passed a second browser review without asset or API interception: all seven sections at desktop/phone in both themes, real tool policy and source-search responses, provider filtering/history, source-search empty state, section persistence and keyboard navigation. Container health is healthy. Final cross-administration review remains pending with the other areas.
+
+## Next: Search
+
+Initial code review confirms that engine selection/configuration and rebuilding work, but Apply is enabled even without changes; no draft reset or query evaluation is available. The next implementation should separate saved engine state from configuration drafts, make maintenance understandable, and add a real query-evaluation workflow showing results and match evidence from the actual search service. Index health must be measured from supported server state, never inferred from a selected engine alone.
