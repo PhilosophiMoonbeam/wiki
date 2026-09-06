@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { describe, it, expect } from '../server/test/bun-test.mts'
-import { isStorageGitBranchName, storageConfigurationIssues, storageActionDefinition } from './storage-workspace.ts'
+import { isStorageGitBranchName, isStorageHostKeyFingerprint, storageConfigurationIssues, storageActionDefinition } from './storage-workspace.ts'
 describe('Storage configuration and effect contracts', () => {
   it('matches Git literal branch validation including components, Unicode and option-like input', () => {
     for (const name of [
@@ -55,6 +55,29 @@ describe('Storage configuration and effect contracts', () => {
     expect(storageConfigurationIssues(target)).toHaveLength(1)
     target.secrets.secretAccessKey = true
     expect(storageConfigurationIssues(target)).toEqual([])
+  })
+  it('permits explicit S3-compatible signing regions and retains runtime resolution when omitted', () => {
+    for (const key of ['s3generic', 'digitalocean']) {
+      const target = { key, config: { bucket: 'wiki', endpoint: 'https://objects.example.test', region: '' }, secrets: {} }
+      expect(storageConfigurationIssues(target)).toEqual([])
+      target.config.region = 'auto'
+      expect(storageConfigurationIssues(target)).toEqual([])
+      target.config.region = 'us-east-1\n'
+      expect(storageConfigurationIssues(target)).toContain('region must not contain control characters.')
+    }
+  })
+  it('requires a canonical server fingerprint before SFTP can be enabled', () => {
+    const target = {
+      key: 'sftp',
+      config: { host: 'example.test', port: 22, username: 'wiki', basePath: '/wiki', authMode: 'password', hostKeyFingerprint: '' },
+      secrets: { password: true }
+    }
+    expect(storageConfigurationIssues(target)).toContain('Provide the server’s verified SHA256 host-key fingerprint.')
+    target.config.hostKeyFingerprint = 'SHA256:' + 'A'.repeat(43)
+    expect(storageConfigurationIssues(target)).toEqual([])
+    expect(isStorageHostKeyFingerprint(target.config.hostKeyFingerprint + '=')).toBe(true)
+    expect(isStorageHostKeyFingerprint('SHA256:' + 'A'.repeat(42) + 'B')).toBe(false)
+    expect(isStorageHostKeyFingerprint('SHA256:' + 'A'.repeat(44))).toBe(false)
   })
   it('rejects command interpolation in key paths and preserves literal branch validation', () => {
     const target = {

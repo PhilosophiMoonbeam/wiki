@@ -10,24 +10,22 @@ supportedModes:
 defaultMode: push
 schedule: false
 props:
+  region:
+    type: String
+    title: Signing region
+    hint: DigitalOcean recommends us-east-1 for AWS SDK clients; the endpoint determines the datacenter. Leave empty to retain the application's AWS region provider.
+    default: ''
+    order: 1.5
   endpoint:
     type: String
     title: Endpoint
-    hint: The DigitalOcean spaces endpoint that has the form ${REGION}.digitaloceanspaces.com
+    hint: The datacenter endpoint for your existing Space, such as nyc3.digitaloceanspaces.com. Use the origin endpoint, not its CDN address.
     default: nyc3.digitaloceanspaces.com
-    enum:
-      - ams3.digitaloceanspaces.com
-      - fra1.digitaloceanspaces.com
-      - nyc3.digitaloceanspaces.com
-      - sfo2.digitaloceanspaces.com
-      - sfo3.digitaloceanspaces.com
-      - sgp1.digitaloceanspaces.com
-      - tor1.digitaloceanspaces.com
     order: 1
   bucket:
     type: String
-    title: Space Unique Name
-    hint: The unique space name to create (e.g. wiki-johndoe)
+    title: Space name
+    hint: The name of an existing Space. Applying settings checks access; it does not create a Space.
     order: 2
   accessKeyId:
     type: String
@@ -50,4 +48,3 @@ actions:
   - handler: exportAll
     label: Export All
     hint: Output all content from the DB to DigitalOcean Spaces, overwriting any existing data. If you enabled DigitalOcean Spaces after content was created or you temporarily disabled it, you'll want to execute this action to add the missing content.
-

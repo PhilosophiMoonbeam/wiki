@@ -13,12 +13,12 @@ props:
   region:
     type: String
     title: Region
-    hint: The AWS datacenter region where the bucket will be created.
+    hint: The AWS region containing the existing bucket, such as us-east-1.
     order: 1
   bucket:
     type: String
-    title: Unique bucket name
-    hint: The unique bucket name to create (e.g. wiki-johndoe).
+    title: Bucket name
+    hint: The name of an existing bucket. Applying settings checks access; it does not create a bucket.
     order: 2
   accessKeyId:
     type: String

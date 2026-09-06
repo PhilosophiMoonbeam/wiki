@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const StorageValueSchema = z.union([z.string().max(65536), z.boolean(), z.number().finite()])
 export type StorageValue = z.infer<typeof StorageValueSchema>
+export const isStorageHostKeyFingerprint = (value: string): boolean => /^SHA256:[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=?$/.test(value)
 export const StorageSecretChangeSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('keep') }).strict(),
   z.object({ action: z.literal('clear') }).strict(),
@@ -174,6 +175,7 @@ export const storageConfigurationIssues = (target: Pick<StorageTargetView, 'key'
     required('host', 'Host')
     required('username', 'Username')
     required('basePath', 'Remote folder')
+    if (!isStorageHostKeyFingerprint(text('hostKeyFingerprint'))) issues.push('Provide the server’s verified SHA256 host-key fingerprint.')
     if (!Number.isInteger(config.port) || Number(config.port) < 1 || Number(config.port) > 65535) issues.push('SSH port must be an integer from 1 to 65535.')
     if (config.authMode === 'password') required('password', 'Password')
     else required('privateKey', 'Private key')
@@ -188,15 +190,23 @@ export const storageConfigurationIssues = (target: Pick<StorageTargetView, 'key'
       if (config.sshPrivateKeyMode === 'contents') required('sshPrivateKeyContent', 'Private key')
       else required('sshPrivateKeyPath', 'Private-key path')
       if (/["`$\r\n\0]/.test(text('sshPrivateKeyPath'))) issues.push('The private-key path contains unsupported command characters.')
+    } else if (text('repoUrl')) {
+      try {
+        const url = new URL(text('repoUrl').includes('://') ? text('repoUrl') : `https://${text('repoUrl')}`)
+        if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
+          issues.push('Use an HTTP(S) repository address without embedded credentials, query or fragment.')
+      } catch {
+        issues.push('Enter a valid HTTP(S) repository address.')
+      }
     }
     const branch = typeof config.branch === 'string' ? config.branch : ''
     if (branch && !isStorageGitBranchName(branch)) issues.push('Enter a valid Git branch name.')
   }
-  for (const key of ['path', 'basePath', 'localRepoPath', 'sshPrivateKeyPath', 'gitBinaryPath', 'repoUrl', 'endpoint', 'host'])
+  for (const key of ['path', 'basePath', 'localRepoPath', 'sshPrivateKeyPath', 'gitBinaryPath', 'repoUrl', 'endpoint', 'host', 'region'])
     if (typeof config[key] === 'string' && /[\0\r\n]/.test(String(config[key]))) issues.push(`${key} must not contain control characters.`)
   if (text('endpoint')) {
     try {
-      const endpoint = new URL(/^https?:\/\//i.test(text('endpoint')) ? text('endpoint') : `https://${text('endpoint')}`)
+      const endpoint = new URL(text('endpoint').includes('://') ? text('endpoint') : `https://${text('endpoint')}`)
       if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash)
         issues.push('Use an HTTP(S) endpoint without embedded credentials, query or fragment.')
     } catch {

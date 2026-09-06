@@ -1,6 +1,6 @@
 key: s3generic
-title: S3 Generic
-description: Generic storage module for S3-compatible services.
+title: S3-compatible storage
+description: Store shared content in a bucket on a service that implements the S3 API.
 author: requarks.io
 logo: https://static.requarks.io/logo/aws-s3-alt.svg
 website: https://wiki.js.org
@@ -10,16 +10,22 @@ supportedModes:
 defaultMode: push
 schedule: false
 props:
+  region:
+    type: String
+    title: Signing region
+    hint: Use the region required by your service (for example us-east-1 or auto). Leave empty to use the application's AWS region provider.
+    default: ''
+    order: 1.5
   endpoint:
     type: String
     title: Endpoint URI
     hint: The full S3-compliant endpoint URI.
-    default: https://service.region.example.com
+    default: ''
     order: 1
   bucket:
     type: String
-    title: Unique bucket name
-    hint: The unique bucket name to create (e.g. wiki-johndoe)
+    title: Bucket name
+    hint: The name of an existing bucket. Applying settings checks access; it does not create a bucket.
     order: 2
   accessKeyId:
     type: String
@@ -34,8 +40,8 @@ props:
     order: 4
   sslEnabled:
     type: Boolean
-    title: Use SSL
-    hint: Whether to enable SSL for requests
+    title: Use HTTPS for bare hostnames
+    hint: Applies only when the endpoint omits its scheme. A full endpoint URL determines its own HTTP or HTTPS transport.
     default: true
     order: 5
   s3ForcePathStyle:
@@ -60,4 +66,3 @@ actions:
   - handler: exportAll
     label: Export All
     hint: Output all content from the DB to the external service, overwriting any existing data. If you enabled this module after content was created or you temporarily disabled it, you'll want to execute this action to add the missing content.
-

@@ -846,7 +846,7 @@ const destinationKeys = [
   'localRepoPath',
   'pathPrefix'
 ]
-const accessKeys = ['authType', 'authMode', 'sshPrivateKeyMode', 'sshPrivateKeyPath', 'accessKeyId', 'username', 'basicUsername']
+const accessKeys = ['authType', 'authMode', 'sshPrivateKeyMode', 'sshPrivateKeyPath', 'sshKnownHosts', 'hostKeyFingerprint', 'accessKeyId', 'username', 'basicUsername']
 function visibleField(field: StorageField) {
   const config = selectedDraft.value?.config,
     key = selectedTarget.value?.key

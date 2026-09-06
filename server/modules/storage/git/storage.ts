@@ -7,7 +7,6 @@ import _ from 'lodash'
 import { pipeline } from 'node:stream/promises'
 import { Transform, type TransformCallback } from 'node:stream'
 import klaw, { type Item as KlawItem } from 'klaw'
-import os from 'node:os'
 
 import pageHelper from '../../../helpers/page.ts'
 import assetHelper from '../../../helpers/asset.ts'
@@ -16,6 +15,7 @@ import type { StorageImportResult } from '../types.ts'
 import { encodeStoragePageDocument, type StoragePageEncodingInput } from '../page-document.ts'
 import { pullRemoteAuthoritative, reattachUnrelatedHistory, recoverInterruptedGitOperation, sharesHistoryWith } from './repository.ts'
 import { okfFilePath, parseOkfFilePath } from '../../../okf/format.ts'
+import { gitStorageSshCommand, gitStorageHttpRemote, writeGitStorageConnectionFile } from './connection.ts'
 
 interface GitStorageFile {
   file: { path: string; stats: { size: number } }
@@ -231,29 +231,23 @@ const plugin: GitStoragePlugin = {
     wiki.logger.info('(STORAGE/GIT) Setting SSL Verification config...')
     await this.git.raw(['config', '--local', '--bool', 'http.sslVerify', _.toString(this.config.verifySSL)])
     switch (this.config.authType) {
-      case 'ssh':
+      case 'ssh': {
         wiki.logger.info('(STORAGE/GIT) Setting SSH Command config...')
-        if (this.config.sshPrivateKeyMode === 'contents') {
-          try {
-            this.config.sshPrivateKeyPath = path.resolve(wiki.ROOTPATH, wiki.config.dataPath, 'secure/git-ssh.pem')
-            await fs.outputFile(this.config.sshPrivateKeyPath, this.config.sshPrivateKeyContent + os.EOL, {
-              encoding: 'utf8',
-              mode: 0o600
-            })
-          } catch (err: unknown) {
-            wiki.logger.error(err instanceof Error ? err.message : String(err))
-            throw err
-          }
-        }
-        await this.git.addConfig('core.sshCommand', `ssh -i "${this.config.sshPrivateKeyPath}" -o StrictHostKeyChecking=no`)
+        const dataPath = path.resolve(wiki.ROOTPATH, wiki.config.dataPath)
+        const identityPath = this.config.sshPrivateKeyMode === 'contents'
+          ? await writeGitStorageConnectionFile(dataPath, 'git-ssh.pem', this.config.sshPrivateKeyContent)
+          : this.config.sshPrivateKeyPath
+        const knownHostsPath = typeof this.config.sshKnownHosts === 'string' && this.config.sshKnownHosts.trim()
+          ? await writeGitStorageConnectionFile(dataPath, 'git-known-hosts', this.config.sshKnownHosts)
+          : undefined
+        await this.git.addConfig('core.sshCommand', gitStorageSshCommand(identityPath, knownHostsPath))
         wiki.logger.info('(STORAGE/GIT) Adding origin remote via SSH...')
         await this.git.addRemote('origin', this.config.repoUrl)
         break
+      }
       default: {
         wiki.logger.info('(STORAGE/GIT) Adding origin remote via HTTP/S...')
-        const originUrl = _.startsWith(this.config.repoUrl, 'http')
-          ? this.config.repoUrl.replace('://', `://${encodeURI(this.config.basicUsername)}:${encodeURI(this.config.basicPassword)}@`)
-          : `https://${encodeURI(this.config.basicUsername)}:${encodeURI(this.config.basicPassword)}@${this.config.repoUrl}`
+        const originUrl = gitStorageHttpRemote(this.config.repoUrl, this.config.basicUsername, this.config.basicPassword)
         await this.git.addRemote('origin', originUrl)
         break
       }

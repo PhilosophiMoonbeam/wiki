@@ -10,11 +10,13 @@ import pageHelper from '../../../helpers/page.ts'
 import { asyncObjectTransform } from '../async-transform.ts'
 import { encodeStoragePageDocument, type StoragePageEncodingInput } from '../page-document.ts'
 import { okfFilePath } from '../../../okf/format.ts'
+import { storageHostVerifier } from './host-key.ts'
 
 interface SftpStorageConfig extends StorageConfig {
   authMode: string
   basePath: string
   host: string
+  hostKeyFingerprint: string
   passphrase: string
   password: string
   port: number
@@ -29,6 +31,7 @@ interface SshConnectionConfig extends SSHConfig {
   password?: string
   privateKey?: string
   passphrase?: string
+  hostVerifier: (key: Buffer) => boolean
 }
 
 interface SftpStorageContext extends StorageContext<SftpStorageConfig> {
@@ -168,6 +171,8 @@ const plugin: SftpStoragePlugin = {
       host: this.config.host,
       port: this.config.port || 22,
       username: this.config.username,
+      hostVerifier: storageHostVerifier(this.config.hostKeyFingerprint || ''),
+      reconnect: false,
       ...(this.config.authMode === 'password' ? { password: this.config.password } : {}),
       ...(this.config.authMode === 'privateKey'
         ? {

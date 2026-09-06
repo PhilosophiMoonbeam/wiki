@@ -37,6 +37,12 @@ props:
     default: ''
     hint: Username for authentication.
     order: 4
+  hostKeyFingerprint:
+    type: String
+    title: Server host-key fingerprint
+    default: ''
+    hint: Required SHA256 fingerprint of the server's public host key, obtained from its administrator through a trusted channel. A missing or different key is refused before authentication. This is not your account's private-key fingerprint.
+    order: 4.5
   privateKey:
     type: String
     title: Private Key Contents
@@ -68,4 +74,3 @@ actions:
   - handler: exportAll
     label: Export All
     hint: Output all content from the DB to the remote SSH server, overwriting any existing data. If you enabled SFTP after content was created or you temporarily disabled it, you'll want to execute this action to add the missing content.
-

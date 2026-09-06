@@ -130,8 +130,8 @@ export default class S3CompatibleStorage {
       s3Config.credentials = { accessKeyId, secretAccessKey }
     }
 
-    if (!_.isNil(this.config.region)) {
-      s3Config.region = this.config.region
+    if (typeof this.config.region === 'string' && this.config.region.trim()) {
+      s3Config.region = this.config.region.trim()
     }
     if (!_.isNil(this.config.endpoint)) {
       s3Config.endpoint = /^http/.test(this.config.endpoint)

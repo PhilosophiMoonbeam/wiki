@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream'
+import { S3Client, HeadBucketCommand } from '@aws-sdk/client-s3'
 import { encodeS3CopySource, storageObjectKey } from '../../modules/storage/object-key.ts'
 
 describe('cloud storage object keys', () => {
@@ -23,6 +24,45 @@ describe('cloud storage object keys', () => {
     storage.s3 = { destroy: vi.fn() }
     await storage.deactivated()
     expect(storage.s3.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the configured signing region and custom endpoint while only checking an existing bucket', async () => {
+    const send = vi.spyOn(S3Client.prototype, 'send').mockResolvedValue({})
+    const S3CompatibleStorage = (await vi.importFresh('../../modules/storage/s3/common.ts', import.meta.url)).default
+    const storage = new S3CompatibleStorage('S3Generic')
+    storage.config = { region: ' auto ', endpoint: 'https://objects.example.test', bucket: 'wiki', accessKeyId: 'fixture-key', secretAccessKey: 'fixture-secret', s3ForcePathStyle: true }
+    try {
+      await storage.init()
+      expect(await storage.s3.config.region()).toBe('auto')
+      expect(await storage.s3.config.endpoint()).toMatchObject({ hostname: 'objects.example.test', protocol: 'https:' })
+      expect(storage.s3.config.forcePathStyle).toBe(true)
+      expect(await storage.s3.config.credentials()).toMatchObject({ accessKeyId: 'fixture-key', secretAccessKey: 'fixture-secret' })
+      expect(send).toHaveBeenCalledTimes(1)
+      expect(send.mock.calls[0][0]).toBeInstanceOf(HeadBucketCommand)
+      expect(send.mock.calls[0][0].input).toEqual({ Bucket: 'wiki' })
+    } finally {
+      await storage.deactivated()
+      send.mockRestore()
+    }
+  })
+
+  it('retains runtime region resolution when the new optional field is empty', async () => {
+    const previous = process.env.AWS_REGION
+    process.env.AWS_REGION = 'eu-west-2'
+    const send = vi.spyOn(S3Client.prototype, 'send').mockResolvedValue({})
+    const S3CompatibleStorage = (await vi.importFresh('../../modules/storage/s3/common.ts', import.meta.url)).default
+    const storage = new S3CompatibleStorage('Digitalocean')
+    storage.config = { region: '', endpoint: 'nyc3.digitaloceanspaces.com', bucket: 'wiki', accessKeyId: '', secretAccessKey: '' }
+    try {
+      await storage.init()
+      expect(await storage.s3.config.region()).toBe('eu-west-2')
+      expect(await storage.s3.config.endpoint()).toMatchObject({ hostname: 'nyc3.digitaloceanspaces.com', protocol: 'https:' })
+    } finally {
+      await storage.deactivated()
+      send.mockRestore()
+      if (previous === undefined) delete process.env.AWS_REGION
+      else process.env.AWS_REGION = previous
+    }
   })
 
   it('encodes every S3 copy-source segment while preserving path separators', () => {

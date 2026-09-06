@@ -119,7 +119,15 @@ suite('Reviewed storage operations on PostgreSQL', () => {
         ...Object.fromEntries(definition.fields.map(field => [field.key, field.default])),
         ...(key === 'disk'
           ? { path: '/tmp/storage-fixture' }
-          : { host: 'storage.example.test', username: 'wiki', password: 'provider-secret', authMode: 'password', port: 22, basePath: '/wiki' })
+          : {
+              host: 'storage.example.test',
+              username: 'wiki',
+              password: 'provider-secret',
+              authMode: 'password',
+              port: 22,
+              basePath: '/wiki',
+              hostKeyFingerprint: 'SHA256:' + 'A'.repeat(43)
+            })
       }
       await db('storage').insert({ key, isEnabled: true, mode: 'push', syncInterval: 'P0D', config: JSON.stringify(config), state: '{}' })
     }

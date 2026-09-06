@@ -52,6 +52,13 @@ props:
     multiline: true
     sensitive: true
     order: 13
+  sshKnownHosts:
+    type: String
+    title: Verified SSH host keys
+    hint: Optional known_hosts entries obtained from the server administrator through a trusted channel. When supplied, only these entries are trusted. Otherwise, use the application's standard known_hosts files. Unknown or changed host keys are refused.
+    default: ''
+    multiline: true
+    order: 13.5
   verifySSL:
     type: Boolean
     default: true
