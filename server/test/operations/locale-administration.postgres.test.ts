@@ -128,6 +128,12 @@ suite('PostgreSQL reviewed Locale administration', () => {
     expect(JSON.stringify(current)).not.toContain('Saved English')
     expect(JSON.stringify(current)).not.toContain('future setting')
   })
+  it('recognizes applied runtime defaults absent from a legacy settings row', async () => {
+    const row = await db('settings').where('key', 'lang').first()
+    delete row.value.rtl
+    await db('settings').where('key', 'lang').update('value', JSON.stringify(row.value))
+    expect((await read()).runtime.state).toBe('applied')
+  })
   it('saves policy, derived direction and history atomically while preserving unowned fields', async () => {
     const now = new Date().toISOString()
     await db('locales').insert({ ...fr, isRTL: true, strings: '{}', createdAt: now, updatedAt: now })

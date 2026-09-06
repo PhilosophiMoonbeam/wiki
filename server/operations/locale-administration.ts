@@ -125,7 +125,7 @@ export const createLocaleAdministrationStore = (deps: Dependencies) => {
   const applied = (saved: State): boolean => {
     const runtime = deps.runtime(),
       lang = record(saved.configuration.lang)
-    return runtime.locale === saved.policy.locale && (runtime.revision ?? '') === (lang.revision ?? '') && stable(runtime.configuration) === stable(lang)
+    return runtime.locale === saved.policy.locale && (runtime.revision ?? '') === (lang.revision ?? '') && stable(runtime.configuration) === stable({ ...record(runtime.configuration), ...lang })
   }
   const activate = async (): Promise<LocaleWriteResult> => {
     try {
@@ -383,7 +383,7 @@ export const getLocaleAdministrationStore = () => {
           const row = await wiki.models.knex<Setting>('settings').where('key', 'lang').first()
           return (
             notified &&
-            stable(row?.value ?? wiki.config.lang) === stable(wiki.config.lang) &&
+            stable({ ...record(wiki.config.lang), ...record(row?.value) }) === stable(wiki.config.lang) &&
             (record(wiki.config.lang).revision ?? null) === wiki.lang.appliedRevision
           )
         })
