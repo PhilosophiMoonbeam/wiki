@@ -11,7 +11,7 @@ import {
 } from '../../shared/analytics-policy.ts'
 import { accountSessionIsCurrent } from '../helpers/account-session.ts'
 import { principalId, type PagePrincipal } from '../helpers/page-access.ts'
-import { analyticsDefinition, analyticsProviderIssues } from '../helpers/analytics-providers.ts'
+import { analyticsDefinition, analyticsProviderIssues } from '../../shared/analytics-providers.ts'
 import {
   analyticsConfiguration,
   analyticsDraftFromRow,
@@ -31,7 +31,7 @@ const fail = (message: string, status = 400): never => {
   throw new errors.ApplicationError(message, { status })
 }
 const ProviderDraftSchema = z
-  .object({ key: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/), isEnabled: z.boolean(), config: z.record(z.string().max(100), z.string().max(2048)) })
+  .object({ key: z.string().min(1).max(255), isEnabled: z.boolean(), config: z.record(z.string().max(100), z.string().max(2048)) })
   .strict()
 const WriteSchema = z
   .object({
@@ -114,12 +114,13 @@ export const createAnalyticsAdministrationStore = (deps: Dependencies) => {
       { ...current.metadata, revision: event.id, history: [event, ...history(current.metadata)].slice(0, 50) },
       event.createdAt
     )
-  const inspect = async (requester: PagePrincipal): Promise<AnalyticsWorkspace> => {
+  const inspect = async (requester: PagePrincipal, days?: number): Promise<AnalyticsWorkspace> => {
+    if (days !== undefined && ![7, 30, 90, 365].includes(days)) return fail('Choose a supported reporting window.')
     const tx = await deps.db.transaction({ isolationLevel: 'repeatable read', readOnly: true })
     try {
       const saved = await state(tx, requester)
       const providers = await Promise.all(saved.rows.map(row => inspectAnalyticsProvider(row, deps.serverPath, saved.available)))
-      const insights = await readAnalyticsInsights(tx, saved.policy.retentionDays, now())
+      const insights = await readAnalyticsInsights(tx, Math.min(days ?? saved.policy.retentionDays, saved.policy.retentionDays), now())
       await tx.commit()
       return {
         policy: saved.policy,

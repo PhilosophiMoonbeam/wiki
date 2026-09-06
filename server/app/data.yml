@@ -211,6 +211,11 @@ jobs:
     schedule: PT10S
     offlineSkip: false
     repeat: true
+  pruneAnalytics:
+    onInit: true
+    schedule: PT1H
+    offlineSkip: false
+    repeat: true
   purgeUploads:
     onInit: true
     schedule: PT15M

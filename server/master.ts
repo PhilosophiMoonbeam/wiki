@@ -538,7 +538,7 @@ export default async function startMaster(wiki: HttpTransportRuntime): Promise<t
       agentCsrfToken: wiki.config.agents.enabled ? agentCsrfToken(_req) : ''
     }
     res.locals.langs = await wiki.models.locales.getNavLocales({ cache: true })
-    res.locals.analyticsCode = await wiki.models.analytics.getCode({ cache: true })
+    res.locals.analyticsCode = { head: '', bodyStart: '', bodyEnd: '' }
     next()
   })
   app.use('/', createAuthController(wiki))

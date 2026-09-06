@@ -1,4 +1,6 @@
 import path from 'node:path'
+import { EventEmitter } from 'node:events'
+import { createReaderAnalytics } from '../../helpers/reader-analytics.ts'
 import knexModule, { type Knex } from 'knex'
 import { beforeAll, afterAll, beforeEach, describe, it, expect } from '../bun-test.mts'
 import { createAnalyticsAdministrationStore } from '../../operations/analytics-administration.ts'
@@ -207,6 +209,14 @@ suite('PostgreSQL reviewed analytics and aggregate reader responses', () => {
       })
     ).rejects.toThrow('whole-number')
   })
+  it('retains and disables an unrecognized saved integration even when its key is not a supported module name', async () => {
+    await db('analytics').insert({ key: 'legacy.custom/provider', isEnabled: true, config: '{"retained":"opaque configuration"}' })
+    expect((await read()).providers.find(row => row.key === 'legacy.custom/provider')?.isAvailable).toBe(false)
+    await save({}, current => {
+      current.providers.find(row => row.key === 'legacy.custom/provider')!.isEnabled = false
+    })
+    expect((await db('analytics').where('key', 'legacy.custom/provider').first()).config).toEqual({ retained: 'opaque configuration' })
+  })
   it('increments concurrent response counters without retaining visitor attributes', async () => {
     await save({ localEnabled: true })
     const results = await Promise.all(Array.from({ length: 40 }, () => recordAnalyticsResponse(db, 1, request, now)))
@@ -247,6 +257,27 @@ suite('PostgreSQL reviewed analytics and aggregate reader responses', () => {
     await db('pages').where('id', 1).delete()
     expect(await db('analyticsDaily')).toHaveLength(0)
   })
+  it('compares publication offsets as timestamps when reporting recorded responses', async () => {
+    await save({ localEnabled: true })
+    await recordAnalyticsResponse(db, 1, request, now)
+    await db('pages').where('id', 1).update({ publishStartDate: '2026-09-06T13:00:00+02:00', publishEndDate: '2026-09-06T08:00:00-05:00' })
+    expect((await read()).insights.totalResponses).toBe(1)
+  })
+  it('changes the reporting window without changing policy or review identity and caps it to retention', async () => {
+    await save({ retentionDays: 30 })
+    await db('analyticsDaily').insert([
+      { day: '2026-08-09', pageId: 1, responses: 10 },
+      { day: '2026-09-06', pageId: 1, responses: 2 }
+    ])
+    const current = await read(),
+      week = await store.inspect(admin, 7),
+      year = await store.inspect(admin, 365)
+    expect(week.insights).toMatchObject({ from: '2026-08-31', totalResponses: 2 })
+    expect(week.fingerprint).toBe(current.fingerprint)
+    expect(year.insights).toMatchObject({ from: '2026-08-08', totalResponses: 12 })
+    expect(week.policy.retentionDays).toBe(30)
+    await expect(store.inspect(admin, NaN)).rejects.toThrow('reporting window')
+  })
   it('enforces UTC retention even while collection is paused and preserves the inclusive boundary', async () => {
     await save({ retentionDays: 30 })
     const cutoff = analyticsRetentionStart(now, 30)
@@ -259,6 +290,59 @@ suite('PostgreSQL reviewed analytics and aggregate reader responses', () => {
     expect((await read()).insights.totalResponses).toBe(5)
     expect(await pruneAnalyticsInsights(db, now)).toBe(1)
     expect(await db('analyticsDaily')).toHaveLength(2)
+  })
+  it('counts only successful completed reader responses and forces a document boundary for external scripts', async () => {
+    await save({ localEnabled: true, externalEnabled: true }, current => {
+      current.providers.find(row => row.key === 'plausible')!.isEnabled = true
+    })
+    let recordDone: Promise<unknown> = Promise.resolve()
+    const prepare = createReaderAnalytics({
+      db,
+      serverPath,
+      available: () => available,
+      fallback: () => ({}),
+      isAdministrator: () => false,
+      warn: () => {},
+      record: (...args) => {
+        const work = recordAnalyticsResponse(args[0], args[1], args[2], now)
+        recordDone = work
+        return work
+      }
+    })
+    const req = (headers: Record<string, string> = {}) => ({ method: 'GET', user: { id: 2 }, get: (name: string) => headers[name] }) as never
+    const response = (statusCode = 200) => Object.assign(new EventEmitter(), { locals: {} as Record<string, unknown>, statusCode, writableFinished: true })
+    const page = { id: 1, path: 'guide', visibility: 'public' as const }
+    const res = response()
+    expect(await prepare(req(), res as never, page, true, false, true)).toBe(false)
+    expect(JSON.stringify(res.locals.analyticsCode)).toContain('stats.example.test')
+    expect((await read()).insights.totalResponses).toBe(0)
+    res.emit('finish')
+    await recordDone
+    res.emit('finish')
+    await recordDone
+    expect((await read()).insights.totalResponses).toBe(1)
+    for (const [headers, status] of [
+      [{}, 500],
+      [{ 'X-Wiki-Navigation': '1' }, 200],
+      [{ DNT: '1' }, 200],
+      [{ 'Sec-GPC': '1' }, 200],
+      [{ Purpose: 'prefetch' }, 200]
+    ] as Array<[Record<string, string>, number]>) {
+      const skipped = response(status)
+      await prepare(req(headers), skipped as never, page, true, false, true)
+      skipped.emit('finish')
+      await recordDone
+    }
+    expect((await read()).insights.totalResponses).toBe(1)
+    const privateResponse = response()
+    expect(await prepare(req(), privateResponse as never, { ...page, visibility: 'private' }, true, false, true)).toBe(true)
+    expect(JSON.stringify(privateResponse.locals.analyticsCode)).not.toContain('stats.example.test')
+    await save({ externalEnabled: false })
+    const spaResponse = response()
+    expect(await prepare(req({ 'X-Wiki-Navigation': '1' }), spaResponse as never, page, true, false, true)).toBe(true)
+    spaResponse.emit('finish')
+    await recordDone
+    expect((await read()).insights.totalResponses).toBe(2)
   })
   it('requires reviewed attributed erasure, retains its receipt and refuses a lossy migration rollback', async () => {
     await save({ localEnabled: true })

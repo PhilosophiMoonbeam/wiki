@@ -1,4 +1,5 @@
 import express from 'express'
+import { prepareReaderAnalytics } from '../helpers/reader-analytics.ts'
 import type { Knex } from 'knex'
 import { type Request, type Response } from './_types.ts'
 import pageHelper from '../helpers/page.ts'
@@ -303,9 +304,10 @@ export default function createCommonController(wiki: CommonWiki): express.Router
       head: wiki.config.theming.injectHead,
       body: wiki.config.theming.injectBody
     }
-    const commentsEnabled = wiki.config.features.featurePageComments && (!wiki.data.commentProvider.codeTemplate || (page.visibility === 'public' && !await isPageProtected(page.id)))
-    const spaNavigation =
-      _.isEmpty(page.extra?.css) && _.isEmpty(page.extra?.js) && !(commentsEnabled && wiki.data.commentProvider.codeTemplate)
+    const protectedPage = await isPageProtected(page.id)
+    const commentsEnabled = wiki.config.features.featurePageComments && (!wiki.data.commentProvider.codeTemplate || (page.visibility === 'public' && !protectedPage))
+    const spaNavigation = await prepareReaderAnalytics(req, res, page, Boolean(pageIsPublished), protectedPage,
+      _.isEmpty(page.extra?.css) && _.isEmpty(page.extra?.js) && !(commentsEnabled && wiki.data.commentProvider.codeTemplate))
     page.extra = page.extra || { css: '', js: '' }
     if (!_.isEmpty(page.extra.css)) injectCode.css = `${injectCode.css}\n${page.extra.css}`
     if (!_.isEmpty(page.extra.js)) injectCode.body = `${injectCode.body}\n${page.extra.js}`

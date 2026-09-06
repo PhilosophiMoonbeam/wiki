@@ -17,7 +17,7 @@ import {
   compileAnalyticsTemplate,
   emptyAnalyticsCode,
   type AnalyticsCode
-} from '../helpers/analytics-providers.ts'
+} from '../../shared/analytics-providers.ts'
 export interface AnalyticsRow {
   key: string
   isEnabled: boolean

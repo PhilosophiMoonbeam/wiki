@@ -1,4 +1,4 @@
-import type { AnalyticsField, AnalyticsProviderDefinition, AnalyticsProviderDraft } from '../../shared/analytics-policy.ts'
+import type { AnalyticsField, AnalyticsProviderDefinition, AnalyticsProviderDraft } from './analytics-policy.ts'
 const field = (key: string, title: string, kind: AnalyticsField['kind'] = 'text', value = '', hint = '', optional = false): AnalyticsField => ({
   key,
   title,

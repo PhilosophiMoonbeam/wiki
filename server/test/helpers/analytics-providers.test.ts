@@ -2,7 +2,7 @@ import path from 'node:path'
 import { Script } from 'node:vm'
 import * as cheerio from 'cheerio'
 import { describe, it, expect } from '../bun-test.mts'
-import { analyticsProviderDefinitions, analyticsProviderIssues, compileAnalyticsTemplate, analyticsDestinations } from '../../helpers/analytics-providers.ts'
+import { analyticsProviderDefinitions, analyticsProviderIssues, compileAnalyticsTemplate, analyticsDestinations } from '../../../shared/analytics-providers.ts'
 import { analyticsDraftFromRow, compileAnalyticsSnapshot, readAnalyticsTemplate, type AnalyticsSnapshot } from '../../repositories/analytics-runtime.ts'
 import {
   analyticsPolicyFromConfiguration,

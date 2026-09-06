@@ -8,8 +8,6 @@ import commonHelper from '../helpers/common.ts'
 import {
   readModuleDirectories,
   readModuleDefinition,
-  readString,
-  readYamlRecord,
   type LoadedModuleDefinition,
   type ModuleConfig
 } from './moduleTypes.ts'
@@ -90,54 +88,15 @@ export default class Analytics extends Model {
     }
   }
 
-  static async getCode ({ cache = false }: { cache?: boolean } = {}): Promise<AnalyticsCode> {
-    if (cache) {
-      const analyticsCached = await wiki.cache.get('analytics')
-      if (isAnalyticsCode(analyticsCached)) return analyticsCached
-    }
-    try {
-      const analyticsCode: AnalyticsCode = { head: '', bodyStart: '', bodyEnd: '' }
-      const providers = await wiki.models.analytics.getProviders(true)
-      for (const provider of providers) {
-        const codePath = path.join(wiki.SERVERPATH, 'modules/analytics', provider.key, 'code.yml')
-        const raw = await fs.readFile(codePath, 'utf8')
-        const codeRecord = readYamlRecord(yaml.load(raw), codePath)
-        const code: AnalyticsCode = {
-          head: readString(codeRecord, 'head'),
-          bodyStart: readString(codeRecord, 'bodyStart'),
-          bodyEnd: readString(codeRecord, 'bodyEnd')
-        }
-        _.forOwn(provider.config, (value, key) => {
-          const replacement = String(value)
-          code.head = _.replace(code.head, new RegExp(`{{${key}}}`, 'g'), replacement)
-          code.bodyStart = _.replace(code.bodyStart, `{{${key}}}`, replacement)
-          code.bodyEnd = _.replace(code.bodyEnd, `{{${key}}}`, replacement)
-        })
-        analyticsCode.head += code.head
-        analyticsCode.bodyStart += code.bodyStart
-        analyticsCode.bodyEnd += code.bodyEnd
-      }
-      await wiki.cache.set('analytics', analyticsCode, 300)
-      return analyticsCode
-    } catch (err) {
-      wiki.logger.warn('Error while getting analytics code: ', err)
-      return { head: '', bodyStart: '', bodyEnd: '' }
-    }
+  // Reader code is compiled from a persisted request snapshot in reader-analytics.ts.
+  // This compatibility method intentionally has no request scope and emits no tracking.
+  static async getCode (): Promise<{ head: string; bodyStart: string; bodyEnd: string }> {
+    return { head: '', bodyStart: '', bodyEnd: '' }
   }
-}
-
-interface AnalyticsCode { head: string, bodyStart: string, bodyEnd: string }
-
-function isAnalyticsCode (value: unknown): value is AnalyticsCode {
-  return typeof value === 'object' && value !== null &&
-    typeof Reflect.get(value, 'head') === 'string' &&
-    typeof Reflect.get(value, 'bodyStart') === 'string' &&
-    typeof Reflect.get(value, 'bodyEnd') === 'string'
 }
 
 const wiki = globalThis.WIKI as unknown as {
   SERVERPATH: string
-  cache: { get(key: string): Promise<unknown>, set(key: string, value: AnalyticsCode, ttl: number): Promise<unknown> }
   data: { analytics: LoadedModuleDefinition[] }
   logger: { info(message: string): void, error(value: unknown): void, warn(message: string, err: unknown): void }
   models: {
