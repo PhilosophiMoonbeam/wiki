@@ -125,7 +125,7 @@ export const storageActionDefinition = (key: string, handler: string): StorageAc
       direction: 'outbound',
       confirmation: 'EXPORT CONTENT',
       effect:
-        'Write shared pages and assets from the database into the Git working copy. Existing matching files can be overwritten and are staged for a commit. Review the saved direction before synchronization.'
+        'Write shared pages and assets from the database into the Git working copy and commit them locally. Existing matching files can be overwritten. Review the saved direction before synchronization.'
     }
   if (key === 'git' && handler === 'sync')
     return {
