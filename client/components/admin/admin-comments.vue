@@ -92,6 +92,9 @@ export default {
     async changePagePolicy() { if (!this.pagePolicy || this.busy || this.pageReason.trim().length < 3) return; this.acting = true; this.actionError = ''; try { const value = await savePageDiscussionPolicy(this.pagePolicy.page.id, !this.pagePolicy.closed, this.pageReason.trim(), this.pagePolicy.fingerprint); if (this.disposed) return; this.pagePolicy = value; this.pageReason = ''; this.notice = value.closed ? 'Discussion closed to new comments.' : 'Discussion reopened.'; this.noticeWarning = false; await this.refreshCounts(); await this.loadClosed() } catch (error) { if (!this.disposed) this.actionError = getErrorMessage(error) } finally { if (!this.disposed) this.acting = false } },
     beforeUnload(event: BeforeUnloadEvent) { if (this.dirty || this.busy) { event.preventDefault(); event.returnValue = '' } }
   },
+  watch: {
+    '$route.hash'(hash: string) { const key = hash.slice(1), target = this.tabs.some(tab => tab.key === key) ? key : 'policy'; if (this.section !== target) this.setSection(target) }
+  },
   created() { const key = this.$route.hash.slice(1); if (this.tabs.some(tab => tab.key === key)) this.section = key; void this.reload() },
   mounted() { window.addEventListener('beforeunload', this.beforeUnload) },
   beforeRouteLeave() { return !this.busy && (!this.dirty || window.confirm('Discard the unsaved discussion policy?')) },

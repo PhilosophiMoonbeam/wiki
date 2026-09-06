@@ -46,6 +46,11 @@ describe('discussion workspace drafts and action recovery', () => {
     transport.moderateDiscussion.mockRejectedValue(new Error('Comment changed')); await state.moderate()
     expect(state.detail.isHidden).toBe(false); expect(state.reason).toBe('Needs context'); expect(state.actionError).toBe('Comment changed'); expect(state.busy).toBe(false)
   })
+  it('follows back/forward section navigation and returns to policy when a fragment is cleared', () => {
+    const { state, component } = arrange(); state.inventory = { items: [] }
+    component.watch['$route.hash'].call(state, '#moderation'); expect(state.section).toBe('moderation')
+    component.watch['$route.hash'].call(state, ''); expect(state.section).toBe('policy')
+  })
   it('blocks empty moderation actions and late asynchronous updates after disposal', async () => {
     let release; const { state, transport } = arrange({ fetchDiscussionWorkspace: () => new Promise(resolve => { release = resolve }) })
     state.detail = { id: 1 }; await state.moderate(); expect(transport.moderateDiscussion).not.toHaveBeenCalled()
