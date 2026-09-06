@@ -216,7 +216,7 @@ describe('default page focused contracts', () => {
       '--page-reader-shell-max': '132rem',
       '--page-metadata-rail-width': 'clamp\\(15rem,\\s*18vw,\\s*17rem\\)',
       '--page-reader-column-gap': 'var\\(--wiki-space-6\\)',
-      '--page-reader-copy-max': '101\\.2ch'
+      '--page-reader-copy-max': 'var\\(--wiki-reader-copy-width,\\s*101ch\\)'
     })
     expectDeclarations(pageHeader, {
       width: 'min\\(100%,\\s*var\\(--page-reader-shell-max\\)\\)'
@@ -456,8 +456,8 @@ describe('default page focused contracts', () => {
     })
     expectDeclarations(contents, {
       'font-family': 'var\\(--wiki-font-reader\\)',
-      'font-size': '1\\.0625rem',
-      'line-height': '1\\.68',
+      'font-size': 'var\\(--wiki-reader-text-size,\\s*1\\.0625rem\\)',
+      'line-height': 'var\\(--wiki-reader-line-height,\\s*1\\.68\\)',
       'font-optical-sizing': 'auto',
       'font-synthesis': 'none'
     })

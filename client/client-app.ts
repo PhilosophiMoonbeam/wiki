@@ -1,3 +1,4 @@
+import { applyReaderLayout } from './helpers/reader-layout.ts'
 import { createApp, watch } from 'vue'
 import type { AsyncComponentLoader } from 'vue'
 import { createVuetify } from 'vuetify'
@@ -44,6 +45,7 @@ const registrations = [
   asyncComponent('NavFooter', () => import('./themes/default/components/nav-footer.vue'))
 ]
 
+applyReaderLayout(siteConfig.readerLayout)
 wikiStore.refreshAuth()
 watch(
   () => wikiStore.user.fontFamily,

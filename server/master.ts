@@ -33,6 +33,7 @@ import type { ProductMetadata } from '../shared/product.ts'
 import { isExternalRestPath, isInternalRestPath } from '../shared/api-access.ts'
 import { publicSiteBanner } from '../shared/site-banner.ts'
 import { normalizeAvailableEditors } from '../shared/page-editors.ts'
+import { normalizeReaderLayout } from '../shared/theme-policy.ts'
 import { normalizeThemeColors } from '../shared/theme-colors.ts'
 import pageHelper from './helpers/page.ts'
 import { resolveActiveBranding } from './helpers/site-logo-branding.ts'
@@ -93,6 +94,7 @@ interface MasterConfig extends Record<string, unknown> {
   title: string
   theming: {
     colors?: unknown
+    reading?: unknown
     darkMode: boolean
     theme: string
     tocPosition?: string
@@ -516,6 +518,7 @@ export default async function startMaster(wiki: HttpTransportRuntime): Promise<t
       darkMode: wiki.config.theming.darkMode,
       themeColors: normalizeThemeColors(wiki.config.theming.colors),
       tocPosition: wiki.config.theming.tocPosition || 'left',
+      readerLayout: normalizeReaderLayout(wiki.config.theming.reading),
       lang: wiki.config.lang.code,
       rtl: wiki.config.lang.rtl,
       company: wiki.config.company,

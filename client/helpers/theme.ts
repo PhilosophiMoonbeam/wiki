@@ -21,13 +21,13 @@ const relativeLuminance = (hex: string): number => {
   return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
 }
 
-const contrastRatio = (foreground: string, background: string): number => {
+export const contrastRatio = (foreground: string, background: string): number => {
   const lighter = Math.max(relativeLuminance(foreground), relativeLuminance(background))
   const darker = Math.min(relativeLuminance(foreground), relativeLuminance(background))
   return (lighter + 0.05) / (darker + 0.05)
 }
 
-const contrastForeground = (background: string): '#000000' | '#FFFFFF' => {
+export const contrastForeground = (background: string): '#000000' | '#FFFFFF' => {
   const luminance = relativeLuminance(background)
   const blackContrast = (luminance + 0.05) / 0.05
   const whiteContrast = 1.05 / (luminance + 0.05)

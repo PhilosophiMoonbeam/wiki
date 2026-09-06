@@ -1,431 +1,59 @@
-
 vi.mockModule('express', import.meta.url, () => {
   const routers = []
-
-  const expressMock = {
-    Router: () => {
-      const router = {
-        get: vi.fn(),
-        post: vi.fn(),
-        patch: vi.fn(),
-        put: vi.fn(),
-        delete: vi.fn(),
-        use: vi.fn()
-      }
-      routers.push(router)
-      return router
-    },
-    __routers: routers
-  }
-
-  return { default: expressMock, ...expressMock }
+  const mock = { Router: () => { const router = { get: vi.fn(), post: vi.fn(), put: vi.fn() }; routers.push(router); return router }, __routers: routers }
+  return { default: mock, ...mock }
 })
-
+const operations = { getConfig: vi.fn(), updateConfig: vi.fn() }
+const store = { inspect: vi.fn(), save: vi.fn(), initialize: vi.fn() }
+vi.mockModule('../../operations/theming.ts', import.meta.url, () => ({ default: operations }))
+vi.mockModule('../../operations/theme-administration.ts', import.meta.url, () => ({ getThemeAdministrationStore: () => store }))
 const express = await import('express')
-import { cloneThemeColors, DEFAULT_THEME_COLORS } from '../../../shared/theme-colors.ts'
-import { createDefaultThemePalette } from '../../../shared/theme-palettes.ts'
-
-describe('controllers/api theming endpoints', () => {
-  beforeEach(() => {
-    vi.resetModules()
-    express.__routers.length = 0
-
-    global.WIKI = {
-      auth: {
-        checkAccess: vi.fn()
-      },
-      config: {
-        theming: {
-          theme: 'default',
-          iconset: 'mdi',
-          darkMode: false,
-          colors: cloneThemeColors(DEFAULT_THEME_COLORS),
-          tocPosition: 'right',
-          injectCSS: '.contents{color:red}',
-          injectHead: '<meta name="test" content="head">',
-          injectBody: '<div>body</div>',
-          privateSetting: 'do-not-return'
-        }
-      },
-      models: {
-        knex: {}
-      },
-      configSvc: {
-        saveToDb: vi.fn()
-      }
-    }
-  })
-
-  const loadConfigHandler = async () => {
-    await vi.importFresh('../../controllers/api/theming.ts', import.meta.url)
-    const router = express.__routers[0]
-    return router.get.mock.calls.find(([path]) => path === '/config')[1]
-  }
-
-  const loadSaveHandler = async () => {
-    await vi.importFresh('../../controllers/api/theming.ts', import.meta.url)
-    const router = express.__routers[0]
-    return router.post.mock.calls.find(([path]) => path === '/config')[1]
-  }
-
-  it('registers config route', async () => {
-    const handler = await loadConfigHandler()
-
-    expect(typeof handler).toBe('function')
-  })
-
-  it('registers config save route', async () => {
-    const handler = await loadSaveHandler()
-
-    expect(typeof handler).toBe('function')
-  })
-
-
-  it('returns 403 for unauthorized config requests without JSON', async () => {
+let routes
+const response = () => { const res = { status: vi.fn(), json: vi.fn(), sendStatus: vi.fn(), set: vi.fn() }; res.status.mockReturnValue(res); return res }
+beforeEach(async () => {
+  express.__routers.length = 0
+  global.WIKI = { auth: { checkAccess: vi.fn().mockReturnValue(true) } }
+  await vi.importFresh('../../controllers/api/theming.ts', import.meta.url)
+  const router = express.__routers[0]
+  routes = Object.fromEntries(['get', 'put', 'post'].flatMap(method => router[method].mock.calls.map(([path, handler]) => [method + path, handler])))
+})
+describe('Theme configuration and reviewed workspace API', () => {
+  it('enforces permission before inspecting or mutating', async () => {
     global.WIKI.auth.checkAccess.mockReturnValue(false)
-    const handler = await loadConfigHandler()
-    const req = { user: { permissions: [] } }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), set: vi.fn() }
-
-    handler(req, res, vi.fn())
-
-    expect(res.sendStatus).toHaveBeenCalledWith(403)
-    expect(res.json).not.toHaveBeenCalled()
-  })
-
-  it('returns 403 for unauthorized config save requests without saving', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(false)
-    const handler = await loadSaveHandler()
-    const req = { user: { permissions: [] }, body: { theme: 'default' } }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(403)
-    expect(res.json).toHaveBeenCalledWith({ error: 'Forbidden' })
-    expect(global.WIKI.configSvc.saveToDb).not.toHaveBeenCalled()
-    expect(res.sendStatus).not.toHaveBeenCalled()
-  })
-
-  it('checks manage:theme and manage:system access', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await loadConfigHandler()
-    const req = { user: { permissions: ['manage:theme'] } }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), set: vi.fn() }
-
-    handler(req, res, vi.fn())
-
-    expect(global.WIKI.auth.checkAccess).toHaveBeenCalledWith(req.user, ['manage:theme', 'manage:system'])
-  })
-
-  it('checks manage:theme and manage:system access for config save', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await loadSaveHandler()
-    const req = {
-      user: { permissions: ['manage:theme'] },
-      body: {
-        theme: 'default',
-        iconset: 'mdi',
-        darkMode: false,
-        tocPosition: 'left'
-      }
+    for (const [key, handler] of Object.entries(routes)) {
+      const res = response()
+      await handler({ user: { id: 3 } }, res)
+      expect(key === 'get/config' ? res.sendStatus : res.status).toHaveBeenCalledWith(403)
     }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res, vi.fn())
-
-    expect(global.WIKI.auth.checkAccess).toHaveBeenCalledWith(req.user, ['manage:theme', 'manage:system'])
+    expect(store.inspect).not.toHaveBeenCalled(); expect(store.save).not.toHaveBeenCalled(); expect(operations.updateConfig).not.toHaveBeenCalled()
   })
-
-  it('rejects invalid theme config save payloads before persisting', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await loadSaveHandler()
-    const req = {
-      user: {},
-      body: {
-        theme: 'default',
-        iconset: 'mdi',
-        darkMode: 'false'
-      }
-    }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(400)
-    expect(res.json).toHaveBeenCalledWith({ error: 'Invalid theme config payload' })
-    expect(global.WIKI.configSvc.saveToDb).not.toHaveBeenCalled()
-  })
-
-
-  it('rejects malformed theme colors before persisting', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await loadSaveHandler()
-    const req = {
-      user: {},
-      body: {
-        theme: 'default',
-        iconset: 'mdi',
-        darkMode: false,
-        colors: {
-          ...cloneThemeColors(DEFAULT_THEME_COLORS),
-          light: { ...DEFAULT_THEME_COLORS.light, primary: 'blue' }
-        }
-      }
-    }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(400)
-    expect(res.json).toHaveBeenCalledWith({ error: 'Invalid theme color configuration' })
-    expect(global.WIKI.configSvc.saveToDb).not.toHaveBeenCalled()
-  })
-
-  it('returns exactly the expected config fields for authorized requests', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await loadConfigHandler()
-    const res = { sendStatus: vi.fn(), json: vi.fn(), set: vi.fn() }
-
-    handler({ user: {} }, res, vi.fn())
-
-    expect(res.sendStatus).not.toHaveBeenCalled()
+  it('passes the authenticated principal and immutable review inputs to the store', async () => {
+    const req = { user: { id: 7 }, body: { policy: { theme: 'default' }, fingerprint: 'review', reason: 'Improve reading' } }, res = response()
+    store.save.mockResolvedValue({ activation: 'applied' })
+    await routes['put/workspace'](req, res)
+    expect(store.save).toHaveBeenCalledWith(req.user, req.body)
     expect(res.set).toHaveBeenCalledWith('Cache-Control', 'no-store')
-    expect(res.json).toHaveBeenCalledWith({
-      theme: 'default',
-      iconset: 'mdi',
-      darkMode: false,
-      colors: cloneThemeColors(DEFAULT_THEME_COLORS),
-      palettes: [createDefaultThemePalette(DEFAULT_THEME_COLORS)],
-      activePaletteId: 'luminous-archive',
-      tocPosition: 'right',
-      injectCSS: expect.any(String),
-      injectHead: '<meta name="test" content="head">',
-      injectBody: '<div>body</div>'
-    })
-    expect(Object.keys(res.json.mock.calls[0][0]).sort()).toEqual([
-      'activePaletteId',
-      'colors',
-      'darkMode',
-      'iconset',
-      'injectBody',
-      'injectCSS',
-      'injectHead',
-      'palettes',
-      'theme',
-      'tocPosition'
-    ])
-    expect(res.json.mock.calls[0][0]).not.toHaveProperty('privateSetting')
+    expect(res.json).toHaveBeenCalledWith({ activation: 'applied' })
   })
-
-  it('allows manage:theme users when checkAccess returns true', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await loadConfigHandler()
-    const res = { sendStatus: vi.fn(), json: vi.fn(), set: vi.fn() }
-
-    handler({ user: { permissions: ['manage:theme'] } }, res, vi.fn())
-
-    expect(res.sendStatus).not.toHaveBeenCalled()
-    expect(res.json).toHaveBeenCalledTimes(1)
+  it('returns conflicts and redacts unexpected errors', async () => {
+    const req = { user: { id: 7 }, body: {} }
+    store.save.mockRejectedValue(Object.assign(new Error('Reload the saved review.'), { status: 409 }))
+    const conflict = response(); await routes['put/workspace'](req, conflict)
+    expect(conflict.status).toHaveBeenCalledWith(409); expect(conflict.json).toHaveBeenCalledWith({ error: 'Reload the saved review.' })
+    store.save.mockRejectedValue(new Error('postgres://private-database-detail'))
+    const failure = response(); await routes['put/workspace'](req, failure)
+    expect(failure.status).toHaveBeenCalledWith(500); expect(JSON.stringify(failure.json.mock.calls)).not.toContain('private-database-detail')
   })
-
-  it('defaults tocPosition to left when config value is falsy', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    global.WIKI.config.theming.tocPosition = ''
-    const handler = await loadConfigHandler()
-    const res = { sendStatus: vi.fn(), json: vi.fn(), set: vi.fn() }
-
-    handler({ user: {} }, res, vi.fn())
-
-    expect(res.json.mock.calls[0][0].tocPosition).toBe('left')
+  it('passes legacy writes through current authority checks', async () => {
+    const req = { user: { id: 7 }, body: { theme: 'default' } }, res = response()
+    operations.updateConfig.mockResolvedValue(undefined)
+    await routes['post/config'](req, res)
+    expect(operations.updateConfig).toHaveBeenCalledWith(req.body, req.user)
   })
-
-  it('beautifies injectCSS using the GraphQL read behavior', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    global.WIKI.config.theming.injectCSS = '.contents{color:red}.sidebar{display:none}'
-    const handler = await loadConfigHandler()
-    const res = { sendStatus: vi.fn(), json: vi.fn(), set: vi.fn() }
-
-    handler({ user: {} }, res, vi.fn())
-
-    expect(res.json.mock.calls[0][0].injectCSS).toContain('.contents')
-    expect(res.json.mock.calls[0][0].injectCSS).toContain('color: red')
-    expect(res.json.mock.calls[0][0].injectCSS).toContain('.sidebar')
-    expect(res.json.mock.calls[0][0].injectCSS).toContain('display: none')
-  })
-
-  it('returns injectHead and injectBody unchanged', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    global.WIKI.config.theming.injectHead = '<!-- head marker -->'
-    global.WIKI.config.theming.injectBody = '<section data-test="body"></section>'
-    const handler = await loadConfigHandler()
-    const res = { sendStatus: vi.fn(), json: vi.fn(), set: vi.fn() }
-
-    handler({ user: {} }, res, vi.fn())
-
-    expect(res.json.mock.calls[0][0].injectHead).toBe('<!-- head marker -->')
-    expect(res.json.mock.calls[0][0].injectBody).toBe('<section data-test="body"></section>')
-  })
-
-  it('saves theme config with GraphQL mutation parity', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await loadSaveHandler()
-    const req = {
-      user: { permissions: ['manage:theme'] },
-      body: {
-        theme: 'default',
-        iconset: 'fa',
-        darkMode: true,
-        colors: {
-          ...cloneThemeColors(DEFAULT_THEME_COLORS),
-          dark: { ...DEFAULT_THEME_COLORS.dark, primary: '#ABCDEF' }
-        },
-        tocPosition: '',
-        injectCSS: '.contents{color:red}',
-        injectHead: '<meta name="saved" content="head">',
-        injectBody: '<div>saved body</div>'
-      }
-    }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res, vi.fn())
-
-    expect(global.WIKI.config.theming).toMatchObject({
-      theme: 'default',
-      iconset: 'fa',
-      darkMode: true,
-      colors: expect.objectContaining({
-        dark: expect.objectContaining({ primary: '#ABCDEF' })
-      }),
-      tocPosition: 'left',
-      injectHead: '<meta name="saved" content="head">',
-      injectBody: '<div>saved body</div>',
-      privateSetting: 'do-not-return'
-    })
-    expect(global.WIKI.config.theming.injectCSS).toBe('.contents{color:red}')
-    expect(global.WIKI.configSvc.saveToDb).toHaveBeenCalledWith(['theming'])
-    expect(res.json).toHaveBeenCalledWith({ message: 'Theme config updated' })
-  })
-
-  it('persists multiple editable color themes and applies the selected theme colors', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await loadSaveHandler()
-    const customColors = cloneThemeColors(DEFAULT_THEME_COLORS)
-    customColors.light.primary = '#123456'
-    customColors.dark.primary = '#ABCDEF'
-    const palettes = [
-      createDefaultThemePalette(DEFAULT_THEME_COLORS),
-      { id: 'custom-theme-2', name: 'Boardroom dusk', colors: customColors }
-    ]
-    const req = {
-      user: { permissions: ['manage:theme'] },
-      body: {
-        theme: 'default',
-        iconset: 'mdi',
-        darkMode: true,
-        colors: cloneThemeColors(DEFAULT_THEME_COLORS),
-        palettes,
-        activePaletteId: 'custom-theme-2',
-        tocPosition: 'right',
-        injectCSS: '',
-        injectHead: '',
-        injectBody: ''
-      }
-    }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res, vi.fn())
-
-    expect(global.WIKI.config.theming.activePaletteId).toBe('custom-theme-2')
-    expect(global.WIKI.config.theming.palettes).toEqual(palettes)
-    expect(global.WIKI.config.theming.colors).toEqual(customColors)
-    expect(global.WIKI.configSvc.saveToDb).toHaveBeenCalledWith(['theming'])
-  })
-
-  it('defaults missing optional injection fields to empty strings on save', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await loadSaveHandler()
-    const req = {
-      user: {},
-      body: {
-        theme: 'default',
-        iconset: 'mdi',
-        darkMode: false,
-        tocPosition: 'right'
-      }
-    }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res, vi.fn())
-
-    expect(global.WIKI.config.theming.injectCSS).toBe('')
-    expect(global.WIKI.config.theming.injectHead).toBe('')
-    expect(global.WIKI.config.theming.injectBody).toBe('')
-    expect(res.json).toHaveBeenCalledWith({ message: 'Theme config updated' })
-  })
-
-  it('returns JSON errors when theme config save fails', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    global.WIKI.configSvc.saveToDb.mockRejectedValue(new Error('database unavailable'))
-    const handler = await loadSaveHandler()
-    const req = {
-      user: {},
-      body: {
-        theme: 'default',
-        iconset: 'mdi',
-        darkMode: false,
-        tocPosition: 'left',
-        injectCSS: '',
-        injectHead: '',
-        injectBody: ''
-      }
-    }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(500)
-    expect(res.json).toHaveBeenCalledWith({ error: 'database unavailable' })
-  })
-  it('is mounted by the API index router', async () => {
-    const modulePaths = [
-      '../../controllers/api/analytics.ts',
-      '../../controllers/api/assets.ts',
-      '../../controllers/api/auth.ts',
-      '../../controllers/api/comments.ts',
-      '../../controllers/api/content-extensions.ts',
-      '../../controllers/api/groups.ts',
-      '../../controllers/api/locales.ts',
-      '../../controllers/api/logging.ts',
-      '../../controllers/api/mail.ts',
-      '../../controllers/api/navigation.ts',
-      '../../controllers/api/pages.ts',
-      '../../controllers/api/rendering.ts',
-      '../../controllers/api/search.ts',
-      '../../controllers/api/site.ts',
-      '../../controllers/api/storage.ts',
-      '../../controllers/api/system.ts',
-      '../../controllers/api/theming.ts',
-      '../../controllers/api/users.ts',
-      '../../controllers/api/webhooks.ts'
-    ]
-    for (const modulePath of modulePaths) {
-      vi.mockModule(modulePath, import.meta.url, () => ({ default: {} }))
-    }
-
-    try {
-      expect(await vi.importFresh('../../controllers/api/index.ts', import.meta.url)).toBeDefined()
-      const apiRouter = express.__routers.find(router =>
-        router.use.mock.calls.some(([path]) => path === '/theming')
-      )
-
-      expect(apiRouter).toBeDefined()
-
-      expect(apiRouter.use).toHaveBeenCalledWith('/theming', expect.any(Object))
-    } finally {
-      for (const modulePath of modulePaths) {
-        vi.unmockModule(modulePath, import.meta.url)
-      }
-    }
+  it('supports current workspace inspection and runtime recovery', async () => {
+    const req = { user: { id: 7 }, body: { fingerprint: 'review' } }
+    store.inspect.mockResolvedValue({ fingerprint: 'review' }); store.initialize.mockResolvedValue({ activation: 'needs-attention' })
+    const get = response(); await routes['get/workspace'](req, get); expect(get.json).toHaveBeenCalledWith({ fingerprint: 'review' })
+    const activate = response(); await routes['post/workspace/activate'](req, activate); expect(store.initialize).toHaveBeenCalledWith(req.user, 'review')
   })
 })

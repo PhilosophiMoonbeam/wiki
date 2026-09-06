@@ -13,9 +13,9 @@ export default {
     config: themingOperations.getConfig
   },
   ThemingMutation: {
-    async setConfig (_obj: unknown, args: ResolverArgs) {
+    async setConfig (_obj: unknown, args: ResolverArgs, context: { req: { user: Express.User } }) {
       try {
-        await themingOperations.updateConfig(args)
+        await themingOperations.updateConfig(args, context.req.user)
         return { responseResult: graphHelper.generateSuccess('Theme config updated') }
       } catch (err: unknown) {
         return graphHelper.generateError(err)

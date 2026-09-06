@@ -1855,7 +1855,7 @@ export default defineComponent({
   --page-reader-shell-max: 132rem;
   --page-metadata-rail-width: clamp(15rem, 18vw, 17rem);
   --page-reader-column-gap: var(--wiki-space-6);
-  --page-reader-copy-max: 101.2ch;
+  --page-reader-copy-max: var(--wiki-reader-copy-width, 101ch);
 
   font-family: var(--wiki-font-body);
 }
@@ -2613,8 +2613,8 @@ export default defineComponent({
 .wiki-page .v-main .contents {
   color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 88%, transparent);
   font-family: var(--wiki-font-reader);
-  font-size: 1.0625rem;
-  line-height: 1.68;
+  font-size: var(--wiki-reader-text-size, 1.0625rem);
+  line-height: var(--wiki-reader-line-height, 1.68);
   font-optical-sizing: auto;
   font-synthesis: none;
   text-wrap: pretty;
@@ -3886,7 +3886,7 @@ export default defineComponent({
 
 .wiki-page.wiki-page--reading {
   --page-reader-shell-max: 64rem;
-  --page-reader-copy-max: 72ch;
+  --page-reader-copy-max: min(72ch, var(--wiki-reader-copy-width, 101ch));
 
   .page-col-sd,
   .page-mobile-tools,
