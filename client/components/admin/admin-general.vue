@@ -244,14 +244,9 @@
                   v-toolbar-title.text-body-large Features
                 v-card-text
 
-                  v-switch.mt-0(
-                    inset
-                    label='Comments'
-                    color='indigo'
-                    v-model='config.featurePageComments'
-                    persistent-hint
-                    hint='Allow users to leave comments on pages.'
-                    )
+                  h3.text-body-large.mb-2 Page discussions
+                  p.text-body-medium.text-medium-emphasis.mb-4 Choose a provider, manage posting policy and review comments in the discussion workspace.
+                  v-btn(to='/comments', variant='tonal', append-icon='mdi-arrow-right') Manage discussions
 
               v-card#general-urls.mt-5.animated.fadeInUp.wait-p6s
                 v-toolbar(color='primary', density="compact", flat)
@@ -541,7 +536,6 @@ export default {
         banner: _.get(this.config, 'banner', { isEnabled: false, title: '', content: '' }),
         pageExtensions: _.get(this.config, 'pageExtensions', ''),
         featurePageRatings: _.get(this.config, 'featurePageRatings', false),
-        featurePageComments: _.get(this.config, 'featurePageComments', false),
         featurePersonalWikis: _.get(this.config, 'featurePersonalWikis', false),
         editFab: _.get(this.config, 'editFab', false),
         editMenuBar: _.get(this.config, 'editMenuBar', false),

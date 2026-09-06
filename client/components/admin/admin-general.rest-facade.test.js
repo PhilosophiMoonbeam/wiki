@@ -433,6 +433,7 @@ describe('admin-general site REST facade migration guard', () => {
     expect(payload).not.toHaveProperty('serverOnlyRevision')
     expect(payload).not.toHaveProperty('featureTinyPNG')
     expect(payload).not.toHaveProperty('logoUrl')
+    expect(payload).not.toHaveProperty('featurePageComments')
     expect(viewModel.persistedConfig).toEqual(payload)
     expect(viewModel.persistedConfig).not.toBe(payload)
     expect(viewModel.dirty).toBe(false)
