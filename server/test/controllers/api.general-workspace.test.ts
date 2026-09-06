@@ -1,0 +1,62 @@
+import { afterAll, beforeEach, describe, expect, it, vi } from '../bun-test.mts'
+import { configureTransportRuntime } from '../../controllers/_types.ts'
+const router = { get: vi.fn(), put: vi.fn(), post: vi.fn() },
+  store = { inspect: vi.fn(), save: vi.fn(), initialize: vi.fn() },
+  checkAccess = vi.fn()
+vi.mockModule('express', import.meta.url, () => ({ default: { Router: () => router } }))
+vi.mockModule('../../operations/site.ts', import.meta.url, () => ({ default: {} }))
+vi.mockModule('../../operations/general-administration.ts', import.meta.url, () => ({ getGeneralAdministrationStore: () => store }))
+await vi.importFresh('../../controllers/api/site.ts', import.meta.url)
+const read = router.get.mock.calls.find(([path]) => path === '/general')![1]!,
+  save = router.put.mock.calls.find(([path]) => path === '/general')![1]!,
+  initialize = router.post.mock.calls.find(([path]) => path === '/general/activate')![1]!
+const response = () => {
+  const res = { status: vi.fn(), set: vi.fn(), json: vi.fn() }
+  res.status.mockReturnValue(res)
+  return res
+}
+beforeEach(() => {
+  checkAccess.mockReturnValue(true)
+  for (const method of Object.values(store)) method.mockReset().mockResolvedValue({})
+  configureTransportRuntime({ auth: { checkAccess } })
+})
+afterAll(() => configureTransportRuntime({}))
+describe('General workspace transport', () => {
+  it('requires system access before reads, writes and runtime retries', async () => {
+    checkAccess.mockReturnValue(false)
+    for (const handler of [read, save, initialize]) {
+      const res = response()
+      await handler({}, res)
+      expect(res.status).toHaveBeenCalledWith(403)
+    }
+    for (const method of Object.values(store)) expect(method).not.toHaveBeenCalled()
+  })
+  it('forwards the exact policy review, actor and change reason without caching responses', async () => {
+    const user = { id: 1, authVersion: 2 },
+      body = { policy: { title: 'New name' }, fingerprint: 'review', reason: 'Update workspace identity' },
+      res = response()
+    await read({ user }, res)
+    expect(store.inspect).toHaveBeenCalledWith(user)
+    await save({ user, body }, res)
+    expect(store.save).toHaveBeenCalledWith(user, body)
+    await initialize({ user, body }, res)
+    expect(store.initialize).toHaveBeenCalledWith(user, 'review')
+    expect(res.set).toHaveBeenCalledWith('Cache-Control', 'no-store')
+  })
+  it('preserves expected authority, validation and conflict errors', async () => {
+    for (const status of [400, 403, 409]) {
+      store.save.mockRejectedValue(Object.assign(new Error('Reload policy'), { status }))
+      const res = response()
+      await save({ user: {}, body: {} }, res)
+      expect(res.status).toHaveBeenCalledWith(status)
+      expect(res.json).toHaveBeenCalledWith({ error: 'Reload policy' })
+    }
+  })
+  it('does not expose internal database errors', async () => {
+    store.inspect.mockRejectedValue(new Error('private database configuration'))
+    const res = response()
+    await read({ user: {} }, res)
+    expect(res.status).toHaveBeenCalledWith(500)
+    expect(res.json).toHaveBeenCalledWith({ error: 'General administration is temporarily unavailable.' })
+  })
+})

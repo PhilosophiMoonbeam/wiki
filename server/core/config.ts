@@ -108,6 +108,17 @@ export function normalizeLegacyProductDefaults(config: Record<string, unknown>, 
   return changed
 }
 
+// Persisted arrays are complete values: defaults must not resurrect removed entries.
+const mergeSavedConfiguration = (saved: unknown, fallback: unknown): unknown => {
+  if (saved === undefined) return _.cloneDeep(fallback)
+  if (!_.isPlainObject(saved)) return _.cloneDeep(saved)
+  const source = saved as Record<string, unknown>
+  const defaults = _.isPlainObject(fallback) ? fallback as Record<string, unknown> : {}
+  return Object.fromEntries([...new Set([...Object.keys(defaults), ...Object.keys(source)])]
+    .filter(key => !['__proto__', 'constructor', 'prototype'].includes(key))
+    .map(key => [key, mergeSavedConfiguration(source[key], defaults[key])]))
+}
+
 const configService: ConfigService = {
   init() {
     const wiki = getWiki()
@@ -173,7 +184,7 @@ const configService: ConfigService = {
     const conf = await wiki.models.settings.getConfig()
     if (conf) {
       const canonicalConfig = wiki.config
-      const reloadedConfig = _.defaultsDeep({}, conf, canonicalConfig) as AppConfig
+      const reloadedConfig = mergeSavedConfiguration(conf, canonicalConfig) as AppConfig
       Object.assign(canonicalConfig, reloadedConfig)
       const migratedKeys = normalizeLegacyProductDefaults(canonicalConfig, wiki.product.name)
       if (migratedKeys.length > 0) await this.saveToDb(migratedKeys, false)

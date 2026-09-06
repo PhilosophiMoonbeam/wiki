@@ -2,6 +2,7 @@ import express from 'express'
 import { type Request, type Response, getWikiAuth } from '../_types.ts'
 
 import siteOperations from '../../operations/site.ts'
+import { getGeneralAdministrationStore } from '../../operations/general-administration.ts'
 import { getSecurityAdministrationStore } from '../../operations/security-administration.ts'
 import { errorStatus, objectValue } from '../_types.ts'
 
@@ -81,6 +82,46 @@ router.post('/security/activate', async (req, res) => {
     res.json(await getSecurityAdministrationStore().initialize(req.user, objectValue(req.body, 'fingerprint')))
   } catch (error) {
     securityError(res, error)
+  }
+})
+const generalError = (res: Response, error: unknown) => {
+  const status = errorStatus(error),
+    expected = status && [400, 403, 409].includes(status)
+  res
+    .status(expected ? status : 500)
+    .json({ error: expected && error instanceof Error ? error.message : 'General administration is temporarily unavailable.' })
+}
+router.get('/general', async (req, res) => {
+  if (!requireSystemAccess(req, res)) return
+  res.set('Cache-Control', 'no-store')
+  try {
+    res.json(await getGeneralAdministrationStore().inspect(req.user))
+  } catch (error) {
+    generalError(res, error)
+  }
+})
+router.put('/general', async (req, res) => {
+  if (!requireSystemAccess(req, res)) return
+  res.set('Cache-Control', 'no-store')
+  try {
+    res.json(
+      await getGeneralAdministrationStore().save(req.user, {
+        policy: objectValue(req.body, 'policy'),
+        fingerprint: objectValue(req.body, 'fingerprint'),
+        reason: objectValue(req.body, 'reason')
+      })
+    )
+  } catch (error) {
+    generalError(res, error)
+  }
+})
+router.post('/general/activate', async (req, res) => {
+  if (!requireSystemAccess(req, res)) return
+  res.set('Cache-Control', 'no-store')
+  try {
+    res.json(await getGeneralAdministrationStore().initialize(req.user, objectValue(req.body, 'fingerprint')))
+  } catch (error) {
+    generalError(res, error)
   }
 })
 export default router

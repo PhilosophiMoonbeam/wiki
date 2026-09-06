@@ -21,7 +21,9 @@ describe('distributed config reload', () => {
       security: { securityTrustProxy: !securityTrustProxy },
       port: 3000,
       title: 'Before reload',
-      auth: { audience: 'old-audience' }
+      auth: { audience: 'old-audience' },
+      pageExtensions: ['md', 'html', 'txt'],
+      seo: { robots: ['index', 'follow'], description: 'Keep missing defaults' }
     }
     const appLocals = { config: canonicalConfig }
     const setAppSetting = vi.fn()
@@ -32,7 +34,9 @@ describe('distributed config reload', () => {
       security: { securityTrustProxy },
       port: 4000,
       title: 'After reload',
-      auth: { audience: 'new-audience' }
+      auth: { audience: 'new-audience' },
+      pageExtensions: ['md'],
+      seo: { robots: [] }
     })
 
     const auth = {
@@ -75,7 +79,9 @@ describe('distributed config reload', () => {
       flags: { sqllog: true },
       security: { securityTrustProxy },
       port: 4000,
-      title: 'After reload'
+      title: 'After reload',
+      pageExtensions: ['md'],
+      seo: { robots: [], description: 'Keep missing defaults' }
     })
     expect(knexConfig.debug).toBe(true)
     expect(setAppSetting.mock.calls).toEqual([['trust proxy', expectedTrustProxy]])

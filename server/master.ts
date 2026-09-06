@@ -31,7 +31,7 @@ import { configureTransportRuntime } from './controllers/_types.ts'
 import apiV1Controller from './controllers/api-v1/index.ts'
 import type { ProductMetadata } from '../shared/product.ts'
 import { isExternalRestPath, isInternalRestPath } from '../shared/api-access.ts'
-import { siteBannerOrDefault } from '../shared/site-banner.ts'
+import { publicSiteBanner } from '../shared/site-banner.ts'
 import { normalizeAvailableEditors } from '../shared/page-editors.ts'
 import { normalizeThemeColors } from '../shared/theme-colors.ts'
 import pageHelper from './helpers/page.ts'
@@ -521,7 +521,7 @@ export default async function startMaster(wiki: HttpTransportRuntime): Promise<t
       company: wiki.config.company,
       contentLicense: wiki.config.contentLicense,
       footerOverride: wiki.config.footerOverride,
-      banner: siteBannerOrDefault(wiki.config.banner),
+      banner: publicSiteBanner(wiki.config.banner),
       logoUrl: branding.logoUrl,
       logoEffect: branding.logoEffect,
       availableEditors: normalizeAvailableEditors(wiki.config.editors?.available),

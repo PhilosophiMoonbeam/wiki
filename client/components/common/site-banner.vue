@@ -2,11 +2,12 @@
   <aside
     v-if="isVisible"
     class="site-banner"
+    :class="`site-banner--${banner.tone || 'warning'}`"
     role="note"
     :aria-labelledby="banner.title ? bannerTitleId : undefined"
     :aria-label="banner.title ? undefined : 'Site notice'"
   >
-    <v-icon class="site-banner__icon" aria-hidden="true">mdi-alert-decagram-outline</v-icon>
+    <v-icon class="site-banner__icon" aria-hidden="true">{{ banner.tone === 'info' ? 'mdi-information-outline' : banner.tone === 'critical' ? 'mdi-alert-octagon-outline' : 'mdi-alert-decagram-outline' }}</v-icon>
     <div class="site-banner__body">
       <h2 v-if="banner.title" :id="bannerTitleId" class="site-banner__title">{{ banner.title }}</h2>
       <div v-if="banner.content" class="site-banner__content" v-html="renderedContent" />
@@ -15,30 +16,46 @@
 </template>
 
 <script setup lang="ts">
-import { computed, useId } from 'vue'
-import type { SiteBannerConfig } from '../../../shared/site-banner.ts'
+import { computed, onMounted, onBeforeUnmount, ref, watch, useId } from 'vue'
+import { siteBannerState, type SiteBannerConfig } from '../../../shared/site-banner.ts'
 import { renderSafeMarkdown } from '../../helpers/safe-markdown.ts'
 
-const { banner } = defineProps<{ banner: SiteBannerConfig }>()
+const { banner, preview = false } = defineProps<{ banner: SiteBannerConfig; preview?: boolean }>()
 const bannerTitleId = useId()
 
-const isVisible = computed(() => banner.isEnabled && Boolean(banner.title || banner.content))
+const now = ref(Date.now())
+let expiryTimer: number | undefined
+let mounted = false
+const refreshTime = () => {
+  if (!mounted) return
+  now.value = Date.now()
+  window.clearTimeout(expiryTimer)
+  const end = banner.endsAt ? Date.parse(banner.endsAt) : NaN
+  if (Number.isFinite(end) && end > now.value) expiryTimer = window.setTimeout(refreshTime, Math.min(end - now.value, 2147483647))
+}
+watch(() => banner.endsAt, refreshTime)
+onMounted(() => { mounted = true; refreshTime(); document.addEventListener('visibilitychange', refreshTime) })
+onBeforeUnmount(() => { mounted = false; window.clearTimeout(expiryTimer); document.removeEventListener('visibilitychange', refreshTime) })
+const isVisible = computed(() => preview ? banner.isEnabled && Boolean(banner.title || banner.content) : siteBannerState(banner, now.value) === 'visible')
 const renderedContent = computed(() => renderSafeMarkdown(banner.content)
   .replace(/<h[1-6](\s[^>]*)?>/g, '<h3$1>')
   .replace(/<\/h[1-6]>/g, '</h3>'))
 </script>
 <style scoped>
 .site-banner {
+  --notice-tone: var(--v-theme-warning);
   display: flex;
   gap: 1rem;
   margin-block-end: 1.25rem;
   padding: 1rem 1.25rem;
-  border: 1px solid color-mix(in srgb, rgb(var(--v-theme-warning)) 42%, transparent);
+  border: 1px solid color-mix(in srgb, rgb(var(--notice-tone)) 42%, transparent);
   border-inline-start-width: .35rem;
   border-radius: var(--wiki-control-radius);
   color: rgb(var(--v-theme-on-surface));
-  background: color-mix(in srgb, rgb(var(--v-theme-warning)) 12%, transparent);
+  background: color-mix(in srgb, rgb(var(--notice-tone)) 12%, transparent);
 }
+.site-banner--info { --notice-tone: var(--v-theme-info); }
+.site-banner--critical { --notice-tone: var(--v-theme-error); }
 .site-banner__icon {
   flex: 0 0 auto;
   margin-block-start: .1rem;
@@ -76,7 +93,7 @@ const renderedContent = computed(() => renderSafeMarkdown(banner.content)
 }
 .site-banner__content :deep(blockquote) {
   padding-inline: .85rem;
-  border-inline-start: .2rem solid color-mix(in srgb, rgb(var(--v-theme-warning)) 60%, transparent);
+  border-inline-start: .2rem solid color-mix(in srgb, rgb(var(--notice-tone)) 60%, transparent);
   color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 82%, transparent);
 }
 .site-banner__content :deep(a) {

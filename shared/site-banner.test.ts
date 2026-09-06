@@ -44,3 +44,19 @@ describe('site banner configuration', () => {
     })
   })
 })
+
+describe('announcement publication window', () => {
+  it('preserves legacy banners while validating schedule boundaries', async () => {
+    const { siteBannerState, publicSiteBanner } = await import('./site-banner.ts')
+    const banner = { isEnabled: true, title: 'Maintenance', content: 'Scheduled work', tone: 'info' as const, startsAt: '2026-09-07T10:00:00Z', endsAt: '2026-09-07T11:00:00Z' }
+    expect(validateSiteBanner(banner).ok).toBe(true)
+    expect(siteBannerState(banner, Date.parse(banner.startsAt) - 1)).toBe('scheduled')
+    expect(publicSiteBanner(banner, Date.parse(banner.startsAt) - 1)).toEqual({ isEnabled: false, title: '', content: '' })
+    expect(publicSiteBanner(banner, Date.parse(banner.startsAt))).toEqual(banner)
+    expect(siteBannerState(banner, Date.parse(banner.endsAt))).toBe('ended')
+    expect(publicSiteBanner(banner, Date.parse(banner.endsAt))).toEqual({ isEnabled: false, title: '', content: '' })
+    for (const patch of [{ startsAt: '2026-02-30T10:00:00Z' }, { endsAt: banner.startsAt }, { startsAt: 'tomorrow' }, { startsAt: 123 }, { tone: 'urgent' }]) {
+      expect(validateSiteBanner({ ...banner, ...patch }).ok).toBe(false)
+    }
+  })
+})

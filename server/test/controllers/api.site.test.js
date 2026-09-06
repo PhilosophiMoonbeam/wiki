@@ -122,8 +122,8 @@ describe('controllers/api site endpoints', () => {
   it('registers site config routes', async () => {
     const router = await loadRouter()
 
-    expect(router.get.mock.calls.map(([path]) => path)).toEqual(['/config', '/security'])
-    expect(router.put.mock.calls.map(([path]) => path)).toEqual(['/config', '/security'])
+    expect(router.get.mock.calls.map(([path]) => path)).toEqual(['/config', '/security', '/general'])
+    expect(router.put.mock.calls.map(([path]) => path)).toEqual(['/config', '/security', '/general'])
   })
 
   it.each([

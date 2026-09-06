@@ -115,7 +115,7 @@
                 v-icon.mr-2(size="small") mdi-pencil
                 span.text-none {{$t(`common:actions.edit`)}}
               v-btn(
-                v-if='editShortcutsObj.editMenuExternalBtn'
+                v-if='editShortcutsObj.editMenuExternalBtn && editMenuExternalUrl'
                 :href='editMenuExternalUrl'
                 target='_blank'
                 rel='noopener'
@@ -799,6 +799,7 @@ import i18next from 'i18next'
 import { useGoTo } from 'vuetify'
 import AsyncState from '@/components/common/async-state.vue'
 import StatusIndicator from '@/components/common/status-indicator.vue'
+import { externalSourceUrl } from '../../../../shared/general-policy.ts'
 import SiteBanner from '@/components/common/site-banner.vue'
 import NavSidebar, { type SidebarItem } from './nav-sidebar.vue'
 import type { Environment as PrismEnvironment } from 'prismjs'
@@ -1195,7 +1196,7 @@ export default defineComponent({
     },
     editMenuExternalUrl () {
       if (this.editShortcutsObj.editMenuBar && this.editShortcutsObj.editMenuExternalBtn) {
-        return this.editShortcutsObj.editMenuExternalUrl.replace('{filename}', this.filename)
+        return externalSourceUrl(this.editShortcutsObj.editMenuExternalUrl, this.filename)
       } else {
         return ''
       }

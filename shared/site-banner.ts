@@ -5,6 +5,9 @@ export type SiteBannerConfig = {
   isEnabled: boolean
   title: string
   content: string
+  tone?: 'info' | 'warning' | 'critical'
+  startsAt?: string | null
+  endsAt?: string | null
 }
 
 type SiteBannerValidation =
@@ -14,7 +17,10 @@ type SiteBannerValidation =
 const supportedFields: Record<string, true> = {
   isEnabled: true,
   title: true,
-  content: true
+  content: true,
+  tone: true,
+  startsAt: true,
+  endsAt: true
 }
 
 export const disabledSiteBanner = (): SiteBannerConfig => ({
@@ -59,12 +65,28 @@ export const validateSiteBanner = (input: unknown): SiteBannerValidation => {
     return { ok: false, message: 'An enabled site banner must have a title or content.' }
   }
 
+  if (banner.tone !== undefined && (typeof banner.tone !== 'string' || !['info', 'warning', 'critical'].includes(banner.tone))) {
+    return { ok: false, message: 'Choose an announcement tone.' }
+  }
+  for (const key of ['startsAt', 'endsAt']) {
+    const date = banner[key]
+    if (date !== undefined && date !== null && (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().replace('.000Z', 'Z') !== date.replace('.000Z', 'Z'))) {
+      return { ok: false, message: 'Announcement schedule must use valid UTC dates.' }
+    }
+  }
+  if (typeof banner.startsAt === 'string' && typeof banner.endsAt === 'string' && Date.parse(banner.endsAt) <= Date.parse(banner.startsAt)) {
+    return { ok: false, message: 'Announcement end must be after its start.' }
+  }
+
   return {
     ok: true,
     value: {
       isEnabled: banner.isEnabled,
       title,
-      content
+      content,
+      ...(banner.tone === undefined ? {} : { tone: banner.tone as 'info' | 'warning' | 'critical' }),
+      ...(banner.startsAt === undefined ? {} : { startsAt: banner.startsAt as string | null }),
+      ...(banner.endsAt === undefined ? {} : { endsAt: banner.endsAt as string | null })
     }
   }
 }
@@ -72,4 +94,18 @@ export const validateSiteBanner = (input: unknown): SiteBannerValidation => {
 export const siteBannerOrDefault = (input: unknown): SiteBannerConfig => {
   const result = validateSiteBanner(input)
   return result.ok ? result.value : disabledSiteBanner()
+}
+
+
+export const siteBannerState = (banner: SiteBannerConfig, now = Date.now()): 'disabled' | 'scheduled' | 'ended' | 'visible' => {
+  if (!banner.isEnabled || !(banner.title || banner.content)) return 'disabled'
+  if (banner.endsAt && Date.parse(banner.endsAt) <= now) return 'ended'
+  if (banner.startsAt && Date.parse(banner.startsAt) > now) return 'scheduled'
+  return 'visible'
+}
+
+// Scheduled drafts are not exposed in the reader bootstrap before publication.
+export const publicSiteBanner = (input: unknown, now = Date.now()): SiteBannerConfig => {
+  const banner = siteBannerOrDefault(input)
+  return siteBannerState(banner, now) === 'visible' ? banner : disabledSiteBanner()
 }
