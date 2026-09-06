@@ -21,8 +21,7 @@ router.get('/config', async (req, res) => {
   try {
     res.json(siteOperations.getConfig())
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: message || 'Site configuration fetch failed' })
+    res.status(500).json({ error: 'Site configuration fetch failed' })
   }
 })
 
@@ -37,7 +36,7 @@ router.put('/config', async (req, res) => {
     res.json({ message: 'Site configuration updated successfully' })
   } catch (err) {
     const status = typeof err === 'object' && err !== null && 'status' in err && typeof err.status === 'number' ? err.status : 500
-    const message = err instanceof Error ? err.message : String(err)
+    const message = [400, 403, 409].includes(status) && err instanceof Error ? err.message : 'Site configuration update failed'
     const code = err instanceof Error && err.name === 'MANAGED_LOGO_CONFLICT' ? 'MANAGED_LOGO_CONFLICT' : null
     res.status(status).json(code === null ? { error: message || 'Site configuration update failed' } : { error: message, code })
   }

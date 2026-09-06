@@ -15,13 +15,7 @@
 <script lang='ts'>
 import { defineComponent } from 'vue'
 import { wikiStore } from '@/store/index.ts'
-import MarkdownIt from 'markdown-it'
-
-const md = new MarkdownIt({
-  html: false,
-  breaks: false,
-  linkify: true
-})
+import { renderFooterMarkdown } from '../../../helpers/footer-markdown.ts'
 
 export default defineComponent({
   props: {
@@ -54,7 +48,7 @@ export default defineComponent({
     },
     footerOverrideRender () {
       if (!this.footerOverride) { return '' }
-      return md.renderInline(this.footerOverride)
+      return renderFooterMarkdown(this.footerOverride)
     },
     bgColor() {
       if (!this.$vuetify.theme.current.dark) {

@@ -156,4 +156,7 @@ export const validateGeneralPolicy = (input: unknown): { ok: true; value: Genera
   return issues.length ? { ok: false, issues } : { ok: true, value: out }
 }
 export const generalChangedFields = (before: GeneralPolicy, after: GeneralPolicy): Array<keyof GeneralPolicy> =>
-  (Object.keys(generalPolicyDefaults) as Array<keyof GeneralPolicy>).filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+  (Object.keys(generalPolicyDefaults) as Array<keyof GeneralPolicy>).filter(key => {
+    const normalize = (value: GeneralPolicy[keyof GeneralPolicy]) => Array.isArray(value) ? [...new Set(value)].sort() : value
+    return JSON.stringify(normalize(before[key])) !== JSON.stringify(normalize(after[key]))
+  })

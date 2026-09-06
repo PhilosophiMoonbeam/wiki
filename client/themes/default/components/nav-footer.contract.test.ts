@@ -31,7 +31,7 @@ describe('global footer edge and attribution contract', () => {
     expect(template).toContain(".footer-attribution__legal(v-else-if='company && company.length > 0 && contentLicense !== ``')")
     expect(template).toContain("$t('common:footer.copyright'")
     expect(template).toContain("$t('common:footer.license'")
-    expect(script).toContain('return md.renderInline(this.footerOverride)')
+    expect(script).toContain('return renderFooterMarkdown(this.footerOverride)')
   })
 
   test('keeps project source attribution accessible without the Wiki.js derivation notice', () => {

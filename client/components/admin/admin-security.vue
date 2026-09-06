@@ -594,7 +594,7 @@
       max-width="800"
       :fullscreen="$vuetify.display.smAndDown"
       aria-labelledby="security-review-title"
-      ><v-card class="security-review"
+      ><v-card v-if="reviewed && saved" class="security-review"
         ><div class="security-review-heading">
           <span class="security-kicker">A deliberate change</span>
           <h2 id="security-review-title">Review security policy</h2>

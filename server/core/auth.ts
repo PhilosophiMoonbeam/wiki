@@ -232,6 +232,7 @@ interface AuthService {
   revokeUserTokens(request: RevokeRequest): void
   strategies: Record<string, ActiveStrategy>
   jwtAudience: string | null
+  strategyHost: string | null
   strategyStatus: Record<string, AuthenticationRuntime>
   subscribeToEvents(): void
   validApiKeys: number[]
@@ -347,6 +348,7 @@ const auth: AuthService = {
   strategies: {},
   strategyStatus: {},
   jwtAudience: null,
+  strategyHost: null,
   passport,
   guest: { cacheExpiration: DateTime.utc().minus({ days: 1 }) },
   groups: {},
@@ -377,6 +379,8 @@ const auth: AuthService = {
         this.strategies = {}
         this.strategyStatus = {}
         this.jwtAudience = null
+        this.strategyHost = null
+        const activationHost = wiki.config.host
         for (const strategyName of getPassportStrategyNames()) {
           if (strategyName !== 'session') passport.unuse(strategyName)
         }
@@ -409,7 +413,7 @@ const auth: AuthService = {
             const imported: unknown = await import(`../modules/authentication/${strategyRecord.strategyKey}/authentication.ts`)
             if (!isStrategyModule(imported)) throw new Error(`Invalid authentication strategy module: ${strategyRecord.strategyKey}`)
             const strategy = imported.default
-            const callbackURL = `${wiki.config.host}/login/${strategyRecord.key}/callback`
+            const callbackURL = `${activationHost}/login/${strategyRecord.key}/callback`
             const config: StrategyConfig = {
               ...strategyRecord.config,
               audience: strategyRecord.config.audience ?? wiki.config.auth.audience,
@@ -430,6 +434,7 @@ const auth: AuthService = {
             wiki.logger.error(error)
           }
         }
+        this.strategyHost = activationHost
       } catch (error: unknown) {
         wiki.logger.error('Failed to initialize Authentication Strategies: [ ERROR ]')
         wiki.logger.error(error)

@@ -1,9 +1,10 @@
+import { patchLegacyGeneralConfiguration } from './general-administration.ts'
 import { legacySecurityKeys, patchLegacySecurityConfiguration } from './security-administration.ts'
 import type { PagePrincipal } from '../helpers/page-access.ts'
 import { patchSiteFeatures } from './discussion-settings.ts'
 import type { Knex } from 'knex'
 import _ from 'lodash'
-import { siteBannerOrDefault, validateSiteBanner } from '../../shared/site-banner.ts'
+import { siteBannerOrDefault } from '../../shared/site-banner.ts'
 import { normalizeAvailableEditors, validateAvailableEditors } from '../../shared/page-editors.ts'
 
 import { updateEditorAvailability } from './editors.ts'
@@ -11,7 +12,6 @@ import errors from './errors.ts'
 
 const { ApplicationError } = errors
 
-const saveKeys = ['host', 'title', 'company', 'contentLicense', 'footerOverride', 'banner', 'seo', 'pageExtensions', 'editShortcuts']
 
 interface SiteConfig extends Record<string, unknown> {
   banner?: unknown
@@ -32,7 +32,6 @@ interface SiteConfig extends Record<string, unknown> {
 }
 
 const config = WIKI.config as SiteConfig
-const configService = WIKI.configSvc as { saveToDb(keys: string[]): Promise<unknown> }
 const rejectManagedLogoWrite = async (args: Record<string, unknown>): Promise<void> => {
   if (!Object.hasOwn(args, 'logoUrl')) return
   const runtime = WIKI as unknown as { models?: { knex?: Knex } }
@@ -85,72 +84,21 @@ const updateConfig = async (input: unknown, requester?: PagePrincipal): Promise<
     await patchLegacySecurityConfiguration(requester, args)
     return
   }
-  const featurePatch = Object.fromEntries(
-    ['featurePageRatings', 'featurePageComments', 'featurePersonalWikis'].filter(key => Object.hasOwn(args, key)).map(key => [key, args[key]])
-  )
-  if (Object.values(featurePatch).some(value => typeof value !== 'boolean'))
-    throw new ApplicationError('Feature availability must use boolean values.', { status: 400 })
   await rejectManagedLogoWrite(args)
-  const requestedHost = Object.hasOwn(args, 'host') ? _.trim(args.host as string).replace(/\/$/, '') : null
-  const currentHostProtocol = URL.canParse(config.host) ? new URL(config.host).protocol : null
-  const requestedHostProtocol = requestedHost !== null && URL.canParse(requestedHost) ? new URL(requestedHost).protocol : null
-  if (requestedHost !== null && currentHostProtocol === 'https:' && requestedHostProtocol !== 'https:') {
-    throw new ApplicationError('Changing the site host from HTTPS to a non-HTTPS URL cannot be applied live; restart with the new host configuration.', {
-      code: 'SITE_HOST_PROTOCOL_CONFLICT',
-      status: 409
-    })
+  if (Object.hasOwn(args, 'logoUrl')) throw new ApplicationError('Use the dedicated logo API to publish a workspace logo.', { status: 400 })
+  if (Object.hasOwn(args, 'availableEditors')) {
+    if (Object.keys(args).length !== 1) throw new ApplicationError('Save editor availability separately from other workspace settings.', { status: 400 })
+    const validation = validateAvailableEditors(args.availableEditors)
+    if (!validation.ok) throw new ApplicationError(validation.message, { status: 400 })
+    await updateEditorAvailability(validation.value)
+    return
   }
-  const hasAvailableEditors = Object.hasOwn(args, 'availableEditors')
-  const availableEditorsValidation = hasAvailableEditors ? validateAvailableEditors(args.availableEditors) : null
-  if (availableEditorsValidation && !availableEditorsValidation.ok) {
-    throw new ApplicationError(availableEditorsValidation.message, { code: 'INVALID_EDITOR_CONFIGURATION' })
+  if (Object.hasOwn(args, 'featurePageComments')) {
+    if (Object.keys(args).length !== 1 || typeof args.featurePageComments !== 'boolean') throw new ApplicationError('Save discussion availability separately with a boolean value.', { status: 400 })
+    await patchSiteFeatures({ featurePageComments: args.featurePageComments })
+    return
   }
-  if (Object.hasOwn(args, 'banner')) {
-    const result = validateSiteBanner(args.banner)
-    if (!result.ok) {
-      throw new ApplicationError(result.message, { code: 'INVALID_SITE_BANNER' })
-    }
-    config.banner = result.value
-  } else {
-    config.banner = siteBannerOrDefault(config.banner)
-  }
-  if (availableEditorsValidation?.ok) await updateEditorAvailability(availableEditorsValidation.value)
-  if (requestedHost !== null) {
-    config.host = requestedHost
-  }
-  for (const field of ['title', 'company']) {
-    if (Object.hasOwn(args, field)) config[field] = _.trim(args[field] as string)
-  }
-  for (const field of ['contentLicense', 'footerOverride']) {
-    if (Object.hasOwn(args, field)) config[field] = args[field]
-  }
-  if (Object.hasOwn(args, 'pageExtensions')) {
-    config.pageExtensions = _.trim(args.pageExtensions as string)
-      .split(',')
-      .map((value: string) => value.trim().toLowerCase())
-      .filter(Boolean)
-  }
-  config.seo = {
-    description: _.get(args, 'description', config.seo.description),
-    robots: _.get(args, 'robots', config.seo.robots),
-    analyticsService: _.get(args, 'analyticsService', config.seo.analyticsService),
-    analyticsId: _.get(args, 'analyticsId', config.seo.analyticsId)
-  }
-  config.editShortcuts = {
-    editFab: _.get(args, 'editFab', config.editShortcuts.editFab),
-    editMenuBar: _.get(args, 'editMenuBar', config.editShortcuts.editMenuBar),
-    editMenuBtn: _.get(args, 'editMenuBtn', config.editShortcuts.editMenuBtn),
-    editMenuExternalBtn: _.get(args, 'editMenuExternalBtn', config.editShortcuts.editMenuExternalBtn),
-    editMenuExternalName: _.get(args, 'editMenuExternalName', config.editShortcuts.editMenuExternalName),
-    editMenuExternalIcon: _.get(args, 'editMenuExternalIcon', config.editShortcuts.editMenuExternalIcon),
-    editMenuExternalUrl: _.get(args, 'editMenuExternalUrl', config.editShortcuts.editMenuExternalUrl)
-  }
-
-  if ((await configService.saveToDb(saveKeys)) === false)
-    throw new ApplicationError('Site configuration could not be persisted. Reload before retrying.', { status: 500 })
-  if (Object.keys(featurePatch).length) await patchSiteFeatures(featurePatch)
-  const app = WIKI.app as { set(setting: string, value: number | false): void }
-  app.set('trust proxy', config.security.securityTrustProxy ? 1 : false)
+  await patchLegacyGeneralConfiguration(requester, args)
 }
 
 export default { getConfig, updateConfig }

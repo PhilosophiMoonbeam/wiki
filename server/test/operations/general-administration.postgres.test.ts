@@ -1,6 +1,6 @@
 import knexModule, { type Knex } from 'knex'
 import { beforeAll, afterAll, beforeEach, describe, it, expect } from '../bun-test.mts'
-import { createGeneralAdministrationStore, generalPolicyFromConfiguration } from '../../operations/general-administration.ts'
+import { createGeneralAdministrationStore, generalPolicyFromConfiguration, patchLegacyGeneralConfiguration } from '../../operations/general-administration.ts'
 import { generalPolicyDefaults, type GeneralPolicy } from '../../../shared/general-policy.ts'
 const database = process.env.WIKI_TEST_POSTGRES_DATABASE ?? '',
   password = process.env.WIKI_TEST_POSTGRES_PASSWORD
@@ -23,6 +23,7 @@ suite('PostgreSQL reviewed General settings', () => {
     await db.schema.createTable('settings', t => {
       t.string('key').primary()
       t.jsonb('value')
+      t.string('updatedAt').notNullable()
     })
     await db.schema.createTable('groups', t => {
       t.integer('id').primary()
@@ -55,7 +56,7 @@ suite('PostgreSQL reviewed General settings', () => {
       { key: 'editShortcuts', value: '{"editFab":true,"futureShortcut":"retained"}' },
       { key: 'features', value: '{"featurePageComments":false}' },
       { key: 'auth', value: '{"audience":"unchanged"}' }
-    ])
+    ].map(row => ({ ...row, updatedAt: new Date().toISOString() })))
     await db('groups').insert([
       { id: 1, permissions: '["manage:system"]' },
       { id: 2, permissions: '["manage:users"]' }
@@ -153,6 +154,31 @@ suite('PostgreSQL reviewed General settings', () => {
     const w = await read()
     expect(w.history).toHaveLength(50)
     expect(w.policy.title).toBe('Revision 51')
+  })
+  it('routes legacy General payloads through the same transaction without changing retained controls', async () => {
+    const previous = globalThis.WIKI
+    const config: Record<string, unknown> = { ...structuredClone(generalPolicyDefaults), sessionSecret: 'legacy-review-key' }
+    let activations = 0
+    const auth = { strategyHost: 'https://wiki.example.com', activateStrategies: async () => { auth.strategyHost = String(config.host); activations++ } }
+    globalThis.WIKI = {
+      models: { knex: db }, config, auth,
+      configSvc: { loadFromDb: async () => { const rows = await db('settings'); Object.assign(config, Object.fromEntries(rows.map(row => [row.key, row.value && typeof row.value === 'object' && 'v' in row.value ? row.value.v : row.value]))) } },
+      events: { outbound: { emit: () => {} } }, logger: { warn: () => {} }
+    } as typeof globalThis.WIKI
+    try {
+      await patchLegacyGeneralConfiguration(admin, { title: 'Legacy updated', pageExtensions: 'TXT, md, txt', analyticsId: 'private-analytics-value' })
+      expect((await read()).policy).toMatchObject({ title: 'Legacy updated', pageExtensions: ['md', 'txt'] })
+      expect((await read()).history[0]?.reason).toContain('legacy General')
+      expect(config.title).toBe('Legacy updated')
+      await patchLegacyGeneralConfiguration(admin, { host: 'https://next.example.com' })
+      expect(auth.strategyHost).toBe('https://next.example.com')
+      expect(activations).toBe(1)
+      const before = await db('settings').orderBy('key')
+      await expect(patchLegacyGeneralConfiguration(admin, { title: 'Cannot save', analyticsId: 'replace it' })).rejects.toMatchObject({ status: 400 })
+      await expect(patchLegacyGeneralConfiguration(admin, { title: 'Cannot save', availableEditors: ['markdown'] })).rejects.toMatchObject({ status: 400 })
+      await expect(patchLegacyGeneralConfiguration(admin, { title: 'Cannot save', pageExtensions: '../invalid' })).rejects.toMatchObject({ status: 400 })
+      expect(await db('settings').orderBy('key')).toEqual(before)
+    } finally { globalThis.WIKI = previous }
   })
   it('reload projection honors persisted empty lists', () => {
     expect(generalPolicyFromConfiguration({ pageExtensions: [], seo: { robots: [] } })).toMatchObject({ pageExtensions: [], robots: [] })

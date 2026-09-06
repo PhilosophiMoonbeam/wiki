@@ -9,6 +9,9 @@ import { up as addDurableJobLeaseToken } from '../../db/migrations/2.5.158.ts'
 import { SITE_LOGO_SOURCE_LIMIT } from '../../operations/site-logo.ts'
 import { afterEach, beforeEach, describe, expect, it, vi } from '../bun-test.mts'
 
+const legacyGeneral = vi.fn().mockResolvedValue(undefined)
+vi.mockModule('../../operations/general-administration.ts', import.meta.url, () => ({ patchLegacyGeneralConfiguration: legacyGeneral, getGeneralAdministrationStore: vi.fn() }))
+
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const PNG_BYTES = Buffer.concat([PNG_SIGNATURE, Buffer.from('observable-logo-source')])
 const ACTIVE_SOURCE = Buffer.concat([PNG_SIGNATURE, Buffer.from('active-logo-source')])
@@ -502,7 +505,7 @@ describe('managed site logo HTTP contracts', () => {
     }
   })
 
-  it('allows unrelated site saves while fenced and never persists logoUrl through the legacy save keys', async () => {
+  it('delegates unrelated General saves while fenced without changing managed logo state', async () => {
     await db('siteLogoState').where({ id: 1 }).update({ desiredRevisionId: '00000000-0000-4000-8000-000000000061' })
     const response = await fetch(`${baseUrl}/_api/site/config`, {
       method: 'PUT',
@@ -511,9 +514,8 @@ describe('managed site logo HTTP contracts', () => {
     })
 
     expect(response.status).toBe(200)
-    expect(global.WIKI.config.title).toBe('Updated title')
+    expect(legacyGeneral).toHaveBeenCalledWith({ id: 7 }, { title: 'Updated title' })
     expect(global.WIKI.config.logoUrl).toBe('/legacy-logo.svg')
-    expect(saveToDb).toHaveBeenCalledOnce()
-    expect(saveToDb.mock.calls[0]![0]).not.toContain('logoUrl')
+    expect(saveToDb).not.toHaveBeenCalled()
   })
 })

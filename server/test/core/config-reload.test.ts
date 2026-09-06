@@ -21,6 +21,7 @@ describe('distributed config reload', () => {
       security: { securityTrustProxy: !securityTrustProxy },
       port: 3000,
       title: 'Before reload',
+      host: 'https://before.example.com',
       auth: { audience: 'old-audience' },
       pageExtensions: ['md', 'html', 'txt'],
       seo: { robots: ['index', 'follow'], description: 'Keep missing defaults' }
@@ -34,6 +35,7 @@ describe('distributed config reload', () => {
       security: { securityTrustProxy },
       port: 4000,
       title: 'After reload',
+      host: 'https://after.example.com',
       auth: { audience: 'new-audience' },
       pageExtensions: ['md'],
       seo: { robots: [] }
@@ -41,8 +43,10 @@ describe('distributed config reload', () => {
 
     const auth = {
       jwtAudience: 'old-audience',
+      strategyHost: 'https://before.example.com',
       activateStrategies: vi.fn(async () => {
         auth.jwtAudience = 'new-audience'
+        auth.strategyHost = canonicalConfig.host
       })
     }
     globalThis.WIKI = {
@@ -80,6 +84,7 @@ describe('distributed config reload', () => {
       security: { securityTrustProxy },
       port: 4000,
       title: 'After reload',
+      host: 'https://after.example.com',
       pageExtensions: ['md'],
       seo: { robots: [], description: 'Keep missing defaults' }
     })
@@ -88,5 +93,9 @@ describe('distributed config reload', () => {
     expect(auth.activateStrategies).toHaveBeenCalledOnce()
     await reloadListener()
     expect(auth.activateStrategies).toHaveBeenCalledOnce()
+    getConfig.mockResolvedValue({ ...globalThis.WIKI.config, host: 'https://third.example.com' })
+    await reloadListener()
+    expect(auth.activateStrategies).toHaveBeenCalledTimes(2)
+    expect(auth.strategyHost).toBe('https://third.example.com')
   })
 })

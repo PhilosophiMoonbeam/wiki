@@ -1,869 +1,988 @@
-<template lang='pug'>
-  v-container.admin-general(fluid)
-    v-row
-      v-col(cols='12')
-        admin-hero(
-          icon='mdi-tune-variant'
-          :title='$t(`admin:general.title`)'
-          description='Set the identity, publishing defaults and everyday behavior of your workspace.'
-          eyebrow='Workspace'
-        )
-          template(v-slot:status)
-            v-chip(v-if='dirty', color='warning', variant='tonal', size='small') Unsaved changes
-          template(v-slot:actions)
-            v-btn(
-              type='submit'
-              form='general-form'
-              color='primary'
-              variant="flat"
-              size="large"
-              prepend-icon='mdi-check'
-              :loading='saving'
-              :disabled='!loaded || initialLoading || saving || !dirty || !formValid'
-            ) {{$t('common:actions.apply')}}
-        nav.admin-section-index(aria-label='General settings sections')
-          a(href='#general-identity') Site identity
-          a(href='#general-banner') Announcement
-          a(href='#general-features') Features
-          a(href='#general-urls') Page URLs
-          a(href='#general-editing') Editing
-        v-form#general-form(
-          @submit.prevent='save'
-          v-model='formValid'
-          :disabled='initialLoading || !loaded || saving'
-        )
-          v-row
-            v-col(lg='7' cols='12')
-                v-card#general-identity.animated.fadeInUp
-                  v-toolbar(color='primary', density="compact", flat)
-                    v-toolbar-title.text-body-large {{ $t('admin:general.siteInfo') }}
-                  .text-label-small.text-medium-emphasis.pa-4 {{$t('admin:general.general')}}
-                  .px-3.pb-3
-                    v-text-field(
-                      variant="outlined"
-                      :label='$t(`admin:general.siteUrl`)'
-                      :rules='hostRules'
-                      required
-                      :counter='255'
-                      v-model='config.host'
-                      prepend-icon='mdi-label-variant-outline'
-                      :hint='$t(`admin:general.siteUrlHint`)'
-                      persistent-hint
-                    )
-                    v-text-field.mt-3(
-                      variant="outlined"
-                      :label='$t(`admin:general.siteTitle`)'
-                      :rules='titleRules'
-                      required
-                      :counter='50'
-                      v-model='config.title'
-                      prepend-icon='mdi-earth'
-                      :hint='$t(`admin:general.siteTitleHint`)'
-                      persistent-hint
-                    )
-                  .text-label-small.text-medium-emphasis.pa-4 {{$t('admin:general.logo')}}
-                  .logo-manager.px-4.pb-4
-                    .logo-preview-grid
-                      .logo-preview-card
-                        .logo-preview-heading {{ $t('admin:general.logoActive') }}
-                        .logo-preview-frame
-                          v-img(
-                            v-if='activeLogoUrl'
-                            :src='activeLogoUrl'
-                            :alt='$t(`admin:general.logoActivePreviewAlt`)'
-                          )
-                          v-icon(v-else size='42' color='grey') mdi-image-off-outline
-                        v-chip.mt-3(
-                          v-if='activeLogoUrl'
-                          color='success'
-                          variant='tonal'
-                          size='small'
-                        ) {{ $t('admin:general.logoStatusActive') }}
-                      .logo-preview-card(v-if='candidateVisible')
-                        .logo-preview-heading {{ $t('admin:general.logoCandidate') }}
-                        .logo-preview-frame
-                          v-img(
-                            v-if='candidatePreviewUrl'
-                            :src='candidatePreviewUrl'
-                            :alt='$t(`admin:general.logoCandidatePreviewAlt`)'
-                          )
-                          v-icon(v-else size='42' color='grey') mdi-image-sync-outline
-                        v-chip.mt-3(
-                          :color='candidateStatusColor'
-                          variant='tonal'
-                          size='small'
-                          aria-live='polite'
-                        )
-                          v-progress-circular(
-                            v-if='logoUploading || candidateIsProcessing'
-                            indeterminate
-                            size='14'
-                            width='2'
-                            class='mr-2'
-                          )
-                          | {{ $t(candidateStatusKey) }}
-                        v-btn.mt-3(
-                          v-if='candidateHasFailed'
-                          color='primary'
-                          variant='tonal'
-                          size='small'
-                          :loading='logoRetrying'
-                          :disabled='logoUploading || logoRetrying'
-                          @click='retryLogo'
-                        )
-                          v-icon(start) mdi-refresh
-                          | {{ $t('admin:general.logoRetry') }}
-                    input.logo-file-input(
-                      ref='logoFileInput'
-                      type='file'
-                      tabindex='-1'
-                      :aria-label='$t(`admin:general.logoPickerLabel`)'
-                      accept='image/png,image/jpeg,image/webp'
-                      :disabled='logoUploading || logoRetrying'
-                      @change='onLogoFileChange'
-                      @click.stop
-                    )
-                    .logo-drop-target(
-                      :class='{ "logo-drop-target--active": logoDragActive, "logo-drop-target--disabled": logoUploading || logoRetrying }'
-                      role='button'
-                      tabindex='0'
-                      :aria-label='$t(`admin:general.logoPickerLabel`)'
-                      :aria-disabled='logoUploading || logoRetrying'
-                      @click='openLogoPicker'
-                      @keydown.enter.prevent='openLogoPicker'
-                      @keydown.space.prevent='openLogoPicker'
-                      @dragenter.prevent='onLogoDragEnter'
-                      @dragover.prevent
-                      @dragleave.prevent='onLogoDragLeave'
-                      @drop.prevent='onLogoDrop'
-                    )
-                      v-icon.logo-drop-icon(size='34') mdi-image-plus-outline
-                      .logo-drop-copy
-                        .text-body-large.font-weight-medium {{ $t('admin:general.logoPickerTitle') }}
-                        .text-body-small.text-medium-emphasis {{ $t('admin:general.logoPickerHint') }}
-                    .logo-message.logo-message--error(
-                      v-if='logoErrorKey'
-                      role='alert'
-                    ) {{ $t(logoErrorKey) }}
-                    p.logo-disclosure.text-body-small.text-medium-emphasis
-                      v-icon.mr-2(size='18') mdi-earth
-                      | {{ $t('admin:general.logoPublicUsage') }}
-                  .text-label-small.text-medium-emphasis.pa-4 {{$t('admin:general.footerCopyright')}}
-                  .px-3.pb-3
-                    v-text-field(
-                      variant="outlined"
-                      :label='$t(`admin:general.companyName`)'
-                      v-model='config.company'
-                      :counter='255'
-                      prepend-icon='mdi-domain'
-                      persistent-hint
-                      :hint='$t(`admin:general.companyNameHint`)'
-                      )
-                    v-select.mt-3(
-                      variant="outlined"
-                      :label='$t(`admin:general.contentLicense`)'
-                      :items='contentLicenses'
-                      v-model='config.contentLicense'
-                      prepend-icon='mdi-creative-commons'
-                      :return-object='false'
-                      :hint='$t(`admin:general.contentLicenseHint`)'
-                      persistent-hint
-                    )
-                    v-text-field.mt-3(
-                      variant="outlined"
-                      :label='$t(`admin:general.footerOverride`)'
-                      v-model='config.footerOverride'
-                      prepend-icon='mdi-page-layout-footer'
-                      append-icon='mdi-language-markdown'
-                      persistent-hint
-                      :hint='$t(`admin:general.footerOverrideHint`)'
-                      )
-                  v-divider
-                  .text-label-small.text-medium-emphasis.pa-4 SEO
-                  .px-3.pb-3
-                    v-text-field(
-                      variant="outlined"
-                      :label='$t(`admin:general.siteDescription`)'
-                      :counter='255'
-                      v-model='config.description'
-                      prepend-icon='mdi-compass'
-                      :hint='$t(`admin:general.siteDescriptionHint`)'
-                      persistent-hint
-                      )
-                    v-select.mt-3(
-                      variant="outlined"
-                      :label='$t(`admin:general.metaRobots`)'
-                      multiple
-                      :items='metaRobots'
-                      v-model='config.robots'
-                      prepend-icon='mdi-compass'
-                      :return-object='false'
-                      :hint='$t(`admin:general.metaRobotsHint`)'
-                      persistent-hint
-                      )
-
-                v-card#general-banner.mt-5.animated.fadeInUp.wait-p4s
-                  v-toolbar(color='primary', density='compact', flat)
-                    v-toolbar-title.text-body-large {{ $t('admin:general.siteBanner') }}
-                  v-card-text
-                    v-switch.mt-0(
-                      inset
-                      color='warning'
-                      v-model='config.banner.isEnabled'
-                      :label='$t(`admin:general.siteBannerEnabled`)'
-                      :hint='$t(`admin:general.siteBannerEnabledHint`)'
-                      persistent-hint
-                    )
-                    v-text-field.mt-3(
-                      variant='outlined'
-                      v-model='config.banner.title'
-                      :label='$t(`admin:general.siteBannerTitle`)'
-                      :hint='$t(`admin:general.siteBannerTitleHint`)'
-                      :counter='160'
-                      prepend-icon='mdi-format-title'
-                      persistent-hint
-                    )
-                    v-textarea.mt-3(
-                      variant='outlined'
-                      v-model='config.banner.content'
-                      :label='$t(`admin:general.siteBannerContent`)'
-                      :hint='$t(`admin:general.siteBannerContentHint`)'
-                      :counter='8000'
-                      prepend-icon='mdi-language-markdown'
-                      auto-grow
-                      rows='4'
-                      persistent-hint
-                    )
-                    template(v-if='config.banner.isEnabled && (config.banner.title || config.banner.content)')
-                      .text-label-small.text-medium-emphasis.mb-2 {{ $t('admin:general.siteBannerPreview') }}
-                      site-banner(:banner='config.banner')
-
-            v-col(lg='5' cols='12')
-              v-card#general-features.animated.fadeInUp.wait-p4s
-                v-toolbar(color='indigo', density="compact", flat)
-                  v-toolbar-title.text-body-large Features
-                v-card-text
-
-                  h3.text-body-large.mb-2 Page discussions
-                  p.text-body-medium.text-medium-emphasis.mb-4 Choose a provider, manage posting policy and review comments in the discussion workspace.
-                  v-btn(to='/comments', variant='tonal', append-icon='mdi-arrow-right') Manage discussions
-
-              v-card#general-urls.mt-5.animated.fadeInUp.wait-p6s
-                v-toolbar(color='primary', density="compact", flat)
-                  v-toolbar-title.text-body-large URL Handling
-                v-card-text
-                  v-text-field(
-                    variant="outlined"
-                    :label='$t(`admin:general.pageExtensions`)'
-                    v-model='config.pageExtensions'
-                    prepend-icon='mdi-format-text-wrapping-overflow'
-                    :hint='$t(`admin:general.pageExtensionsHint`)'
-                    persistent-hint
-                    )
-
-              v-card#general-editing.mt-5.animated.fadeInUp.wait-p7s
-                v-toolbar(color='primary', density="compact", flat)
-                  v-toolbar-title.text-body-large {{$t('admin:general.editShortcuts')}}
-                v-card-text
-                  v-switch.mt-0(
-                    inset
-                    :label='$t(`admin:general.editFab`)'
-                    color='primary'
-                    v-model='config.editFab'
-                    persistent-hint
-                    :hint='$t(`admin:general.editFabHint`)'
-                    )
-                v-divider
-                .text-label-small.text-medium-emphasis.pa-4 {{$t('admin:general.editMenuBar')}}
-                .px-3.pb-3
-                  v-switch.mt-0.ml-1(
-                    inset
-                    :label='$t(`admin:general.displayEditMenuBar`)'
-                    color='primary'
-                    v-model='config.editMenuBar'
-                    persistent-hint
-                    :hint='$t(`admin:general.displayEditMenuBarHint`)'
-                    )
-                  v-switch.mt-4.ml-1(
-                    v-if='config.editMenuBar'
-                    inset
-                    :label='$t(`admin:general.displayEditMenuBtn`)'
-                    color='primary'
-                    v-model='config.editMenuBtn'
-                    persistent-hint
-                    :hint='$t(`admin:general.displayEditMenuBtnHint`)'
-                    )
-                  v-switch.mt-4.ml-1(
-                    v-if='config.editMenuBar'
-                    inset
-                    :label='$t(`admin:general.displayEditMenuExternalBtn`)'
-                    color='primary'
-                    v-model='config.editMenuExternalBtn'
-                    persistent-hint
-                    :hint='$t(`admin:general.displayEditMenuExternalBtnHint`)'
-                    )
-                template(v-if='config.editMenuBar && config.editMenuExternalBtn')
-                  v-divider
-                  .text-label-small.text-medium-emphasis.pa-4 External Edit Button
-                  .px-3.pb-3
-                    v-text-field(
-                      variant="outlined"
-                      :label='$t(`admin:general.editMenuExternalName`)'
-                      v-model='config.editMenuExternalName'
-                      prepend-icon='mdi-format-title'
-                      :hint='$t(`admin:general.editMenuExternalNameHint`)'
-                      persistent-hint
-                      )
-                    v-text-field.mt-3(
-                      variant="outlined"
-                      :label='$t(`admin:general.editMenuExternalIcon`)'
-                      v-model='config.editMenuExternalIcon'
-                      prepend-icon='mdi-dice-5'
-                      :hint='$t(`admin:general.editMenuExternalIconHint`)'
-                      persistent-hint
-                      )
-                    v-text-field.mt-3(
-                      variant="outlined"
-                      :label='$t(`admin:general.editMenuExternalUrl`)'
-                      v-model='config.editMenuExternalUrl'
-                      prepend-icon='mdi-near-me'
-                      :hint='$t(`admin:general.editMenuExternalUrlHint`)'
-                      persistent-hint
-                      )
-
-        .admin-save-dock(role='region' aria-label='Save general settings')
-          .admin-save-dock__copy(role='status' aria-live='polite')
-            v-icon(size='18' :color='dirty ? `warning` : `primary`') {{ dirty ? 'mdi-circle-edit-outline' : 'mdi-check-circle-outline' }}
-            span {{ initialLoading ? 'Loading settings…' : !loaded ? 'Settings unavailable' : saving ? 'Saving settings…' : dirty ? 'You have unsaved changes' : 'All changes saved' }}
-          v-btn(type='submit' form='general-form' color='primary' variant='flat' prepend-icon='mdi-check' :loading='saving' :disabled='!loaded || initialLoading || saving || !dirty || !formValid') Save settings
+<template>
+  <v-container fluid class="general-workspace">
+    <admin-hero
+      icon="mdi-tune-variant"
+      title="General"
+      description="Give your workspace its identity, voice and publishing conventions."
+    >
+      <template #actions>
+        <v-btn
+          variant="text"
+          prepend-icon="mdi-refresh"
+          :disabled="busy || initializing"
+          :loading="loading"
+          @click="reload"
+          >Reload settings</v-btn
+        >
+        <v-btn v-if="dirty" variant="text" :disabled="locked" @click="reset"
+          >Reset draft</v-btn
+        >
+        <v-btn
+          color="primary"
+          variant="flat"
+          prepend-icon="mdi-check"
+          :disabled="locked || !dirty"
+          @click="review"
+          >Review changes</v-btn
+        >
+      </template>
+    </admin-hero>
+    <async-state
+      v-if="!saved && loading"
+      state="loading"
+      title="Loading workspace settings"
+    />
+    <async-state
+      v-else-if="!saved && loadError"
+      state="error"
+      title="Workspace settings are unavailable"
+      :message="loadError"
+      retry-label="Try again"
+      @retry="load"
+    />
+    <template v-if="saved && draft">
+      <v-alert v-if="loadError" type="error" variant="tonal" class="mt-5"
+        >{{ loadError
+        }}<v-btn variant="text" :disabled="busy" @click="reload"
+          >Reload saved settings</v-btn
+        ></v-alert
+      >
+      <v-alert
+        v-if="notice"
+        :type="attention ? 'warning' : 'success'"
+        variant="tonal"
+        class="mt-5"
+        >{{ notice }}</v-alert
+      >
+      <div class="general-status">
+        <span
+          ><i :class="dirty ? 'is-draft' : ''" />{{
+            dirty ? "Unsaved workspace draft" : "Showing saved settings"
+          }}</span
+        ><span>{{
+          saved.runtime.state === "applied"
+            ? "Runtime configuration current"
+            : "Runtime configuration needs attention"
+        }}</span>
+      </div>
+      <nav class="general-tabs" aria-label="General sections">
+        <button
+          v-for="tab in sections"
+          :key="tab.key"
+          type="button"
+          :aria-current="section === tab.key ? 'page' : undefined"
+          :disabled="busy || initializing"
+          @click="selectSection(tab.key)"
+        >
+          {{ tab.title }}
+        </button>
+      </nav>
+      <div class="general-layout">
+        <section class="general-editor">
+          <template v-if="section === 'identity'">
+            <div class="general-heading">
+              <span class="general-kicker">A place to know</span>
+              <h2>Workspace identity</h2>
+              <p>
+                The name, address and attribution that make this knowledge space
+                recognizable.
+              </p>
+            </div>
+            <div class="general-setting-group">
+              <v-text-field
+                v-model="draft.title"
+                label="Workspace name"
+                variant="outlined"
+                maxlength="50"
+                counter="50"
+                :disabled="locked"
+                hint="Used in navigation, browser titles and workspace messages."
+                persistent-hint
+              />
+              <v-text-field
+                v-model="draft.host"
+                label="Public address"
+                variant="outlined"
+                :disabled="locked"
+                hint="The HTTP(S) origin used for generated links and identity-provider callbacks. Do not include a page path."
+                persistent-hint
+              />
+              <p class="general-note">
+                Changing the address does not configure DNS, certificates or a
+                reverse proxy. Review identity-provider callbacks when the
+                origin changes.
+              </p>
+            </div>
+            <div class="general-setting-group">
+              <h3>Workspace logo</h3>
+              <general-logo-manager :disabled="locked || reviewing" />
+            </div>
+            <div class="general-setting-group">
+              <h3>Attribution & footer</h3>
+              <p>
+                Set the organization and content attribution readers see at the
+                foot of a page.
+              </p>
+              <v-text-field
+                v-model="draft.company"
+                label="Organization"
+                variant="outlined"
+                maxlength="255"
+                :disabled="locked"
+              />
+              <v-select
+                v-model="draft.contentLicense"
+                :items="licenses"
+                label="Content license"
+                variant="outlined"
+                :disabled="locked"
+              />
+              <v-textarea
+                v-model="draft.footerOverride"
+                label="Custom footer"
+                variant="outlined"
+                rows="3"
+                auto-grow
+                maxlength="8000"
+                :disabled="locked"
+                hint="Markdown. Leave empty to use the standard workspace footer."
+                persistent-hint
+              />
+              <div v-if="draft.footerOverride" class="general-preview-fragment">
+                <span class="general-kicker">Footer preview</span>
+                <div class="general-markdown" v-html="footerPreview" />
+              </div>
+            </div>
+          </template>
+          <template v-else-if="section === 'announcement'">
+            <div class="general-heading">
+              <span class="general-kicker">The shared noticeboard</span>
+              <h2>Workspace announcement</h2>
+              <p>
+                Give readers timely context: planned maintenance, an important
+                change or a useful update.
+              </p>
+            </div>
+            <div class="general-announcement-state">
+              <v-icon
+                :icon="
+                  announcementState === 'visible'
+                    ? 'mdi-bullhorn-outline'
+                    : 'mdi-calendar-clock-outline'
+                "
+              />
+              <div>
+                <strong>{{ announcementLabels[announcementState] }}</strong>
+                <p>{{ announcementExplanation }}</p>
+              </div>
+            </div>
+            <div class="general-setting-group">
+              <v-switch
+                v-model="draft.banner.isEnabled"
+                label="Publish this announcement"
+                color="primary"
+                inset
+                :disabled="locked"
+                hint="The announcement appears on wiki pages during its publication window."
+                persistent-hint
+              />
+              <v-text-field
+                v-model="draft.banner.title"
+                label="Announcement title"
+                variant="outlined"
+                maxlength="160"
+                counter="160"
+                :disabled="locked"
+              />
+              <v-textarea
+                v-model="draft.banner.content"
+                label="Announcement message"
+                variant="outlined"
+                rows="6"
+                auto-grow
+                maxlength="8000"
+                :disabled="locked"
+                hint="Markdown is supported. Include a title or message before publishing."
+                persistent-hint
+              />
+              <v-select
+                :model-value="draft.banner.tone || 'warning'"
+                :items="tones"
+                label="Notice tone"
+                variant="outlined"
+                :disabled="locked"
+                @update:model-value="draft.banner.tone = $event"
+              />
+            </div>
+            <div class="general-setting-group">
+              <h3>Publication window</h3>
+              <p>
+                Use UTC for an unambiguous schedule. A blank start publishes
+                immediately; a blank end keeps the notice visible until you
+                disable it.
+              </p>
+              <div class="general-pair">
+                <v-text-field
+                  :model-value="dateInput(draft.banner.startsAt)"
+                  type="datetime-local"
+                  step="60"
+                  label="Starts at (UTC)"
+                  variant="outlined"
+                  clearable
+                  :disabled="locked"
+                  @update:model-value="setSchedule('startsAt', $event)"
+                /><v-text-field
+                  :model-value="dateInput(draft.banner.endsAt)"
+                  type="datetime-local"
+                  step="60"
+                  label="Ends at (UTC)"
+                  variant="outlined"
+                  clearable
+                  :disabled="locked"
+                  @update:model-value="setSchedule('endsAt', $event)"
+                />
+              </div>
+              <p class="general-note">
+                Scheduled notices appear when a reader loads a page. Notices
+                already open disappear at the end time. Your preview shows the
+                draft outside this window, too.
+              </p>
+            </div>
+            <div class="general-preview-fragment">
+              <span class="general-kicker">Reader preview · unsaved draft</span
+              ><site-banner
+                v-if="draft.banner.title || draft.banner.content"
+                :banner="{ ...draft.banner, isEnabled: true }"
+                preview
+              />
+              <p v-else class="general-note">
+                Add a title or message to preview the announcement.
+              </p>
+            </div>
+          </template>
+          <template v-else-if="section === 'publishing'">
+            <div class="general-heading">
+              <span class="general-kicker">Reader & author conventions</span>
+              <h2>Publishing defaults</h2>
+              <p>
+                Help people discover pages and reach their source. Content
+                permissions continue to govern who can read and edit.
+              </p>
+            </div>
+            <div class="general-setting-group">
+              <h3>Search presentation</h3>
+              <p>
+                Metadata for external search engines. These preferences do not
+                change the wiki’s internal search or page access.
+              </p>
+              <v-textarea
+                v-model="draft.description"
+                label="Search description"
+                variant="outlined"
+                rows="3"
+                maxlength="1000"
+                :disabled="locked"
+              />
+              <div class="general-pair">
+                <v-select
+                  :model-value="indexDirective"
+                  :items="indexOptions"
+                  label="Index pages"
+                  variant="outlined"
+                  :disabled="locked"
+                  @update:model-value="setRobots('index', $event)"
+                /><v-select
+                  :model-value="followDirective"
+                  :items="followOptions"
+                  label="Follow page links"
+                  variant="outlined"
+                  :disabled="locked"
+                  @update:model-value="setRobots('follow', $event)"
+                />
+              </div>
+              <div class="general-search-preview">
+                <span>{{ draft.host || "Workspace address" }}</span
+                ><strong>{{ draft.title || "Workspace name" }}</strong>
+                <p>
+                  {{
+                    draft.description ||
+                    "Your workspace description will appear here."
+                  }}
+                </p>
+                <small
+                  >Illustrative search preview. Search engines choose their own
+                  snippets.</small
+                >
+              </div>
+            </div>
+            <div class="general-setting-group">
+              <h3>Page URL extensions</h3>
+              <p>
+                Choose which file-like URLs resolve to wiki pages. Removing an
+                extension can change how existing links are handled.
+              </p>
+              <v-combobox
+                v-model="draft.pageExtensions"
+                label="Recognized page extensions"
+                variant="outlined"
+                multiple
+                chips
+                closable-chips
+                :disabled="locked"
+                hint="Type an extension and press Enter. Use letters or digits without a leading dot."
+                persistent-hint
+              />
+              <div class="general-url-examples">
+                <div
+                  v-for="extension in draft.pageExtensions.slice(0, 6)"
+                  :key="extension"
+                >
+                  <code>/handbook.{{ extension }}</code
+                  ><v-icon icon="mdi-arrow-right" size="16" /><code
+                    >/handbook</code
+                  >
+                </div>
+                <p v-if="!draft.pageExtensions.length">
+                  No extension aliases. Extensionless page URLs remain
+                  available.
+                </p>
+              </div>
+            </div>
+            <div class="general-setting-group">
+              <h3>Page editing actions</h3>
+              <p>
+                Choose how authors reach the editor. These controls are shown
+                only where page permissions allow them.
+              </p>
+              <v-switch
+                v-model="draft.editFab"
+                label="Show a floating edit button"
+                color="primary"
+                inset
+                :disabled="locked"
+              />
+              <v-switch
+                v-model="draft.editMenuBar"
+                label="Show the page action bar"
+                color="primary"
+                inset
+                :disabled="locked"
+              />
+              <v-switch
+                v-model="draft.editMenuBtn"
+                label="Include the edit action"
+                color="primary"
+                inset
+                :disabled="locked || !draft.editMenuBar"
+              />
+              <v-switch
+                v-model="draft.editMenuExternalBtn"
+                label="Include an external source action"
+                color="primary"
+                inset
+                :disabled="locked || !draft.editMenuBar"
+              />
+              <template v-if="draft.editMenuExternalBtn"
+                ><v-text-field
+                  v-model="draft.editMenuExternalName"
+                  label="External action label"
+                  variant="outlined"
+                  :disabled="locked"
+                  maxlength="80"
+                /><v-text-field
+                  v-model="draft.editMenuExternalIcon"
+                  label="External action icon"
+                  variant="outlined"
+                  :disabled="locked"
+                  hint="An mdi- icon name, for example mdi-github."
+                  persistent-hint
+                /><v-text-field
+                  v-model="draft.editMenuExternalUrl"
+                  label="External source URL"
+                  variant="outlined"
+                  :disabled="locked"
+                  hint="Use {filename} for the page source path. HTTP(S) only."
+                  persistent-hint
+                />
+                <div class="general-source-preview">
+                  <span class="general-kicker">Example · en/handbook.md</span
+                  ><code>{{
+                    sourcePreview ||
+                    "Enter a valid source URL to preview this destination."
+                  }}</code>
+                </div>
+              </template>
+            </div>
+          </template>
+          <template v-else>
+            <div class="general-heading">
+              <span class="general-kicker">Workspace decisions</span>
+              <h2>Change history</h2>
+              <p>
+                The latest 50 saved General revisions, with their administrative
+                reasons. Logo processing has its own status in Identity.
+              </p>
+            </div>
+            <async-state
+              v-if="!saved.history.length"
+              state="empty"
+              title="No General changes recorded yet"
+              message="Reviewed saves will appear here. Earlier settings changes are not reconstructed."
+            />
+            <ol v-else class="general-activity">
+              <li v-for="event in saved.history" :key="event.id">
+                <div>
+                  <strong>{{ event.reason }}</strong
+                  ><time :datetime="event.createdAt">{{
+                    date(event.createdAt)
+                  }}</time>
+                </div>
+                <p>
+                  {{
+                    event.actorId
+                      ? `Account ${event.actorId}`
+                      : "API administrator"
+                  }}
+                </p>
+                <ul>
+                  <li v-for="field in event.fields" :key="field">
+                    {{ labels[field as keyof GeneralPolicy] || field }}
+                  </li>
+                </ul>
+              </li>
+            </ol>
+          </template>
+        </section>
+        <aside class="general-aside">
+          <div class="general-identity-card">
+            <span class="general-kicker">Workspace at a glance</span
+            ><img v-if="logoUrl" :src="logoUrl" alt="Current workspace logo" />
+            <h3>{{ draft.title || "Workspace name" }}</h3>
+            <p>{{ draft.company || "Your shared knowledge space" }}</p>
+            <code>{{ draft.host || "Public address not set" }}</code
+            ><span class="general-preview-label">{{
+              dirty
+                ? "Identity preview · unsaved draft"
+                : "Saved workspace identity"
+            }}</span>
+          </div>
+          <div class="general-panel">
+            <span class="general-kicker">Saved configuration</span>
+            <h3>
+              {{
+                saved.runtime.state === "applied"
+                  ? "Configuration current"
+                  : "Activation needs attention"
+              }}
+            </h3>
+            <p>
+              The observed application settings
+              {{
+                saved.runtime.state === "applied" ? "match" : "differ from"
+              }}
+              the saved configuration.
+            </p>
+            <p>Last observed {{ date(saved.runtime.observedAt) }}</p>
+            <v-btn
+              variant="text"
+              :disabled="locked || dirty"
+              :loading="initializing"
+              @click="initialize"
+              >Retry runtime activation</v-btn
+            >
+          </div>
+          <div class="general-panel">
+            <span class="general-kicker">Related workspaces</span
+            ><router-link v-for="link in related" :key="link.to" :to="link.to"
+              >{{ link.label }}<v-icon icon="mdi-arrow-top-right" size="16"
+            /></router-link>
+          </div>
+        </aside>
+      </div>
+    </template>
+    <v-dialog
+      v-model="reviewing"
+      max-width="760"
+      :persistent="busy"
+      aria-labelledby="general-review-title"
+    >
+      <v-card v-if="reviewed && saved" class="general-review"
+        ><div class="general-review-heading">
+          <span class="general-kicker">Review before publishing</span>
+          <h2 id="general-review-title">Review workspace settings</h2>
+          <p>
+            These values are fixed for this review. Saved settings apply to the
+            workspace; your logo is managed separately.
+          </p>
+        </div>
+        <v-card-text
+          ><dl class="general-differences">
+            <div v-for="field in changes" :key="field">
+              <dt>{{ labels[field] }}</dt>
+              <dd>
+                <span>{{ displayValue(field, saved!.policy[field]) }}</span
+                ><v-icon icon="mdi-arrow-right" size="16" /><strong>{{
+                  displayValue(field, reviewed![field])
+                }}</strong>
+              </dd>
+            </div>
+          </dl>
+          <v-alert
+            v-if="changes.includes('host')"
+            type="warning"
+            variant="tonal"
+            class="mb-5"
+            >Generated links and identity-provider callbacks use the new public
+            address. Confirm the destination and provider configuration before
+            saving.</v-alert
+          >
+          <v-textarea
+            v-model="reason"
+            label="Administrative reason"
+            variant="outlined"
+            rows="2"
+            maxlength="1000"
+            :disabled="busy"
+          />
+          <v-alert v-if="saveError" type="error" variant="tonal"
+            >{{ saveError
+            }}<v-btn
+              v-if="stale"
+              variant="text"
+              :disabled="busy"
+              @click="reloadReview"
+              >Reload saved settings</v-btn
+            ></v-alert
+          > </v-card-text
+        ><v-card-actions
+          ><v-btn variant="text" :disabled="busy" @click="reviewing = false"
+            >Keep editing</v-btn
+          ><v-spacer /><v-btn
+            color="primary"
+            variant="flat"
+            :disabled="busy || stale || reason.trim().length < 3"
+            :loading="busy"
+            @click="confirm"
+            >Save workspace settings</v-btn
+          ></v-card-actions
+        >
+      </v-card>
+    </v-dialog>
+  </v-container>
 </template>
-
-<script lang='ts'>
-import _ from 'lodash'
-import { wikiStore } from '@/store/index.ts'
-import { fetchSiteConfig, saveSiteConfig, type SiteConfig } from '../../helpers/site-api'
+<script lang="ts">
+import { wikiStore } from "@/store/index.ts";
+import AsyncState from "@/components/common/async-state.vue";
+import SiteBanner from "../common/site-banner.vue";
+import GeneralLogoManager from "./general-logo-manager.vue";
 import {
-  fetchSiteLogoStatus,
-  retrySiteLogo,
-  SiteLogoApiError,
-  SITE_LOGO_MAX_BYTES,
-  uploadSiteLogo,
-  type SiteLogoErrorCode,
-  type SiteLogoStatus
-} from '../../helpers/site-logo-api'
-import { loadingStart, loadingStop, pushGraphError, setLoading, showNotification } from '../../helpers/root-ui-store'
-import SiteBanner from '../common/site-banner.vue'
-
-const titleRegex = /[<>"]/i
-const logoErrorMessageKeys: Record<SiteLogoErrorCode, string> = {
-  UNSUPPORTED_IMAGE: 'admin:general.logoErrorUnsupported',
-  IMAGE_TOO_LARGE: 'admin:general.logoErrorTooLarge',
-  INVALID_IMAGE: 'admin:general.logoErrorInvalid',
-  NO_VISIBLE_PIXELS: 'admin:general.logoErrorNoVisiblePixels',
-  UNSUITABLE_LOGO: 'admin:general.logoErrorUnsuitable',
-  PROCESSING_FAILED: 'admin:general.logoErrorProcessing',
-  ARTIFACT_TOO_LARGE: 'admin:general.logoErrorArtifactTooLarge',
-  MANAGED_LOGO_CONFLICT: 'admin:general.logoErrorConflict'
-}
-
+  fetchGeneralWorkspace,
+  saveGeneralWorkspace,
+  retryGeneralRuntime,
+} from "../../helpers/general-workspace-api.ts";
+import {
+  generalFieldLabels,
+  generalChangedFields,
+  validateGeneralPolicy,
+  externalSourceUrl,
+  type GeneralPolicy,
+  type GeneralWorkspace,
+} from "../../../shared/general-policy.ts";
+import {
+  siteBannerState,
+  type SiteBannerConfig,
+} from "../../../shared/site-banner.ts";
+import { renderFooterMarkdown } from "../../helpers/footer-markdown.ts";
+import { getErrorMessage } from "../../helpers/root-ui-store.ts";
+const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+const sections = [
+  { key: "identity", title: "Identity" },
+  { key: "announcement", title: "Announcement" },
+  { key: "publishing", title: "Publishing" },
+  { key: "activity", title: "Activity" },
+];
 export default {
-  i18nOptions: { namespaces: 'editor' },
-  components: {
-    SiteBanner
-  },
-  data(): {
-    config: SiteConfig,
-    persistedConfig: SiteConfig | null,
-    metaRobots: Array<{ title: string, value: string }>,
-    initialLoading: boolean,
-    loaded: boolean,
-    saving: boolean,
-    formValid: boolean | null,
-    loadRequestId: number,
-    saveRequestId: number,
-    logoStatus: SiteLogoStatus | null,
-    logoUploading: boolean,
-    logoRetrying: boolean,
-    logoDragActive: boolean,
-    logoDragDepth: number,
-    logoErrorKey: string | null,
-    candidatePreviewUrl: string,
-    logoPollTimer: number | null,
-    logoRequestId: number,
-    logoRequestController: AbortController | null,
-    logoDisposed: boolean
-  } {
+  components: { AsyncState, SiteBanner, GeneralLogoManager },
+  data() {
     return {
-      config: {
-        host: '',
-        title: '',
-        description: '',
-        robots: [],
-        analyticsService: '',
-        analyticsId: '',
-        company: '',
-        contentLicense: '',
-        footerOverride: '',
-        banner: {
-          isEnabled: false,
-          title: '',
-          content: ''
-        },
-        logoUrl: '',
-        featureAnalytics: false,
-        featurePageRatings: false,
-        featurePageComments: false,
-        featurePersonalWikis: false,
-        featureTinyPNG: false,
-        pageExtensions: '',
-        editFab: false,
-        editMenuBar: false,
-        editMenuBtn: false,
-        editMenuExternalBtn: false,
-        editMenuExternalName: '',
-        editMenuExternalIcon: '',
-        editMenuExternalUrl: ''
+      saved: null as GeneralWorkspace | null,
+      draft: null as GeneralPolicy | null,
+      reviewed: null as GeneralPolicy | null,
+      changes: [] as Array<keyof GeneralPolicy>,
+      labels: generalFieldLabels,
+      sections,
+      section: "identity",
+      loading: false,
+      busy: false,
+      initializing: false,
+      stale: false,
+      loadError: "",
+      saveError: "",
+      notice: "",
+      attention: false,
+      sequence: 0,
+      disposed: false,
+      reviewing: false,
+      reason: "",
+      reviewFingerprint: "",
+      now: Date.now(),
+      clockTimer: undefined as number | undefined,
+      announcementLabels: {
+        disabled: "Not published",
+        scheduled: "Scheduled to appear",
+        ended: "Publication window ended",
+        visible: "Visible during the current window",
       },
-      persistedConfig: null,
-      initialLoading: true,
-      loaded: false,
-      saving: false,
-      formValid: null,
-      loadRequestId: 0,
-      saveRequestId: 0,
-      logoStatus: null,
-      logoUploading: false,
-      logoRetrying: false,
-      logoDragActive: false,
-      logoDragDepth: 0,
-      logoErrorKey: null,
-      candidatePreviewUrl: '',
-      logoPollTimer: null,
-      logoRequestId: 0,
-      logoRequestController: null,
-      logoDisposed: false,
-      metaRobots: [
-        { title: 'Index', value: 'index' },
-        { title: 'Follow', value: 'follow' },
-        { title: 'No Index', value: 'noindex' },
-        { title: 'No Follow', value: 'nofollow' }
-      ]
-    }
+      tones: [
+        { title: "Information", value: "info" },
+        { title: "Notice", value: "warning" },
+        { title: "Critical update", value: "critical" },
+      ],
+      indexOptions: [
+        { title: "Search engine default", value: "" },
+        { title: "Allow indexing", value: "index" },
+        { title: "Request no indexing", value: "noindex" },
+      ],
+      followOptions: [
+        { title: "Search engine default", value: "" },
+        { title: "Allow following links", value: "follow" },
+        { title: "Request no following", value: "nofollow" },
+      ],
+      related: [
+        { label: "Editors & authoring defaults", to: "/editor" },
+        { label: "Page discussions", to: "/comments" },
+        { label: "Theme & appearance", to: "/theme" },
+        { label: "Navigation", to: "/navigation" },
+        { label: "Analytics", to: "/analytics" },
+      ],
+    };
   },
   computed: {
-    siteTitle: {
-      get() { return wikiStore.site.title },
-      set(value: string) { wikiStore.site.title = value }
-    },
-    activeLogoUrl () {
-      return this.logoStatus?.active?.logoUrl || this.config.logoUrl || ''
-    },
-    candidateVisible () {
+    dirty(): boolean {
       return Boolean(
-        this.logoUploading ||
-        this.candidatePreviewUrl ||
-        (this.logoStatus?.candidate && this.logoStatus.candidate.status !== 'ready')
-      )
+        this.saved &&
+        this.draft &&
+        generalChangedFields(this.saved.policy, this.draft).length,
+      );
     },
-    candidateIsProcessing () {
-      const status = this.logoStatus?.candidate?.status
-      return status === 'pending' || status === 'running'
+    locked(): boolean {
+      return this.busy || this.initializing || this.loading || this.stale;
     },
-    candidateHasFailed () {
-      return this.logoStatus?.candidate?.status === 'failed'
+    logoUrl(): string {
+      return wikiStore.site.logoUrl;
     },
-    candidateStatusKey () {
-      if (this.logoUploading) return 'admin:general.logoStatusUploading'
-      if (this.logoErrorKey || this.logoStatus?.candidate?.status === 'failed') return 'admin:general.logoStatusFailed'
-      return 'admin:general.logoStatusProcessing'
+    footerPreview(): string {
+      return renderFooterMarkdown(this.draft?.footerOverride || "");
     },
-    candidateStatusColor () {
-      return this.logoErrorKey || this.logoStatus?.candidate?.status === 'failed' ? 'error' : 'info'
+    sourcePreview(): string {
+      return externalSourceUrl(
+        this.draft?.editMenuExternalUrl || "",
+        "en/handbook.md",
+      );
     },
-    company: {
-      get() { return wikiStore.site.company },
-      set(value: string) { wikiStore.site.company = value }
+    announcementState(): ReturnType<typeof siteBannerState> {
+      return this.draft
+        ? siteBannerState(this.draft.banner, this.now)
+        : "disabled";
     },
-    contentLicense: {
-      get() { return wikiStore.site.contentLicense },
-      set(value: string) { wikiStore.site.contentLicense = value }
+    announcementExplanation(): string {
+      if (this.announcementState === "disabled")
+        return "The message remains available for editing.";
+      if (this.announcementState === "scheduled")
+        return "Readers receive this notice on page loads after its start time.";
+      if (this.announcementState === "ended")
+        return "Choose a new publication window to show this notice again.";
+      return this.dirty
+        ? "This is the draft’s current schedule. Review and save to publish your changes."
+        : "The saved announcement is available to readers loading a wiki page.";
     },
-    footerOverride: {
-      get() { return wikiStore.site.footerOverride },
-      set(value: string) { wikiStore.site.footerOverride = value }
+    indexDirective(): string {
+      return (
+        this.draft?.robots.find((value) =>
+          ["index", "noindex"].includes(value),
+        ) || ""
+      );
     },
-    dirty () {
-      return this.persistedConfig !== null && !_.isEqual(this.siteConfigPayload(), this.persistedConfig)
+    followDirective(): string {
+      return (
+        this.draft?.robots.find((value) =>
+          ["follow", "nofollow"].includes(value),
+        ) || ""
+      );
     },
-    hostRules () {
+    licenses() {
       return [
-        (value: string) => Boolean(value?.trim()) || 'Required',
-        (value: string) => /^https?:\/\/.+/i.test(value) || 'Enter a valid URL (https://...)'
-      ]
+        "",
+        "alr",
+        "cc0",
+        "ccby",
+        "ccbysa",
+        "ccbynd",
+        "ccbync",
+        "ccbyncsa",
+        "ccbyncnd",
+      ].map((value) => ({
+        value,
+        title: this.$t("common:license." + (value || "none")),
+      }));
     },
-    titleRules () {
-      return [
-        (value: string) => Boolean(value?.trim()) || 'Required',
-        (value: string) => !titleRegex.test(value) || this.$t('admin:general.siteTitleInvalidChars')
-      ]
-    },
-    contentLicenses () {
-      return [
-        { value: '', title: this.$t('common:license.none') },
-        { value: 'alr', title: this.$t('common:license.alr') },
-        { value: 'cc0', title: this.$t('common:license.cc0') },
-        { value: 'ccby', title: this.$t('common:license.ccby') },
-        { value: 'ccbysa', title: this.$t('common:license.ccbysa') },
-        { value: 'ccbynd', title: this.$t('common:license.ccbynd') },
-        { value: 'ccbync', title: this.$t('common:license.ccbync') },
-        { value: 'ccbyncsa', title: this.$t('common:license.ccbyncsa') },
-        { value: 'ccbyncnd', title: this.$t('common:license.ccbyncnd') }
-      ]
-    }
   },
-  methods: {
-    siteConfigPayload () {
-      return {
-        host: _.get(this.config, 'host', ''),
-        title: _.get(this.config, 'title', ''),
-        description: _.get(this.config, 'description', ''),
-        robots: _.get(this.config, 'robots', []),
-        analyticsService: _.get(this.config, 'analyticsService', ''),
-        analyticsId: _.get(this.config, 'analyticsId', ''),
-        company: _.get(this.config, 'company', ''),
-        contentLicense: _.get(this.config, 'contentLicense', ''),
-        footerOverride: _.get(this.config, 'footerOverride', ''),
-        banner: _.get(this.config, 'banner', { isEnabled: false, title: '', content: '' }),
-        pageExtensions: _.get(this.config, 'pageExtensions', ''),
-        featurePageRatings: _.get(this.config, 'featurePageRatings', false),
-        featurePersonalWikis: _.get(this.config, 'featurePersonalWikis', false),
-        editFab: _.get(this.config, 'editFab', false),
-        editMenuBar: _.get(this.config, 'editMenuBar', false),
-        editMenuBtn: _.get(this.config, 'editMenuBtn', false),
-        editMenuExternalBtn: _.get(this.config, 'editMenuExternalBtn', false),
-        editMenuExternalName: _.get(this.config, 'editMenuExternalName', ''),
-        editMenuExternalIcon: _.get(this.config, 'editMenuExternalIcon', ''),
-        editMenuExternalUrl: _.get(this.config, 'editMenuExternalUrl', '')
-      }
+  watch: {
+    "$route.hash": {
+      immediate: true,
+      handler(hash: string) {
+        this.section = sections.some((section) => section.key === hash.slice(1))
+          ? hash.slice(1)
+          : "identity";
+      },
     },
-    async loadConfig () {
-      const requestId = ++this.loadRequestId
-      this.initialLoading = true
-      this.loaded = false
-      setLoading(wikiStore, 'admin-site-refresh', true)
-      try {
-        const loaded = _.cloneDeep(await fetchSiteConfig(window.fetch.bind(window)))
-        if (requestId !== this.loadRequestId) return
-        this.config = loaded
-        this.persistedConfig = _.cloneDeep(this.siteConfigPayload())
-        this.loaded = true
-      } catch (err) {
-        if (requestId === this.loadRequestId) pushGraphError(wikiStore, err)
-      } finally {
-        if (requestId === this.loadRequestId) this.initialLoading = false
-        setLoading(wikiStore, 'admin-site-refresh', false)
-      }
-    },
-    async save () {
-      if (!this.loaded || this.initialLoading || this.saving || !this.dirty || !this.formValid) return
-      const title = _.get(this.config, 'title', '')
-      if (titleRegex.test(title)) {
-        showNotification(wikiStore, {
-          style: 'error',
-          message: this.$t('admin:general.siteTitleInvalidChars'),
-          icon: 'alert'
-        })
-        return
-      }
-      const requestId = ++this.saveRequestId
-      this.saving = true
-      loadingStart(wikiStore, 'admin-site-update')
-      try {
-        const payload = this.siteConfigPayload()
-        await saveSiteConfig(window.fetch.bind(window), payload)
-        if (requestId !== this.saveRequestId) return
-        this.persistedConfig = _.cloneDeep(payload)
-        showNotification(wikiStore, {
-          style: 'success',
-          message: this.$t('admin:general.saveSuccess'),
-          icon: 'check'
-        })
-        this.siteTitle = this.config.title ?? ''
-        this.company = this.config.company ?? ''
-        this.contentLicense = this.config.contentLicense ?? ''
-        this.footerOverride = this.config.footerOverride ?? ''
-        wikiStore.site.banner = _.cloneDeep(this.config.banner)
-      } catch (err) {
-        if (requestId === this.saveRequestId) pushGraphError(wikiStore, err)
-      } finally {
-        if (requestId === this.saveRequestId) this.saving = false
-        loadingStop(wikiStore, 'admin-site-update')
-      }
-    },
-    clearLogoPoll () {
-      if (this.logoPollTimer !== null) {
-        window.clearTimeout(this.logoPollTimer)
-        this.logoPollTimer = null
-      }
-    },
-    scheduleLogoPoll () {
-      this.clearLogoPoll()
-      if (this.logoDisposed || !this.candidateIsProcessing) return
-      this.logoPollTimer = window.setTimeout(() => {
-        this.logoPollTimer = null
-        this.refreshLogoStatus()
-      }, 1500)
-    },
-    applyLogoStatus (status: SiteLogoStatus) {
-      this.logoStatus = status
-      this.logoErrorKey = status.candidate?.status === 'failed'
-        ? this.logoErrorMessageKey(status.candidate.errorCode)
-        : null
-      if (!status.candidate || status.candidate.status === 'ready') this.clearCandidatePreview()
-      if (status.candidate?.status === 'pending' || status.candidate?.status === 'running') {
-        this.scheduleLogoPoll()
-      } else {
-        this.clearLogoPoll()
-      }
-    },
-    logoErrorMessageKey (code: SiteLogoErrorCode | null) {
-      return code ? logoErrorMessageKeys[code] : 'admin:general.logoErrorGeneric'
-    },
-    logoRequestErrorKey (error: unknown) {
-      return error instanceof SiteLogoApiError
-        ? this.logoErrorMessageKey(error.code)
-        : 'admin:general.logoErrorGeneric'
-    },
-    async refreshLogoStatus () {
-      const requestId = ++this.logoRequestId
-      this.logoRequestController?.abort()
-      const controller = new AbortController()
-      this.logoRequestController = controller
-      try {
-        const status = await fetchSiteLogoStatus(window.fetch.bind(window), controller.signal)
-        if (requestId !== this.logoRequestId || this.logoDisposed) return
-        this.applyLogoStatus(status)
-      } catch (error) {
-        if (requestId === this.logoRequestId && !this.logoDisposed && !controller.signal.aborted) {
-          this.clearLogoPoll()
-          this.logoErrorKey = this.logoRequestErrorKey(error)
-        }
-      }
-    },
-    openLogoPicker () {
-      if (this.logoUploading || this.logoRetrying) return
-      ;(this.$refs.logoFileInput as HTMLInputElement | undefined)?.click()
-    },
-    onLogoDragEnter () {
-      if (this.logoUploading || this.logoRetrying) return
-      this.logoDragDepth++
-      this.logoDragActive = true
-    },
-    onLogoDragLeave () {
-      this.logoDragDepth = Math.max(0, this.logoDragDepth - 1)
-      this.logoDragActive = this.logoDragDepth > 0
-    },
-    onLogoDrop (event: DragEvent) {
-      this.logoDragDepth = 0
-      this.logoDragActive = false
-      if (this.logoUploading || this.logoRetrying) return
-      this.acceptLogoFiles(event.dataTransfer?.files)
-    },
-    onLogoFileChange (event: Event) {
-      const input = event.target as HTMLInputElement
-      this.acceptLogoFiles(input.files)
-      input.value = ''
-    },
-    acceptLogoFiles (files: FileList | null | undefined) {
-      if (!files || files.length !== 1) {
-        this.logoErrorKey = 'admin:general.logoErrorOneFile'
-        return
-      }
-      const file = files.item(0)
-      if (!file) {
-        this.logoErrorKey = 'admin:general.logoErrorOneFile'
-      } else if (file.size > SITE_LOGO_MAX_BYTES) {
-        this.logoErrorKey = 'admin:general.logoErrorTooLarge'
-      } else {
-        this.uploadSelectedLogo(file)
-      }
-    },
-    replaceCandidatePreview (file: File) {
-      this.clearCandidatePreview()
-      this.candidatePreviewUrl = URL.createObjectURL(file)
-    },
-    clearCandidatePreview () {
-      if (!this.candidatePreviewUrl) return
-      URL.revokeObjectURL(this.candidatePreviewUrl)
-      this.candidatePreviewUrl = ''
-    },
-    async uploadSelectedLogo (file: File) {
-      this.clearLogoPoll()
-      const requestId = ++this.logoRequestId
-      this.logoRequestController?.abort()
-      const controller = new AbortController()
-      this.logoRequestController = controller
-      this.logoErrorKey = null
-      this.logoUploading = true
-      this.replaceCandidatePreview(file)
-      try {
-        const status = await uploadSiteLogo(window.fetch.bind(window), file, controller.signal)
-        if (requestId !== this.logoRequestId || this.logoDisposed) return
-        this.applyLogoStatus(status)
-      } catch (error) {
-        if (requestId === this.logoRequestId && !this.logoDisposed && !controller.signal.aborted) {
-          this.logoErrorKey = this.logoRequestErrorKey(error)
-        }
-      } finally {
-        if (requestId === this.logoRequestId && !this.logoDisposed) this.logoUploading = false
-      }
-    },
-    async retryLogo () {
-      if (this.logoUploading || this.logoRetrying) return
-      this.clearLogoPoll()
-      const requestId = ++this.logoRequestId
-      this.logoRequestController?.abort()
-      const controller = new AbortController()
-      this.logoRequestController = controller
-      this.logoErrorKey = null
-      this.logoRetrying = true
-      try {
-        const status = await retrySiteLogo(window.fetch.bind(window), controller.signal)
-        if (requestId !== this.logoRequestId || this.logoDisposed) return
-        this.applyLogoStatus(status)
-      } catch (error) {
-        if (requestId === this.logoRequestId && !this.logoDisposed && !controller.signal.aborted) {
-          this.logoErrorKey = this.logoRequestErrorKey(error)
-        }
-      } finally {
-        if (requestId === this.logoRequestId && !this.logoDisposed) this.logoRetrying = false
-      }
-    }
   },
-  mounted () {
-    this.loadConfig()
-    this.refreshLogoStatus()
+  mounted() {
+    void this.load();
+    this.clockTimer = window.setInterval(() => {
+      this.now = Date.now();
+    }, 30000);
+    window.addEventListener("beforeunload", this.beforeUnload);
   },
   beforeUnmount() {
-    this.logoDisposed = true
-    this.loadRequestId++
-    this.saveRequestId++
-    this.logoRequestId++
-    this.logoRequestController?.abort()
-    this.logoRequestController = null
-    this.clearLogoPoll()
-    this.clearCandidatePreview()
-  }
-}
+    this.disposed = true;
+    this.sequence++;
+    window.clearInterval(this.clockTimer);
+    window.removeEventListener("beforeunload", this.beforeUnload);
+  },
+  beforeRouteLeave(): boolean {
+    return this.canLeave();
+  },
+  beforeRouteUpdate(to, from): boolean {
+    return (
+      !this.busy &&
+      !this.initializing &&
+      (to.path === from.path || this.canLeave())
+    );
+  },
+  methods: {
+    async load() {
+      if (this.busy) return;
+      const seq = ++this.sequence;
+      this.loading = true;
+      this.loadError = "";
+      try {
+        const result = await fetchGeneralWorkspace();
+        if (this.disposed || seq !== this.sequence) return;
+        this.saved = result;
+        this.draft = copy(result.policy);
+        this.stale = false;
+      } catch (error) {
+        if (!this.disposed && seq === this.sequence) {
+          this.loadError = getErrorMessage(error);
+          this.stale = true;
+        }
+      } finally {
+        if (!this.disposed && seq === this.sequence) this.loading = false;
+      }
+    },
+    async reload() {
+      if (this.busy || this.initializing) return;
+      if (this.dirty && !window.confirm("Discard unsaved workspace changes?"))
+        return;
+      await this.load();
+    },
+    reset() {
+      if (this.locked || !this.saved) return;
+      this.draft = copy(this.saved.policy);
+      this.notice = "";
+    },
+    selectSection(key: string) {
+      if (!this.busy && !this.initializing)
+        void this.$router.replace({
+          query: this.$route.query,
+          hash: key === "identity" ? "" : "#" + key,
+        });
+    },
+    date(value: string) {
+      return new Date(value).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+    },
+    dateInput(value?: string | null): string {
+      return value ? value.slice(0, 16) : "";
+    },
+    setSchedule(key: "startsAt" | "endsAt", value: string | null) {
+      if (!this.draft || this.locked) return;
+      this.draft.banner[key] = value
+        ? value.length === 16
+          ? value + ":00Z"
+          : value + "Z"
+        : null;
+    },
+    setRobots(kind: "index" | "follow", value: string) {
+      if (!this.draft || this.locked) return;
+      const pair =
+        kind === "index" ? ["index", "noindex"] : ["follow", "nofollow"];
+      this.draft.robots = [
+        ...this.draft.robots.filter((item) => !pair.includes(item)),
+        ...(value ? [value] : []),
+      ];
+    },
+    displayValue(
+      field: keyof GeneralPolicy,
+      value: GeneralPolicy[keyof GeneralPolicy],
+    ): string {
+      if (typeof value === "boolean") return value ? "Shown" : "Hidden";
+      if (field === "banner") {
+        const banner = value as SiteBannerConfig;
+        return [
+          banner.isEnabled ? "Published during its window" : "Not published",
+          banner.title || "No title",
+          banner.content || "No message",
+          "Tone: " + (banner.tone || "warning"),
+          "Starts: " + (banner.startsAt || "Immediately"),
+          "Ends: " + (banner.endsAt || "Until disabled"),
+        ].join("\n");
+      }
+      if (Array.isArray(value)) return value.join(", ") || "None selected";
+      if (field === "contentLicense")
+        return this.$t("common:license." + (value || "none"));
+      return String(value || "Not set");
+    },
+    review() {
+      if (this.locked || !this.saved || !this.draft || !this.dirty) return;
+      const validated = validateGeneralPolicy(this.draft);
+      if (!validated.ok) {
+        this.notice = validated.issues.join(" ");
+        this.attention = true;
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      this.reviewed = copy(validated.value);
+      this.changes = generalChangedFields(this.saved.policy, this.reviewed);
+      if (!this.changes.length) {
+        this.draft = copy(this.saved.policy);
+        return;
+      }
+      this.reviewFingerprint = this.saved.fingerprint;
+      this.reason = "";
+      this.saveError = "";
+      this.notice = "";
+      this.reviewing = true;
+    },
+    async confirm() {
+      if (
+        this.locked ||
+        !this.reviewing ||
+        !this.reviewed ||
+        this.reason.trim().length < 3
+      )
+        return;
+      this.busy = true;
+      this.saveError = "";
+      try {
+        const result = await saveGeneralWorkspace(
+          this.reviewed,
+          this.reviewFingerprint,
+          this.reason.trim(),
+        );
+        if (this.disposed) return;
+        this.saved = {
+          ...this.saved!,
+          policy: copy(this.reviewed),
+          runtime: { ...this.saved!.runtime, state: "needs-attention" },
+        };
+        this.draft = copy(this.reviewed);
+        Object.assign(wikiStore.site, {
+          title: this.reviewed.title,
+          company: this.reviewed.company,
+          contentLicense: this.reviewed.contentLicense,
+          footerOverride: this.reviewed.footerOverride,
+          banner: copy(this.reviewed.banner),
+        });
+        this.reviewing = false;
+        this.reviewed = null;
+        this.reason = "";
+        this.notice =
+          "Workspace settings saved." +
+          (result.activation === "needs-attention"
+            ? " Runtime activation needs attention."
+            : "");
+        this.attention = result.activation === "needs-attention";
+        this.busy = false;
+        this.stale = true;
+        await this.load();
+      } catch (error) {
+        if (!this.disposed) {
+          const status =
+            error && typeof error === "object"
+              ? Reflect.get(error, "status")
+              : 0;
+          this.stale =
+            !status ||
+            Number(status) >= 500 ||
+            [401, 403, 409].includes(status);
+          this.saveError =
+            getErrorMessage(error) +
+            (!status
+              ? " The outcome is unconfirmed. Reload before saving again."
+              : "");
+          if (this.stale) {
+            this.notice =
+              "Reload saved settings before another review. Your draft is retained.";
+            this.attention = true;
+          }
+        }
+      } finally {
+        if (!this.disposed) this.busy = false;
+      }
+    },
+    async reloadReview() {
+      if (
+        this.busy ||
+        !window.confirm(
+          "Discard this review and load saved workspace settings?",
+        )
+      )
+        return;
+      this.reviewing = false;
+      await this.load();
+    },
+    async initialize() {
+      if (this.locked || this.dirty || !this.saved) return;
+      this.initializing = true;
+      try {
+        const result = await retryGeneralRuntime(this.saved.fingerprint);
+        this.notice =
+          result.activation === "applied"
+            ? "Runtime workspace configuration applied."
+            : "Runtime activation needs attention. Review server diagnostics.";
+        this.attention = result.activation !== "applied";
+        await this.load();
+      } catch (error) {
+        this.notice = getErrorMessage(error);
+        this.attention = true;
+      } finally {
+        this.initializing = false;
+      }
+    },
+    canLeave(): boolean {
+      return (
+        !this.busy &&
+        !this.initializing &&
+        ((!this.dirty && !(this.reviewing && this.reason)) ||
+          window.confirm("Discard unsaved workspace changes?"))
+      );
+    },
+    beforeUnload(event: BeforeUnloadEvent) {
+      if (
+        this.busy ||
+        this.initializing ||
+        this.dirty ||
+        (this.reviewing && this.reason)
+      ) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    },
+  },
+};
 </script>
-
-<style lang='scss'>
-
-  .logo-manager {
-    --logo-manager-border: rgba(var(--v-border-color), var(--v-border-opacity));
-  }
-  .logo-preview-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-  .logo-preview-card {
-    min-width: 0;
-    padding: 1rem;
-    border: 1px solid var(--logo-manager-border);
-    border-radius: 12px;
-    background: rgba(var(--v-theme-surface-variant), .24);
-  }
-  .logo-preview-heading {
-    margin-bottom: .75rem;
-    color: rgba(var(--v-theme-on-surface), .72);
-    font-size: .75rem;
-    font-weight: 700;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-  }
-  .logo-preview-frame {
-    display: grid;
-    width: 100%;
-    height: 112px;
-    place-items: center;
-    overflow: hidden;
-    border-radius: 8px;
-    background:
-      linear-gradient(45deg, rgba(var(--v-theme-on-surface), .05) 25%, transparent 25%) 0 0 / 16px 16px,
-      linear-gradient(-45deg, rgba(var(--v-theme-on-surface), .05) 25%, transparent 25%) 0 8px / 16px 16px,
-      linear-gradient(45deg, transparent 75%, rgba(var(--v-theme-on-surface), .05) 75%) 8px -8px / 16px 16px,
-      linear-gradient(-45deg, transparent 75%, rgba(var(--v-theme-on-surface), .05) 75%) -8px 0 / 16px 16px;
-  }
-  .logo-preview-frame > .v-img {
-    width: 100%;
-    height: 100%;
-  }
-  .logo-drop-target {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    min-height: 96px;
-    padding: 1rem 1.25rem;
-    border: 1.5px dashed rgba(var(--v-theme-primary), .5);
-    border-radius: 12px;
-    background: rgba(var(--v-theme-primary), .045);
-    cursor: pointer;
-    transition: border-color .16s ease, background-color .16s ease, transform .16s ease;
-  }
-  .logo-drop-target:hover,
-  .logo-drop-target:focus-visible,
-  .logo-drop-target--active {
-    border-color: rgb(var(--v-theme-primary));
-    background: rgba(var(--v-theme-primary), .1);
-    outline: none;
-    transform: translateY(-1px);
-  }
-  .logo-drop-target:focus-visible {
-    box-shadow: 0 0 0 3px rgba(var(--v-theme-primary), .22);
-  }
-  .logo-drop-target--disabled {
-    cursor: wait;
-    opacity: .58;
-    transform: none;
-  }
-  .logo-file-input {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-  .logo-drop-icon {
-    flex: 0 0 auto;
-    color: rgb(var(--v-theme-primary));
-  }
-  .logo-drop-copy {
-    min-width: 0;
-  }
-  .logo-message {
-    margin-top: .75rem;
-    font-size: .875rem;
-  }
-  .logo-message--error {
-    color: rgb(var(--v-theme-error));
-  }
-  .logo-disclosure {
-    display: flex;
-    align-items: flex-start;
-    margin: 1rem 0 0;
-    line-height: 1.5;
-  }
-  @media (max-width: 600px) {
-    .logo-preview-grid {
-      grid-template-columns: 1fr;
-    }
-    .logo-drop-target {
-      align-items: flex-start;
-    }
-  }
-</style>
+<style lang="scss" src="./general-workspace.scss"></style>
