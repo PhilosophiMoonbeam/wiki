@@ -231,12 +231,12 @@ export function buildAdminNavigation(translate: (key: string) => string, permiss
       items: [
         {
           key: 'system',
-          label: translate('admin:system.title'),
+          label: 'System',
           icon: 'mdi-monitor-dashboard',
           to: '/system',
           permission: 'manage:system',
-          description: 'Build and environment information',
-          keywords: ''
+          description: 'Runtime observations, background work and support reports',
+          keywords: 'health diagnostics scheduler queue migrations deployment'
         },
         {
           key: 'storage',

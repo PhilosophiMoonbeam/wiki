@@ -3,8 +3,20 @@ import { type NextFunction, type Request, type Response, getWikiAuth } from '../
 
 import systemOperations from '../../operations/system.ts'
 import importV1Operations from '../../operations/import-v1.ts'
+import { getSystemWorkspaceStore } from '../../operations/system-workspace-runtime.ts'
 
 const router = express.Router()
+
+router.get('/workspace', async (req, res) => {
+  res.set('Cache-Control', 'no-store')
+  if (!getWikiAuth().checkAccess(req.user, ['manage:system'])) return res.status(403).json({error: 'System administration is required.'})
+  try {
+    return res.json(await getSystemWorkspaceStore().inspect(req.user))
+  } catch (error) {
+    const denied = error instanceof Error && 'status' in error && error.status === 403
+    return res.status(denied ? 403 : 503).json({error: denied ? 'Current system administration access is required.' : 'System observations could not be collected. Check application and database availability, then try again.'})
+  }
+})
 
 const requireSystemAccess = (req: Request, res: Response): boolean => {
   if (!getWikiAuth().checkAccess(req.user, ['manage:system'])) {

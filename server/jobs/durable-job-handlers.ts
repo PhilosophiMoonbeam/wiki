@@ -1,4 +1,5 @@
 import { createLocalePackageHandler } from './locale-package.ts'
+import type { DurableJobIdentity } from '../../shared/durable-job-catalog.ts'
 import type { ContentExtensionRerenderContext } from '../content-extensions/rerender.ts'
 import { type DurableJobHandler } from '../core/durable-jobs.ts'
 import { decryptWebhookSecret, resolveWebhookUrl, sendSignedWebhook, WebhookDeliveryError } from '../core/webhooks.ts'
@@ -81,7 +82,7 @@ export const createWebhookDeliveryHandler =
 export const createDurableJobHandlers = (
   sessionSecret: string,
   wiki: PageWatchWikiContext & ContentExtensionRerenderContext
-): Readonly<Record<string, DurableJobHandler>> =>
+): Readonly<Record<DurableJobIdentity, DurableJobHandler>> =>
   Object.freeze({
     'locale-package@1': createLocalePackageHandler(),
     'cleanup-durable-jobs@1': cleanupDurableJobs,
@@ -92,4 +93,4 @@ export const createDurableJobHandlers = (
     'rerender-content-extension@1': createContentExtensionRerenderHandler(wiki),
     'deliver-webhook@1': createWebhookDeliveryHandler(sessionSecret),
     'notify-page-watcher@1': createPageWatchNotificationHandler(wiki)
-  })
+  } satisfies Record<DurableJobIdentity, DurableJobHandler>)

@@ -1,3 +1,5 @@
+const observationStore = {inspect: vi.fn()}
+vi.mockModule('../../operations/system-workspace-runtime.ts', import.meta.url, () => ({getSystemWorkspaceStore: () => observationStore}))
 vi.mockModule('express', import.meta.url, () => {
   const router = {
     get: vi.fn(),
@@ -255,6 +257,7 @@ describe('controllers/api system endpoints', () => {
   const loadHandlers = async () => {
     await vi.importFresh('../../controllers/api/system.ts', import.meta.url)
     return {
+      workspace: express.__router.get.mock.calls.find(([path]) => path === '/workspace')[1],
       info: express.__router.get.mock.calls.find(([path]) => path === '/info')[1],
       summary: express.__router.get.mock.calls.find(([path]) => path === '/summary')[1],
       flags: express.__router.get.mock.calls.find(([path]) => path === '/flags')[1],
@@ -1303,4 +1306,32 @@ describe('controllers/api system endpoints', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'ensure failed' })
     expect(global.WIKI.system.export).not.toHaveBeenCalled()
   })
+  it('returns no-store System observations for the current principal',async()=>{
+    global.WIKI.auth.checkAccess.mockReturnValue(true)
+    observationStore.inspect.mockResolvedValue({observedAt:'now'})
+    const {workspace}=await loadHandlers(),res={set:vi.fn(),status:vi.fn().mockReturnThis(),json:vi.fn()},user={id:1,authVersion:0}
+    await workspace({user},res)
+    expect(observationStore.inspect).toHaveBeenCalledWith(user)
+    expect(res.set).toHaveBeenCalledWith('Cache-Control','no-store')
+    expect(res.json).toHaveBeenCalledWith({observedAt:'now'})
+  })
+  it('denies observation reads at the transport and preserves persisted-access rejection',async()=>{
+    const {workspace}=await loadHandlers(),res={set:vi.fn(),status:vi.fn().mockReturnThis(),json:vi.fn()}
+    global.WIKI.auth.checkAccess.mockReturnValue(false)
+    await workspace({user:{id:1}},res)
+    expect(res.status).toHaveBeenCalledWith(403);expect(observationStore.inspect).not.toHaveBeenCalled()
+    global.WIKI.auth.checkAccess.mockReturnValue(true)
+    observationStore.inspect.mockRejectedValue(Object.assign(new Error('Changed access'),{status:403}))
+    await workspace({user:{id:1}},res)
+    expect(res.json).toHaveBeenLastCalledWith({error:'Current system administration access is required.'})
+  })
+  it('redacts failed observation queries and reports an unavailable service',async()=>{
+    global.WIKI.auth.checkAccess.mockReturnValue(true)
+    observationStore.inspect.mockRejectedValue(new Error('database password private'))
+    const {workspace}=await loadHandlers(),res={set:vi.fn(),status:vi.fn().mockReturnThis(),json:vi.fn()}
+    await workspace({user:{id:1}},res)
+    expect(res.status).toHaveBeenCalledWith(503)
+    expect(JSON.stringify(res.json.mock.calls)).not.toContain('password')
+  })
+
 })
