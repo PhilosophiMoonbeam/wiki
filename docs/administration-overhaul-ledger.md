@@ -6,7 +6,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 
 | Area | Workflow and capability scope | State |
 | --- | --- | --- |
-| Pages | Inventory, filtering, ownership, publication, detail and bulk actions | Implemented; deployment verification pending |
+| Pages | Inventory, filtering, ownership, publication, detail and bulk actions | Implemented; first milestone verified |
 | Tags | Taxonomy, usage, editing and consolidation | Pending |
 | Editors | Availability, defaults and configuration | Pending |
 | Rendering | Pipeline, dependencies, configuration and output | Pending |
@@ -135,3 +135,10 @@ The inventory supports basic local text, locale and publication filtering, but o
 - Capability limits: inventory filtering/sorting is client-side over the accessible list; there is no server-paginated large-estate inventory yet. Bulk processing belongs to the active browser, not a durable background job; closing it can lose the displayed outcomes. Bulk editing currently changes publication enablement, not ownership, visibility, tags or page deletion. Account search returns up to ten matches and does not imply an account is active. Review/approval and content authoring remain in the existing page/editor workflows.
 
 Validation so far: 54 browser cases across desktop/tablet/phone widths and both themes passed without overflow, JavaScript errors or WCAG A/AA violations. Focused interactions passed bookmark restoration, filtered export, bulk stop/resume, partial failure review/retry, single-page conflict recovery and navigation protection. Ten targeted test files passed, covering the page transport, protection delegation, schedule validation, revision/conflict behavior, private-page error policy, existing routed load/delete races and graph loading. An additional 24 access-dialog and populated knowledge/provenance cases passed across the same widths and themes, including ownership transfer and a visibility conflict. Production deployment remains pending.
+
+
+Pages deployment `e3cef27f` is healthy and its image revision matches the committed source. Production Docker build and bundle gates passed. Unintercepted browser verification covered the register, three detail sections, atlas and connection directory in 36 desktop/tablet/phone and theme cases with no overflow, JavaScript errors or WCAG A/AA violations. Two temporary private pages verified real UI bulk publication, persisted schedule boundaries, a stale-revision HTTP 409, invalid-calendar-date HTTP 400, and return to draft. Both remained private with unchanged owners and were deleted after verification. No enabled webhook receivers were present. Visibility changes and ownership transfer were exercised through controlled browser fixtures and existing protected operation tests; no real page was reassigned to another person. Browser authentication state was removed after testing. Rollback configuration is retained locally as `compose.before-e3cef27f.yml`.
+
+## Tags initial findings
+
+The editor assigns the selected list object directly to its form, so unsaved edits alter the directory and a failed save can look persisted. It has no saved/draft separation, navigation protection, usage overview or consolidation workflow. Its list derives tags from accessible pages and hides orphaned tags. Server rename/delete operations change tag rows/associations directly without an explicit page-projection/cache refresh or an impact review. Group rules can match a tag's name with `TAG` and give those rules high specificity; renaming or consolidating a tag can therefore change effective access. The next implementation needs a taxonomy inventory, draft-safe editing, associated-page and rule impact review, and transactional consolidation/cleanup that preserves page and authorization invariants. Tags remains pending substantive implementation and verification.
