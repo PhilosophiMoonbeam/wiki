@@ -4,6 +4,7 @@ const template = Object.fromEntries(
   )
 )
 vi.mockModule('../../modules/storage/disk/storage.ts', import.meta.url, () => ({ default: template }))
+vi.mockModule('../../modules/storage/sftp/storage.ts', import.meta.url, () => ({ default: template }))
 describe('Storage runtime replacement and synchronization', () => {
   let Storage, rows, scheduler
   const row = (value = 'first') => ({
@@ -131,6 +132,96 @@ describe('Storage runtime replacement and synchronization', () => {
     expect(scheduler.jobs).toHaveLength(0)
     expect(job.stop).toHaveBeenCalledTimes(1)
     expect(template.deactivated).toHaveBeenCalledTimes(1)
+    expect(rows[0].state.status).toBe('error')
+  })
+  it('owns the runtime through the reviewed effect and durable receipt', async () => {
+    await Storage.initTargets()
+    const events = [],
+      gate = Promise.withResolvers()
+    template.dump.mockImplementation(async () => {
+      events.push('effect')
+    })
+    template.created.mockImplementation(async () => {
+      events.push('page')
+    })
+    const operation = Storage.performAdministrativeOperation(
+      async () => {
+        events.push('review')
+        return { targetKey: 'disk', handler: 'dump' }
+      },
+      async result => {
+        events.push('receipt')
+        await gate.promise
+        return result
+      }
+    )
+    await vi.waitFor(() => expect(events).toEqual(['review', 'effect', 'receipt']))
+    const page = Storage.pageEvent({ event: 'created', page: { path: 'guide' } })
+    await Promise.resolve()
+    expect(events).toEqual(['review', 'effect', 'receipt'])
+    gate.resolve()
+    await operation
+    await page
+    expect(events).toEqual(['review', 'effect', 'receipt', 'page'])
+    await expect(
+      Storage.performAdministrativeOperation(
+        async () => {
+          throw Error('review changed')
+        },
+        async () => undefined
+      )
+    ).rejects.toThrow('review changed')
+    expect(template.dump).toHaveBeenCalledTimes(1)
+  })
+  it('drains stale timers outside reviewed activation and returns the actual active runtime', async () => {
+    await Storage.initTargets()
+    const generation = Storage.targets[0].runtimeGeneration
+    const gate = Promise.withResolvers()
+    let stale
+    scheduler.jobs = [{ name: 'sync-storage', stop: vi.fn(() => stale) }]
+    const operation = Storage.performAdministrativeOperation(
+      async () => {
+        await gate.promise
+        return { targetKey: null, handler: 'activate' }
+      },
+      async result => result
+    )
+    stale = Storage.syncTarget('disk', generation)
+    gate.resolve()
+    const result = await operation
+    expect(await stale).toBe(false)
+    expect(result[0]).toMatchObject({ key: 'disk', active: true, paused: false })
+    expect(result[0].generation).not.toBe(generation)
+  })
+  it('pauses remote initialization in offline mode while retaining local disk service', async () => {
+    global.WIKI.config = { offline: true }
+    global.WIKI.data.storage.push({ key: 'sftp', isAvailable: true, props: {}, schedule: false, actions: [{ handler: 'dump' }] })
+    rows.push({ ...row('remote'), key: 'sftp' })
+    await Storage.initTargets()
+    expect(template.init).toHaveBeenCalledTimes(1)
+    expect(Storage.activeTargets.map(target => target.key)).toEqual(['disk'])
+    expect(Storage.runtimeTargets().find(target => target.key === 'sftp')).toMatchObject({ active: false, paused: true })
+    expect(rows[1].state.status).toBe('paused')
+  })
+  it('stops new remote effects immediately when offline policy changes', async () => {
+    global.WIKI.config = { offline: false }
+    global.WIKI.data.storage = [{ key: 'sftp', isAvailable: true, props: {}, schedule: false, actions: [{ handler: 'dump' }] }]
+    rows = [{ ...row('remote'), key: 'sftp' }]
+    await Storage.initTargets()
+    const generation = rows[0].runtimeGeneration
+    global.WIKI.config.offline = true
+    await Storage.pageEvent({ event: 'created', page: { path: 'guide' } })
+    await Storage.assetEvent({ event: 'uploaded', asset: { path: 'asset' } })
+    expect(await Storage.syncTarget('sftp', generation)).toBe(false)
+    await expect(Storage.executeAction('sftp', 'dump')).rejects.toThrow('paused in offline mode')
+    for (const method of ['created', 'assetUploaded', 'sync', 'dump']) expect(template[method]).not.toHaveBeenCalled()
+  })
+
+  it('does not initialize enabled targets unavailable in this build', async () => {
+    global.WIKI.data.storage[0].isAvailable = false
+    await Storage.initTargets()
+    expect(template.init).not.toHaveBeenCalled()
+    expect(Storage.activeTargets).toHaveLength(0)
     expect(rows[0].state.status).toBe('error')
   })
 })

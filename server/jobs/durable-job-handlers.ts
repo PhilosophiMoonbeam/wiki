@@ -1,4 +1,5 @@
 import { createLocalePackageHandler } from './locale-package.ts'
+import { createStorageActionHandler } from './storage-action.ts'
 import type { DurableJobIdentity } from '../../shared/durable-job-catalog.ts'
 import type { ContentExtensionRerenderContext } from '../content-extensions/rerender.ts'
 import { type DurableJobHandler } from '../core/durable-jobs.ts'
@@ -85,6 +86,7 @@ export const createDurableJobHandlers = (
 ): Readonly<Record<DurableJobIdentity, DurableJobHandler>> =>
   Object.freeze({
     'locale-package@1': createLocalePackageHandler(),
+    'storage-action@1': createStorageActionHandler(),
     'cleanup-durable-jobs@1': cleanupDurableJobs,
     'cleanup-site-logo@1': cleanupSiteLogoRevisions,
     'process-site-logo@1': createSiteLogoProcessHandler(1),

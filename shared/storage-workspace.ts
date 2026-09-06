@@ -65,6 +65,7 @@ export interface StorageConfigurationEvent {
 }
 export interface StorageConfigurationWorkspace {
   targets: StorageTargetView[]
+  offline: boolean
   fingerprint: string
   revision: string
   observedAt: string
@@ -78,9 +79,9 @@ export const isStorageGitBranchName = (value: string): boolean =>
   !value.includes('..') &&
   !value.includes('@{') &&
   !value.endsWith('.') &&
-  !Array.from(value).some((character) => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127) &&
+  !Array.from(value).some(character => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127) &&
   !/[~^:?*[\\]/.test(value) &&
-  value.split('/').every((part) => Boolean(part) && !part.startsWith('.') && !part.endsWith('.lock'))
+  value.split('/').every(part => Boolean(part) && !part.startsWith('.') && !part.endsWith('.lock'))
 
 export const storageActionDefinition = (key: string, handler: string): StorageActionDefinition | null => {
   if (handler === 'exportAll' && ['s3', 's3generic', 'digitalocean', 'azure', 'sftp'].includes(key))
@@ -97,8 +98,7 @@ export const storageActionDefinition = (key: string, handler: string): StorageAc
       title: 'Export shared content',
       direction: 'outbound',
       confirmation: 'EXPORT CONTENT',
-      effect:
-        'Write shared pages and assets from the database into the configured storage folder. Existing files with matching names can be overwritten.'
+      effect: 'Write shared pages and assets from the database into the configured storage folder. Existing files with matching names can be overwritten.'
     }
   if (key === 'disk' && handler === 'backup')
     return {
@@ -174,8 +174,7 @@ export const storageConfigurationIssues = (target: Pick<StorageTargetView, 'key'
     required('host', 'Host')
     required('username', 'Username')
     required('basePath', 'Remote folder')
-    if (!Number.isInteger(config.port) || Number(config.port) < 1 || Number(config.port) > 65535)
-      issues.push('SSH port must be an integer from 1 to 65535.')
+    if (!Number.isInteger(config.port) || Number(config.port) < 1 || Number(config.port) > 65535) issues.push('SSH port must be an integer from 1 to 65535.')
     if (config.authMode === 'password') required('password', 'Password')
     else required('privateKey', 'Private key')
   }
@@ -205,4 +204,70 @@ export const storageConfigurationIssues = (target: Pick<StorageTargetView, 'key'
     }
   }
   return issues
+}
+
+export const StorageOperationStateSchema = z.enum(['queued', 'running', 'succeeded', 'partial', 'failed', 'interrupted', 'cancelled', 'resolved'])
+export type StorageOperationState = z.infer<typeof StorageOperationStateSchema>
+const StorageItemFormatSchema = z.enum(['okf', 'legacyV1', 'legacyWiki', 'plain', 'invalid'])
+export const StorageOperationResultSchema = z
+  .object({
+    outcome: z.enum(['succeeded', 'partial', 'failed']),
+    message: z.string().max(512),
+    counts: z
+      .object({
+        total: z.number().int().nonnegative(),
+        succeeded: z.number().int().nonnegative(),
+        failed: z.number().int().nonnegative(),
+        formats: z.object({
+          okf: z.number().int().nonnegative(),
+          legacyV1: z.number().int().nonnegative(),
+          legacyWiki: z.number().int().nonnegative(),
+          plain: z.number().int().nonnegative(),
+          invalid: z.number().int().nonnegative()
+        })
+      })
+      .nullable(),
+    items: z
+      .array(
+        z.object({
+          kind: z.enum(['page', 'asset']),
+          path: z.string().max(512),
+          outcome: z.enum(['succeeded', 'failed', 'conflict']),
+          format: StorageItemFormatSchema.nullable(),
+          message: z.string().max(512).nullable(),
+          diagnostics: z.array(z.string().max(512)).max(8)
+        })
+      )
+      .max(50),
+    targets: z.array(z.object({ key: z.string().max(255), active: z.boolean(), paused: z.boolean() })).max(100)
+  })
+  .strict()
+  .refine(
+    result =>
+      result.counts === null
+        ? result.items.length === 0
+        : result.counts.succeeded + result.counts.failed === result.counts.total &&
+          result.items.length <= result.counts.total &&
+          Object.values(result.counts.formats).reduce((sum, count) => sum + count, 0) <= result.counts.total,
+    'Reported item totals must agree.'
+  )
+export type StorageOperationResult = z.infer<typeof StorageOperationResultSchema>
+export interface StorageOperationView {
+  id: string
+  jobId: string
+  targetKey: string | null
+  handler: string
+  title: string
+  effect: string
+  state: StorageOperationState
+  actorId: number | null
+  reason: string
+  configurationRevision: string
+  createdAt: string
+  startedAt: string | null
+  completedAt: string | null
+  result: StorageOperationResult | null
+  resolution: { actorId: number | null; reason: string; createdAt: string } | null
+  canCancel: boolean
+  canResolve: boolean
 }

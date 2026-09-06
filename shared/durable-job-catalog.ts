@@ -1,6 +1,7 @@
 /** Handler identities implemented by this build. Factory keys must match this catalog. */
 export const durableJobIdentities = [
   'locale-package@1',
+  'storage-action@1',
   'cleanup-durable-jobs@1',
   'cleanup-site-logo@1',
   'process-site-logo@1',

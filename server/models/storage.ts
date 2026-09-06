@@ -3,6 +3,8 @@ import type { Knex } from 'knex'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createStorageRuntimeQueue } from '../helpers/storage-runtime-queue.ts'
+import { storageConfigurationKey } from '../helpers/storage-configuration-key.ts'
+import type { StorageRuntimeTarget } from '../operations/storage-actions.ts'
 import fs from 'fs-extra'
 import _ from 'lodash'
 import * as yaml from 'js-yaml'
@@ -160,6 +162,7 @@ interface StorageLogger {
 
 interface StorageWikiRuntime {
   SERVERPATH: string
+  config?: { offline?: boolean }
   data: {
     storage?: StorageDefinition[]
   }
@@ -496,10 +499,15 @@ export default class Storage extends Model {
       for (const target of this.targets) {
         const scheduled: StorageJob[] = []
         try {
+          if (wiki.config?.offline && target.key !== 'disk') {
+            await recordTargetState(target, 'paused', 'Remote storage is paused in offline mode.')
+            continue
+          }
           const targetDef = wiki.data.storage?.find(candidate => candidate.key === target.key)
           if (!targetDef) {
             throw new Error(`Missing storage definition: ${target.key}`)
           }
+          if (!targetDef.isAvailable) throw new Error(`Storage target is unavailable in this build: ${target.key}`)
           // Target key is selected from the enabled runtime module registry.
           const source = `../modules/storage/${target.key}/storage.ts`
           target.runtimeGeneration = randomUUID()
@@ -566,6 +574,7 @@ export default class Storage extends Model {
   private static async dispatchPageEvent(payload: StoragePageEvent): Promise<void> {
     const wiki = getWiki()
     for (const target of this.activeTargets) {
+      if (wiki.config?.offline && target.key !== 'disk') continue
       try {
         switch (payload.event) {
           case 'created':
@@ -600,6 +609,7 @@ export default class Storage extends Model {
   private static async dispatchAssetEvent(payload: StorageAssetEvent): Promise<void> {
     const wiki = getWiki()
     for (const target of this.activeTargets) {
+      if (wiki.config?.offline && target.key !== 'disk') continue
       try {
         switch (payload.event) {
           case 'uploaded':
@@ -650,10 +660,42 @@ export default class Storage extends Model {
     return this.runtimeQueue.run(() => this.dispatchAction(targetKey, handler))
   }
 
+  static runtimeTargets(): StorageRuntimeTarget[] {
+    return (this.targets ?? []).map(target => ({
+      key: target.key,
+      generation: target.runtimeGeneration || '',
+      configurationKey: storageConfigurationKey(target),
+      active: this.activeTargets.includes(target),
+      paused: Boolean(getWiki().config?.offline && target.key !== 'disk')
+    }))
+  }
+
+  /** Own the runtime across review, effects and the durable receipt. Drain cancelled timers after releasing it. */
+  static async performAdministrativeOperation<T>(
+    before: () => Promise<{targetKey:string|null;handler:string}>,
+    after: (result: StorageActionSummary | StorageRuntimeTarget[]) => Promise<T>
+  ): Promise<T> {
+    const stopped: Promise<unknown>[] = []
+    try {
+      return await this.runtimeQueue.run(async () => {
+        const operation = await before()
+        if (operation.targetKey === null && operation.handler === 'activate') {
+          await this.initializeTargets(stopped)
+          return after(this.runtimeTargets())
+        }
+        if (operation.targetKey === null) throw new Error('Storage target is required.')
+        return after(await this.dispatchAction(operation.targetKey, operation.handler))
+      })
+    } finally {
+      for (const result of await Promise.allSettled(stopped)) if (result.status === 'rejected') getWiki().logger.warn(result.reason)
+    }
+  }
+
   static async syncTarget(targetKey: string, generation: string): Promise<boolean> {
     return this.runtimeQueue.run(async () => {
       const target = this.activeTargets.find(candidate => candidate.key === targetKey && candidate.runtimeGeneration === generation)
       if (!target || !isStorageAction(target.fn.sync)) return false
+      if (getWiki().config?.offline && target.key !== 'disk') return false
       try {
         await target.fn.sync.call(target.fn)
         await recordTargetState(target, 'operational', '', undefined, true)
@@ -668,6 +710,7 @@ export default class Storage extends Model {
 
   private static async dispatchAction(targetKey: string, handler: string): Promise<StorageActionSummary> {
     const wiki = getWiki()
+    if (wiki.config?.offline && targetKey !== 'disk') throw new Error('Remote storage is paused in offline mode.')
     const target = this.targets.find(candidate => candidate.key === targetKey)
     if (!target) {
       throw new Error('Invalid or Inactive Storage Target')

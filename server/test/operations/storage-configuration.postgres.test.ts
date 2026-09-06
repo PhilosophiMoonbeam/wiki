@@ -4,6 +4,7 @@ import * as yaml from 'js-yaml'
 import knexModule, { type Knex } from 'knex'
 import { beforeAll, afterAll, beforeEach, describe, it, expect } from '../bun-test.mts'
 import common from '../../helpers/common.ts'
+import { up as storageMigration } from '../../db/migrations/tsepistle-000023-storage-administration.ts'
 import { storageModuleDefinition } from '../../repositories/storage-configuration.ts'
 import { createStorageConfigurationStore } from '../../operations/storage-configuration.ts'
 import type { StorageConfigurationWorkspace, StorageModuleDefinition, StorageTargetDraft } from '../../../shared/storage-workspace.ts'
@@ -61,15 +62,16 @@ suite('Reviewed storage configuration on PostgreSQL', () => {
       t.jsonb('config')
       t.jsonb('state')
     })
+    await storageMigration(db)
   })
   afterAll(async () => {
     if (db) {
-      for (const table of ['storage', 'settings', 'userGroups', 'groups', 'users']) await db.schema.dropTableIfExists(table)
+      for (const table of ['storageOperations', 'storage', 'settings', 'userGroups', 'groups', 'users']) await db.schema.dropTableIfExists(table)
       await db.destroy()
     }
   })
   beforeEach(async () => {
-    for (const table of ['storage', 'settings', 'userGroups', 'groups', 'users']) await db(table).delete()
+    for (const table of ['storageOperations', 'storage', 'settings', 'userGroups', 'groups', 'users']) await db(table).delete()
     await db('users').insert([
       { id: 1, isActive: true, authVersion: 0 },
       { id: 3, isActive: true, authVersion: 0 }

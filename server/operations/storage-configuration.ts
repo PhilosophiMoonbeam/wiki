@@ -38,6 +38,7 @@ interface Dependencies {
   db: Knex
   reviewKey: string
   definitions(): StorageModuleDefinition[]
+  offline?(): boolean
   now?(): Date
 }
 const settingKey = 'storageAdministration'
@@ -54,7 +55,7 @@ export const createStorageConfigurationStore = (deps: Dependencies) => {
         account = await (lock ? uq.forUpdate() : uq)
       if (!accountSessionIsCurrent({ id: actorId, authVersion: Reflect.get(requester, 'authVersion') }, account))
         return fail('Your account session changed. Sign in again.', 403)
-      ids = (await tx<{ groupId: number }>('userGroups').where('userId', actorId).select('groupId')).map((row) => row.groupId).sort((a, b) => a - b)
+      ids = (await tx<{ groupId: number }>('userGroups').where('userId', actorId).select('groupId')).map(row => row.groupId).sort((a, b) => a - b)
     } else {
       if (
         requester.ownershipUserId !== null ||
@@ -66,30 +67,32 @@ export const createStorageConfigurationStore = (deps: Dependencies) => {
         return fail('An administrator principal is required.', 403)
       ids = requester.groups as number[]
     }
-    if (!groups.some((g) => ids.includes(g.id) && g.permissions.includes('manage:system'))) return fail('System administration is required.', 403)
+    if (!groups.some(g => ids.includes(g.id) && g.permissions.includes('manage:system'))) return fail('System administration is required.', 403)
     const mq = tx<{ key: string; value: unknown }>('settings').where('key', settingKey).first(),
       metadata = storageRecord((await (lock ? mq.forUpdate() : mq))?.value)
     const sq = tx<StorageConfigurationRow>('storage').orderBy('key'),
       rows = await (lock ? sq.forUpdate() : sq),
-      definitions = deps.definitions()
+      definitions = deps.definitions(),
+      offline = deps.offline?.() ?? false
     const configuration = rows.map(({ key, isEnabled, mode, syncInterval, config }) => ({ key, isEnabled, mode, syncInterval, config }))
     const fingerprint = createHmac('sha256', deps.reviewKey)
-      .update(stable([configuration, metadata, groups, actorId, ids, definitions]))
+      .update(stable([configuration, metadata, groups, actorId, ids, definitions, offline]))
       .digest('hex')
-    return { rows, metadata, definitions, actorId, fingerprint }
+    return { rows, metadata, definitions, actorId, fingerprint, offline }
   }
   const inspect = async (requester: PagePrincipal): Promise<StorageConfigurationWorkspace> => {
     const tx = await deps.db.transaction({ isolationLevel: 'repeatable read', readOnly: true })
     try {
       const saved = await state(tx, requester)
       const result = {
-        targets: saved.rows.map((row) =>
+        targets: saved.rows.map(row =>
           storageTargetView(
             row,
-            saved.definitions.find((d) => d.key === row.key)
+            saved.definitions.find(d => d.key === row.key)
           )
         ),
         fingerprint: saved.fingerprint,
+        offline: saved.offline,
         revision: typeof saved.metadata.revision === 'string' ? saved.metadata.revision : '',
         observedAt: now().toISOString(),
         history: Array.isArray(saved.metadata.history) ? (saved.metadata.history.slice(0, 50) as StorageConfigurationEvent[]) : []
@@ -103,23 +106,26 @@ export const createStorageConfigurationStore = (deps: Dependencies) => {
   }
   return {
     inspect,
+    reviewState: state,
     async save(requester: PagePrincipal, input: unknown): Promise<{ revision: string; changedTargets: string[] }> {
       const parsed = schema.safeParse(input)
       if (!parsed.success) return fail('Provide a complete storage draft, current review and administrative reason.')
-      return deps.db.transaction(async (tx) => {
+      return deps.db.transaction(async tx => {
         const current = await state(tx, requester, true),
           draft = parsed.data
+        if (await tx('storageOperations').whereIn('state', ['queued', 'running', 'interrupted']).first('id'))
+          return fail('Finish or resolve the current storage operation before changing configuration.', 409)
         if (draft.fingerprint !== current.fingerprint) return fail('Storage settings or your access changed. Reload and review again.', 409)
         if (
-          new Set(draft.targets.map((row) => row.key)).size !== draft.targets.length ||
+          new Set(draft.targets.map(row => row.key)).size !== draft.targets.length ||
           draft.targets.length !== current.rows.length ||
-          current.rows.some((row) => !draft.targets.some((d) => d.key === row.key))
+          current.rows.some(row => !draft.targets.some(d => d.key === row.key))
         )
           return fail('Include each current storage target exactly once.')
         const changes: StorageConfigurationEvent['targets'] = []
         for (const target of draft.targets) {
-          const original = current.rows.find((row) => row.key === target.key)!,
-            definition = current.definitions.find((row) => row.key === target.key),
+          const original = current.rows.find(row => row.key === target.key)!,
+            definition = current.definitions.find(row => row.key === target.key),
             view = storageTargetView(original, definition)
           if (!definition?.isAvailable) {
             if (
@@ -137,13 +143,13 @@ export const createStorageConfigurationStore = (deps: Dependencies) => {
             }
             continue
           }
-          const publicFields = definition.fields.filter((field) => !field.sensitive),
-            secretFields = definition.fields.filter((field) => field.sensitive)
+          const publicFields = definition.fields.filter(field => !field.sensitive),
+            secretFields = definition.fields.filter(field => field.sensitive)
           if (
             Object.keys(target.config).length !== publicFields.length ||
-            publicFields.some((field) => !Object.hasOwn(target.config, field.key)) ||
+            publicFields.some(field => !Object.hasOwn(target.config, field.key)) ||
             Object.keys(target.secrets).length !== secretFields.length ||
-            secretFields.some((field) => !Object.hasOwn(target.secrets, field.key))
+            secretFields.some(field => !Object.hasOwn(target.secrets, field.key))
           )
             return fail(`Include each known configuration field for ${definition.title}.`)
           const config = { ...storageRecord(original.config) },
@@ -152,13 +158,10 @@ export const createStorageConfigurationStore = (deps: Dependencies) => {
             const value = target.config[field.key]
             if (
               (target.isEnabled || stable(value) !== stable(view.config[field.key])) &&
-              (typeof value !== field.type || (field.options.length && !field.options.some((option) => option.value === String(value))))
+              (typeof value !== field.type || (field.options.length && !field.options.some(option => option.value === String(value))))
             )
               return fail(`${field.title} has an invalid value for ${definition.title}.`)
-            if (
-              stable(value) !== stable(view.config[field.key]) ||
-              (!original.isEnabled && target.isEnabled && stable(config[field.key]) !== stable(value))
-            ) {
+            if (stable(value) !== stable(view.config[field.key]) || (!original.isEnabled && target.isEnabled && stable(config[field.key]) !== stable(value))) {
               config[field.key] = value
               fields.push('config.' + field.key)
             }
@@ -213,7 +216,7 @@ export const createStorageConfigurationStore = (deps: Dependencies) => {
           .insert({ key: settingKey, value: JSON.stringify(metadata), updatedAt: event.createdAt })
           .onConflict('key')
           .merge(['value', 'updatedAt'])
-        return { revision: event.id, changedTargets: changes.map((row) => row.key) }
+        return { revision: event.id, changedTargets: changes.map(row => row.key) }
       })
     }
   }
