@@ -732,6 +732,12 @@ describe('pages api helper', () => {
     expect(fetchImpl.mock.calls[0][0]).toBe('/_api/pages/tree?locale=en&mode=ALL&parent=0')
   })
 
+  test('passes personal scope when expanding a reader path', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse([]))
+    await fetchPageTree(fetchImpl, { locale: 'en', path: 'shared/page', visibility: 'private', includeAncestors: true })
+    expect(fetchImpl.mock.calls[0][0]).toBe('/_api/pages/tree?locale=en&mode=ALL&path=shared%2Fpage&includeAncestors=true&visibility=private')
+  })
+
   test('rejects page tree rows without an explicit edit capability', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse([{
       id: 10,

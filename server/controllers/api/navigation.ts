@@ -1,35 +1,35 @@
 import express from 'express'
-import { errorStatus, type Request, type Response, getWikiAuth } from '../_types.ts'
-
+import { errorStatus, objectValue, type Request, type Response, getWikiAuth } from '../_types.ts'
 import navigationOperations from '../../operations/navigation.ts'
-
+import { getNavigationAdministrationStore } from '../../operations/navigation-administration.ts'
 const router = express.Router()
-
-
-const requireNavigationAccess = (req: Request, res: Response): boolean => { if (!getWikiAuth().checkAccess(req.user, ['manage:navigation', 'manage:system'])) {
-  res.status(403).json({ error: 'manage:navigation or manage:system is required' })
-  return false
+const requireNavigationAccess = (req: Request, res: Response): boolean => {
+  res.set('Cache-Control', 'no-store')
+  if (!getWikiAuth().checkAccess(req.user, ['manage:navigation', 'manage:system'])) { res.status(403).json({ error: 'Navigation administration is required.' }); return false }
+  return true
 }
-return true }
-
-router.get('/', async (req, res, next) => {
+const navigationError = (res: Response, error: unknown) => {
+  const status = errorStatus(error), expected = status && [400, 403, 409].includes(status)
+  res.status(expected ? status : 500).json({ error: expected && error instanceof Error ? error.message : 'Navigation administration is temporarily unavailable. Reload to confirm saved settings.' })
+}
+router.get('/', async (req, res) => {
   if (!requireNavigationAccess(req, res)) return
-  try {
-    res.json(await navigationOperations.get())
-  } catch (err) {
-    next(err)
-  }
+  try { res.json(await navigationOperations.get(req.user)) } catch (error) { navigationError(res, error) }
 })
-
 router.put('/', async (req, res) => {
   if (!requireNavigationAccess(req, res)) return
-  try {
-    await navigationOperations.update(req.body || {})
-    res.json({ message: 'Navigation saved successfully.' })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    res.status(errorStatus(err) ?? 500).json({ error: message || 'Navigation save failed' })
-  }
+  try { await navigationOperations.update(req.body, req.user); res.json({ message: 'Navigation saved successfully.' }) } catch (error) { navigationError(res, error) }
 })
-
+router.get('/workspace', async (req, res) => {
+  if (!requireNavigationAccess(req, res)) return
+  try { res.json(await getNavigationAdministrationStore().inspect(req.user)) } catch (error) { navigationError(res, error) }
+})
+router.put('/workspace', async (req, res) => {
+  if (!requireNavigationAccess(req, res)) return
+  try { res.json(await getNavigationAdministrationStore().save(req.user, { policy: objectValue(req.body, 'policy'), fingerprint: objectValue(req.body, 'fingerprint'), reason: objectValue(req.body, 'reason') })) } catch (error) { navigationError(res, error) }
+})
+router.post('/workspace/activate', async (req, res) => {
+  if (!requireNavigationAccess(req, res)) return
+  try { res.json(await getNavigationAdministrationStore().initialize(req.user, objectValue(req.body, 'fingerprint'))) } catch (error) { navigationError(res, error) }
+})
 export default router

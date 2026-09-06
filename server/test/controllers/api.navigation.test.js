@@ -19,6 +19,10 @@ vi.mockModule('express', import.meta.url, () => {
   return { default: express, ...express }
 })
 
+const operations = { get: vi.fn(), update: vi.fn() }
+const store = { inspect: vi.fn(), save: vi.fn(), initialize: vi.fn() }
+vi.mockModule('../../operations/navigation.ts', import.meta.url, () => ({ default: operations }))
+vi.mockModule('../../operations/navigation-administration.ts', import.meta.url, () => ({ getNavigationAdministrationStore: () => store }))
 const { default: express } = await import('express')
 
 const API_CONTROLLER_NAMES = [
@@ -61,244 +65,42 @@ const loadApiIndexRouter = async () => {
   return { apiRouter: express.__routers.at(-1), subrouters }
 }
 
-describe('controllers/api navigation endpoints', () => {
-  beforeEach(() => {
-    vi.resetModules()
-    express.__routers.length = 0
-
-    global.WIKI = {
-      auth: {
-        checkAccess: vi.fn()
-      },
-      models: {
-        navigation: {
-          getTree: vi.fn().mockResolvedValue([
-            {
-              locale: 'en',
-              ignored: true,
-              items: [
-                { id: 'home', kind: 'link', label: 'Home', targetType: 'home', target: '/', ignored: true },
-                { id: 'docs', kind: 'link', label: 'Docs', targetType: 'page', target: '/en/docs' }
-              ]
-            }
-          ]),
-          query: vi.fn(() => ({
-            patch: vi.fn(() => ({
-              where: vi.fn().mockResolvedValue(1)
-            }))
-          }))
-        }
-      },
-      cache: {
-        set: vi.fn().mockResolvedValue(true)
-      },
-      config: {
-        nav: {
-          mode: 'TREE',
-          expandParent: false,
-          ignored: true
-        }
-      },
-      configSvc: {
-        saveToDb: vi.fn().mockResolvedValue(true)
-      }
-    }
-  })
-
-  const loadRouter = async () => {
-    await vi.importFresh('../../controllers/api/navigation.ts', import.meta.url)
-    return express.__routers[0]
-  }
-
-  const loadHandler = async () => (await loadRouter()).get.mock.calls.find(([path]) => path === '/')[1]
-  const saveHandler = async () => (await loadRouter()).put.mock.calls.find(([path]) => path === '/')[1]
-
-  const validBody = () => ({
-    tree: [
-      {
-        locale: 'en',
-        items: [
-          { id: 'home', kind: 'link', label: 'Home', targetType: 'home', target: '/', visibilityGroups: [1] },
-          { id: 'docs', kind: 'link', label: 'Docs', targetType: 'page', target: '/en/docs', visibilityMode: 'all', visibilityGroups: [] }
-        ]
-      },
-      {
-        locale: 'fr',
-        items: []
-      }
-    ],
-    mode: 'MIXED',
-    expandParent: true
-  })
-
-  it('registers the navigation load route', async () => { expect(typeof await loadHandler()).toBe('function') })
-
-  it('returns 403 for unauthorized navigation loads', async () => {
+let routes
+const response = () => { const res = { status: vi.fn(), json: vi.fn(), set: vi.fn() }; res.status.mockReturnValue(res); return res }
+beforeEach(async () => {
+  express.__routers.length = 0
+  global.WIKI = { auth: { checkAccess: vi.fn().mockReturnValue(true) } }
+  await vi.importFresh('../../controllers/api/navigation.ts', import.meta.url)
+  const router = express.__routers[0]
+  routes = Object.fromEntries(['get', 'put', 'post'].flatMap(method => router[method].mock.calls.map(([path, handler]) => [method + path, handler])))
+})
+describe('Navigation workspace and compatibility API', () => {
+  it('checks permission before any inspection or write', async () => {
     global.WIKI.auth.checkAccess.mockReturnValue(false)
-    const handler = await loadHandler()
-    const req = { user: { permissions: [] } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(403)
-    expect(res.json).toHaveBeenCalledWith({ error: 'manage:navigation or manage:system is required' })
-    expect(global.WIKI.models.navigation.getTree).not.toHaveBeenCalled()
+    for (const handler of Object.values(routes)) { const res = response(); await handler({ user: { id: 3 } }, res); expect(res.status).toHaveBeenCalledWith(403) }
+    expect(store.inspect).not.toHaveBeenCalled(); expect(store.save).not.toHaveBeenCalled(); expect(operations.update).not.toHaveBeenCalled()
   })
-
-  it('loads navigation config and tree with GraphQL-compatible bypass-auth semantics', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await loadHandler()
-    const req = { user: { permissions: ['manage:navigation'] } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res, vi.fn())
-
-    expect(global.WIKI.models.navigation.getTree).toHaveBeenCalledWith({ cache: false, locale: 'all', bypassAuth: true })
-    expect(res.json).toHaveBeenCalledWith({
-      config: { mode: 'TREE', expandParent: false },
-      tree: [{
-        locale: 'en',
-        items: [{
-          id: 'docs',
-          kind: 'link',
-          label: 'Docs',
-          icon: undefined,
-          targetType: 'page',
-          target: '/en/docs',
-          visibilityMode: undefined,
-          visibilityGroups: undefined
-        }]
-      }]
-    })
+  it('passes the current actor and review values to the durable store', async () => {
+    const req = { user: { id: 7 }, body: { policy: { mode: 'STATIC' }, fingerprint: 'review', reason: 'Clarify navigation' } }, res = response()
+    store.save.mockResolvedValue({ activation: 'applied' }); await routes['put/workspace'](req, res)
+    expect(store.save).toHaveBeenCalledWith(req.user, req.body); expect(res.json).toHaveBeenCalledWith({ activation: 'applied' }); expect(res.set).toHaveBeenCalledWith('Cache-Control', 'no-store')
   })
-
-  it('forwards navigation load failures to next', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    global.WIKI.models.navigation.getTree.mockRejectedValueOnce(new Error('navigation tree failed'))
-    const next = vi.fn()
-    const handler = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res, next)
-
-    expect(next).toHaveBeenCalledWith(expect.any(Error))
-    expect(next.mock.calls[0][0].message).toBe('navigation tree failed')
+  it('reports conflicts and redacts unexpected infrastructure errors', async () => {
+    const req = { user: { id: 7 }, body: {} }, conflict = response()
+    store.save.mockRejectedValue(Object.assign(new Error('Reload the reviewed navigation.'), { status: 409 })); await routes['put/workspace'](req, conflict)
+    expect(conflict.status).toHaveBeenCalledWith(409); expect(conflict.json).toHaveBeenCalledWith({ error: 'Reload the reviewed navigation.' })
+    store.save.mockRejectedValue(new Error('private-database-connection')); const failure = response(); await routes['put/workspace'](req, failure)
+    expect(failure.status).toHaveBeenCalledWith(500); expect(JSON.stringify(failure.json.mock.calls)).not.toContain('private-database-connection')
   })
-
-  it('registers the navigation save route', async () => { expect(typeof await saveHandler()).toBe('function') })
-
-
-  it('returns 403 for unauthorized navigation saves', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(false)
-    const handler = await saveHandler()
-    const req = { user: { permissions: [] }, body: validBody() }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res)
-
-    expect(res.status).toHaveBeenCalledWith(403)
-    expect(res.json).toHaveBeenCalledWith({ error: 'manage:navigation or manage:system is required' })
-    expect(res.sendStatus).not.toHaveBeenCalled()
-    expect(global.WIKI.models.navigation.query).not.toHaveBeenCalled()
-    expect(global.WIKI.cache.set).not.toHaveBeenCalled()
-    expect(global.WIKI.configSvc.saveToDb).not.toHaveBeenCalled()
+  it('keeps compatibility reads and writes behind current authority', async () => {
+    const req = { user: { id: 7 }, body: { mode: 'TREE', tree: [], expandParent: true } }, res = response()
+    operations.get.mockResolvedValue({ config: { mode: 'TREE' }, tree: [] }); await routes['get/'](req, res); expect(operations.get).toHaveBeenCalledWith(req.user)
+    operations.update.mockResolvedValue(undefined); await routes['put/'](req, res); expect(operations.update).toHaveBeenCalledWith(req.body, req.user)
   })
-
-  it.each([
-    ['missing tree', { mode: 'TREE' }],
-    ['non-array tree', { tree: {}, mode: 'TREE' }],
-    ['missing locale', { tree: [{ items: [] }], mode: 'TREE' }],
-    ['empty locale', { tree: [{ locale: '', items: [] }], mode: 'TREE' }],
-    ['non-array items', { tree: [{ locale: 'en', items: {} }], mode: 'TREE' }],
-    ['item missing id', { tree: [{ locale: 'en', items: [{ kind: 'link' }] }], mode: 'TREE' }],
-    ['item missing kind', { tree: [{ locale: 'en', items: [{ id: 'home' }] }], mode: 'TREE' }],
-    ['item non-string optional field', { tree: [{ locale: 'en', items: [{ id: 'home', kind: 'link', label: 42 }] }], mode: 'TREE' }],
-    ['item non-integer visibility group', { tree: [{ locale: 'en', items: [{ id: 'home', kind: 'link', visibilityGroups: [1, '2'] }] }], mode: 'TREE' }]
-  ])('returns 400 for malformed navigation tree payloads: %s', async (label, body) => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await saveHandler()
-    const req = { user: { permissions: ['manage:navigation'] }, body }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res)
-
-    expect(res.status).toHaveBeenCalledWith(400)
-    expect(res.json).toHaveBeenCalledWith({ error: 'tree must be an array of locale navigation trees with valid navigation items' })
-    expect(global.WIKI.models.navigation.query).not.toHaveBeenCalled()
+  it('supports workspace inspection and runtime recovery', async () => {
+    const req = { user: { id: 7 }, body: { fingerprint: 'review' } }, res = response()
+    store.inspect.mockResolvedValue({ fingerprint: 'review' }); await routes['get/workspace'](req, res); expect(res.json).toHaveBeenCalledWith({ fingerprint: 'review' })
+    store.initialize.mockResolvedValue({ activation: 'needs-attention' }); await routes['post/workspace/activate'](req, res); expect(store.initialize).toHaveBeenCalledWith(req.user, 'review')
   })
-
-  it.each(['', 'INVALID', 'tree', null, undefined])('returns 400 for invalid navigation mode %p', async (mode) => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await saveHandler()
-    const req = { user: { permissions: ['manage:navigation'] }, body: { tree: [], mode } }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res)
-
-    expect(res.status).toHaveBeenCalledWith(400)
-    expect(res.json).toHaveBeenCalledWith({ error: 'mode must be a valid navigation mode' })
-    expect(global.WIKI.models.navigation.query).not.toHaveBeenCalled()
-  })
-
-  it.each([null, undefined, 1, 'true'])('returns 400 for invalid parent expansion setting %p', async (expandParent) => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await saveHandler()
-    const req = { user: { permissions: ['manage:navigation'] }, body: { tree: [], mode: 'TREE', expandParent } }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res)
-
-    expect(res.status).toHaveBeenCalledWith(400)
-    expect(res.json).toHaveBeenCalledWith({ error: 'expandParent must be a boolean' })
-    expect(global.WIKI.models.navigation.query).not.toHaveBeenCalled()
-  })
-
-  it('saves normalized navigation trees, refreshes sidebar cache per locale, preserves mode and expansion, and returns JSON success', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const handler = await saveHandler()
-    const body = validBody()
-    const normalizedTree = body.tree.map(row => ({
-      ...row,
-      items: row.items.filter(item => item.targetType !== 'home')
-    }))
-    const req = { user: { permissions: ['manage:navigation'] }, body }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res)
-
-    const query = global.WIKI.models.navigation.query.mock.results[0].value
-    const patch = query.patch
-    const where = patch.mock.results[0].value.where
-    expect(patch).toHaveBeenCalledWith({ config: normalizedTree })
-    expect(where).toHaveBeenCalledWith('key', 'site')
-    expect(global.WIKI.cache.set).toHaveBeenNthCalledWith(1, 'nav:sidebar:en', normalizedTree[0].items, 300)
-    expect(global.WIKI.cache.set).toHaveBeenNthCalledWith(2, 'nav:sidebar:fr', normalizedTree[1].items, 300)
-    expect(global.WIKI.config.nav).toEqual({ mode: 'MIXED', expandParent: true })
-    expect(global.WIKI.configSvc.saveToDb).toHaveBeenCalledWith(['nav'])
-    expect(res.json).toHaveBeenCalledWith({ message: 'Navigation saved successfully.' })
-  })
-
-  it('returns JSON errors for navigation save failures', async () => {
-    global.WIKI.auth.checkAccess.mockReturnValue(true)
-    global.WIKI.models.navigation.query.mockImplementationOnce(() => ({
-      patch: vi.fn(() => ({
-        where: vi.fn().mockRejectedValue(new Error('navigation patch failed'))
-      }))
-    }))
-    const handler = await saveHandler()
-    const req = { user: { permissions: ['manage:navigation'] }, body: validBody() }
-    const res = { sendStatus: vi.fn(), json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await handler(req, res)
-
-    expect(res.status).toHaveBeenCalledWith(500)
-    expect(res.json).toHaveBeenCalledWith({ error: 'navigation patch failed' })
-  })
-  it('is mounted by the API index router', async () => {
-    const { apiRouter, subrouters } = await loadApiIndexRouter()
-
-    expect(apiRouter.use).toHaveBeenCalledWith('/navigation', subrouters.navigation)
-  })
+  it('is mounted by the API index router', async () => { const { apiRouter, subrouters } = await loadApiIndexRouter(); expect(apiRouter.use).toHaveBeenCalledWith('/navigation', subrouters.navigation) })
 })

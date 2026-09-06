@@ -1106,13 +1106,14 @@ export async function fetchPageConflictLatest(
 
 export async function fetchPageTree(
   fetchImpl: FetchImpl,
-  options: { locale: string; parent?: number; path?: string; mode?: 'ALL' | 'FOLDERS' | 'PAGES'; includeAncestors?: boolean },
+  options: { locale: string; parent?: number; path?: string; visibility?: 'public' | 'private'; mode?: 'ALL' | 'FOLDERS' | 'PAGES'; includeAncestors?: boolean },
   fallbackMessage = 'Page tree response is invalid'
 ): Promise<PageTreeRow[]> {
   const params = new URLSearchParams({ locale: options.locale, mode: options.mode || 'ALL' })
   if (options.parent !== undefined) params.set('parent', String(options.parent))
   if (options.path) params.set('path', options.path)
   if (options.includeAncestors) params.set('includeAncestors', 'true')
+  if (options.visibility) params.set('visibility', options.visibility)
   const response = await sameOriginJsonFetch(fetchImpl, `/_api/pages/tree?${params.toString()}`, {
     credentials: 'same-origin',
     headers: { Accept: 'application/json' }

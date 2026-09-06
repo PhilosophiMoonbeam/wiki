@@ -156,7 +156,7 @@ import AsyncState from './async-state.vue'
 const localeSegmentRegex = /^[A-Z]{2}(-[A-Z]{2})?$/i
 
 type PageSelectorMode = 'create' | 'move' | 'select'
-type PageSelection = { locale: string, path: string, id: number }
+type PageSelection = { locale: string, path: string, id: number, visibility?: 'public' | 'private' }
 type OpenHandler = (selection: PageSelection) => boolean | void | Promise<boolean | void>
 type PageTreeItem = PageTreeRow & { treeId: number, children?: PageTreeItem[] }
 type PageEntry = PageTreeRow & { pageId: number }
@@ -355,7 +355,8 @@ export default defineComponent({
         const exit = await this.openHandler?.({
           locale: this.currentLocale,
           path: this.currentPath,
-          id: (this.mustExist && this.currentPage) ? this.currentPage.pageId : 0
+          id: (this.mustExist && this.currentPage) ? this.currentPage.pageId : 0,
+          ...(this.currentPage ? { visibility: this.currentPage.visibility } : {})
         })
         if (requestId === this.submissionRequestId && exit !== false) this.isShown = false
       } catch (err) {

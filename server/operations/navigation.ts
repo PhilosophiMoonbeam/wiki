@@ -1,102 +1,22 @@
-import _ from 'lodash'
-
+import { NavigationPolicySchema, normalizeNavigationTree, navigationChangedFields } from '../../shared/navigation-policy.ts'
+import { getNavigationAdministrationStore } from './navigation-administration.ts'
+import type { PagePrincipal } from '../helpers/page-access.ts'
 import errors from './errors.ts'
-import { normalizeNavigationItems } from '../models/navigation.ts'
-
-const { ApplicationError } = errors
-
-interface NavigationItem extends Record<string, unknown> {
-  id: string
-  kind: string
-  label?: string
-  icon?: string
-  targetType?: string
-  target?: string
-  visibilityMode?: string
-  visibilityGroups?: number[]
+const fail = (message: string, status = 400): never => { throw new errors.ApplicationError(message, { status }) }
+const get = async (requester?: PagePrincipal) => {
+  const saved = await getNavigationAdministrationStore().inspect(requester)
+  return { config: { mode: saved.policy.mode, expandParent: saved.policy.expandParent }, tree: saved.policy.tree }
 }
-
-interface NavigationRow {
-  locale: string
-  items: NavigationItem[]
+const update = async (input: unknown, requester?: PagePrincipal): Promise<void> => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return fail('Navigation configuration must be an object.')
+  const data = input as Record<string, unknown>
+  if (Object.keys(data).some(key => !['mode', 'expandParent', 'tree'].includes(key)) || !Array.isArray(data.tree)) return fail('Navigation configuration contains unsupported fields or an invalid tree.')
+  if (data.tree.some(row => !row || typeof row !== 'object' || typeof row.locale !== 'string' || !row.locale || !Array.isArray(row.items))) return fail('Each locale needs an explicit navigation item list.')
+  const validation = NavigationPolicySchema.safeParse({ ...data, tree: normalizeNavigationTree(data.tree) })
+  if (!validation.success) return fail('Navigation configuration is invalid. Check item labels, destinations, audiences and locale structures.')
+  const store = getNavigationAdministrationStore(), saved = await store.inspect(requester)
+  if (!navigationChangedFields(saved.policy, validation.data).length) return
+  const result = await store.save(requester, { policy: validation.data, fingerprint: saved.fingerprint, reason: 'Updated through the compatibility navigation API' })
+  if (result.activation === 'needs-attention') return fail('Navigation was saved; runtime activation needs attention. Reload Navigation before continuing.', 500)
 }
-
-interface NavigationModel {
-  getTree(options: Record<string, unknown>): Promise<NavigationRow[]>
-  query(): { patch(data: Record<string, unknown>): { where(column: string, value: unknown): Promise<unknown> } }
-}
-
-const validModes = ['NONE', 'TREE', 'MIXED', 'STATIC']
-const navigationModel = (WIKI.models as { navigation: NavigationModel }).navigation
-const config = WIKI.config as { nav: { mode: string; expandParent?: boolean } }
-const cache = WIKI.cache as { set(key: string, value: unknown, ttl: number): Promise<unknown> }
-const configService = WIKI.configSvc as { saveToDb(keys: string[]): Promise<unknown> }
-
-const validItem = (item: unknown): item is NavigationItem => {
-  if (
-    !item ||
-    !_.isPlainObject(item) ||
-    !_.isString(Reflect.get(item, 'id')) ||
-    Reflect.get(item, 'id').length < 1 ||
-    !_.isString(Reflect.get(item, 'kind')) ||
-    Reflect.get(item, 'kind').length < 1
-  )
-    return false
-  for (const field of ['label', 'icon', 'targetType', 'target', 'visibilityMode']) {
-    const value = Reflect.get(item, field)
-    if (!_.isNil(value) && !_.isString(value)) return false
-  }
-  const visibilityGroups = Reflect.get(item, 'visibilityGroups')
-  return _.isNil(visibilityGroups) || (Array.isArray(visibilityGroups) && visibilityGroups.every(Number.isInteger))
-}
-
-const validTree = (tree: unknown): tree is NavigationRow[] =>
-  Array.isArray(tree) &&
-  tree.every(
-    row =>
-      row &&
-      _.isPlainObject(row) &&
-      _.isString(Reflect.get(row, 'locale')) &&
-      Reflect.get(row, 'locale').length > 0 &&
-      Array.isArray(Reflect.get(row, 'items')) &&
-      Reflect.get(row, 'items').every(validItem)
-  )
-
-const serializeItem = (item: NavigationItem): Partial<NavigationItem> =>
-  _.pick(item, ['id', 'kind', 'label', 'icon', 'targetType', 'target', 'visibilityMode', 'visibilityGroups'])
-
-const get = async () => {
-  const tree = await navigationModel.getTree({ cache: false, locale: 'all', bypassAuth: true })
-  return {
-    config: {
-      mode: config.nav.mode,
-      expandParent: config.nav.expandParent !== false
-    },
-    tree: tree.map(row => ({ locale: row.locale, items: normalizeNavigationItems(row.items).map(serializeItem) }))
-  }
-}
-
-const update = async (input: { tree: unknown; mode: unknown; expandParent: unknown }): Promise<void> => {
-  const { tree, mode, expandParent } = input
-  if (!validTree(tree)) {
-    throw new ApplicationError('tree must be an array of locale navigation trees with valid navigation items', { code: 'INVALID_NAVIGATION_TREE' })
-  }
-  if (typeof mode !== 'string' || !validModes.includes(mode)) {
-    throw new ApplicationError('mode must be a valid navigation mode', { code: 'INVALID_NAVIGATION_MODE' })
-  }
-  if (typeof expandParent !== 'boolean') {
-    throw new ApplicationError('expandParent must be a boolean', { code: 'INVALID_NAVIGATION_EXPANSION' })
-  }
-  const normalizedTree = tree.map(row => ({
-    ...row,
-    items: normalizeNavigationItems(row.items)
-  }))
-  await navigationModel.query().patch({ config: normalizedTree }).where('key', 'site')
-  for (const row of normalizedTree) {
-    await cache.set(`nav:sidebar:${row.locale}`, row.items, 300)
-  }
-  config.nav = { mode, expandParent }
-  await configService.saveToDb(['nav'])
-}
-
 export default { get, update }

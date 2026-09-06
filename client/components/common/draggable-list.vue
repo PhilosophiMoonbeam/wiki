@@ -1,6 +1,7 @@
 <template>
   <component
     :is="tag"
+    v-bind="$attrs"
     ref="root"
     class="draggable-list"
     role="list"
@@ -16,15 +17,16 @@
     @dragend="handleDragEnd"
   >
     <slot />
-    <span :id="instructionsId" class="draggable-list__instructions" data-draggable-instructions>
+  </component>
+  <span :id="instructionsId" class="draggable-list__instructions" data-draggable-instructions>
       Press Space or Enter to pick up. Use Arrow Up and Arrow Down to move. Press Space or Enter to drop, or Escape to cancel.
     </span>
-    <span class="draggable-list__announcement" data-draggable-announcement aria-live="polite" aria-atomic="true">{{ liveMessage }}</span>
-  </component>
+  <span class="draggable-list__announcement" data-draggable-announcement aria-live="polite" aria-atomic="true">{{ liveMessage }}</span>
 </template>
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, onUpdated, ref, useId, useTemplateRef } from 'vue'
 
+defineOptions({ inheritAttrs: false })
 const modelValue = defineModel<unknown[]>({ required: true })
 const { handle = '', tag = 'div' } = defineProps<{
   handle?: string
@@ -45,6 +47,7 @@ let pointerDragging = false
 let pointerOriginal: unknown[] | null = null
 let keyboardIndex = -1
 let keyboardOriginal: unknown[] | null = null
+let keyboardMoving = false
 let refreshPending = false
 
 function itemChildren (): HTMLElement[] {
@@ -188,6 +191,12 @@ function handlePointerMove (event: PointerEvent): void {
   dropTargetIndex = targetIndex
   liveMessage.value = `Moved item, ${positionMessage(targetIndex)}`
   scheduleRefreshChildren()
+  void nextTick(() => {
+    const child = itemChildren()[targetIndex]
+    const control = handle ? child?.querySelector<HTMLElement>(handle) : child
+    control?.focus()
+    keyboardMoving = false
+  })
 }
 
 function handlePointerUp (event: PointerEvent): void {
@@ -257,16 +266,23 @@ function handleKeydown (event: KeyboardEvent): void {
   event.stopPropagation()
   const targetIndex = keyboardIndex + offset
   if (targetIndex < 0 || targetIndex >= modelValue.value.length) return
+  keyboardMoving = true
   emitReorder(keyboardIndex, targetIndex)
   keyboardIndex = targetIndex
   sourceIndex = targetIndex
   dropTargetIndex = targetIndex
   liveMessage.value = `Moved item, ${positionMessage(targetIndex)}`
   scheduleRefreshChildren()
+  void nextTick(() => {
+    const child = itemChildren()[targetIndex]
+    const control = handle ? child?.querySelector<HTMLElement>(handle) : child
+    control?.focus()
+    keyboardMoving = false
+  })
 }
 
 function handleFocusOut (event: FocusEvent): void {
-  if (keyboardIndex < 0) return
+  if (keyboardIndex < 0 || keyboardMoving) return
   if (itemIndexForKeyboardTarget(event.relatedTarget) === keyboardIndex) return
   if (keyboardOriginal) modelValue.value = keyboardOriginal
   liveMessage.value = 'Cancelled reorder'
@@ -355,7 +371,7 @@ onBeforeUnmount(() => {
 }
 
 .draggable-list > .is-drop-target {
-  outline: 2px solid rgb(var(--v-theme-primary));
+  outline: 2px solid rgb(var(--v-theme-focus, var(--v-theme-on-surface)));
   outline-offset: -2px;
 }
 
@@ -365,7 +381,7 @@ onBeforeUnmount(() => {
 }
 
 .draggable-list [data-draggable-handle='true']:focus-visible {
-  outline: 2px solid rgb(var(--v-theme-primary));
+  outline: 2px solid rgb(var(--v-theme-focus, var(--v-theme-on-surface)));
   outline-offset: 2px;
 }
 

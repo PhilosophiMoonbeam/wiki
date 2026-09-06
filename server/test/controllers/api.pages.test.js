@@ -1,3 +1,5 @@
+const pageTreeAccess = vi.fn()
+vi.mockModule('../../repositories/page-tree-access.ts', import.meta.url, () => ({ pageTreeAccess, treeAncestorIds: () => [] }))
 const taxonomyLegacyChange = vi.fn()
 vi.mockModule('../../operations/taxonomy.ts', import.meta.url, () => ({ default: () => ({ legacyChange: taxonomyLegacyChange }) }))
 vi.mockModule('express', import.meta.url, () => {
@@ -640,7 +642,9 @@ describe('controllers/api pages endpoints', () => {
         return { orderBy }
       })
     }
-    global.WIKI.models.knex.mockReturnValue(queryBuilder)
+    const transaction = Object.assign(vi.fn(() => queryBuilder), { commit: vi.fn(), rollback: vi.fn() })
+    global.WIKI.models.knex.transaction = vi.fn().mockResolvedValue(transaction)
+    pageTreeAccess.mockResolvedValue({ readable: new Set([1]), editable: new Set([1]), reachable: new Set() })
     const { tree } = await loadHandler()
     const req = { query: { locale: 'en', mode: 'ALL', parent: '0' }, user: { id: 1 } }
     const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
@@ -661,6 +665,17 @@ describe('controllers/api pages endpoints', () => {
     }])
     expect(queryBuilder.where).toHaveBeenCalledOnce()
     expect(orderBy).toHaveBeenCalledOnce()
+  })
+
+  it('rejects invalid Browse scope before running a tree query', async () => {
+    const { tree } = await loadHandler()
+    for (const query of [{ locale: 'en', parent: '-1' }, { locale: 'en', mode: 'SECRET' }, { locale: 'en', visibility: 'everyone' }]) {
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }, next = vi.fn()
+      await tree({ query, user: { id: 1 } }, res, next)
+      expect(res.status).toHaveBeenCalledWith(400)
+      expect(next).not.toHaveBeenCalled()
+    }
+    expect(pageTreeAccess).not.toHaveBeenCalled()
   })
 
   it('registers the page list route', async () => {

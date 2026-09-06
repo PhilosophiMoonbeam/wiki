@@ -53,7 +53,7 @@
           )
             template(v-slot:prepend)
               v-avatar(size='24', rounded='0', variant='text')
-                v-icon(v-if='item.c.match(/fa[a-z] fa-/)', size='19') {{ item.c }}
+                v-icon(v-if='item.c?.match(/fa[a-z] fa-/)', size='19') {{ item.c }}
                 v-icon(v-else) {{ item.c }}
             v-list-item-title {{ item.l }}
           v-divider.nav-sidebar-section-divider.my-2(v-else-if='item.k === `divider`')
@@ -324,7 +324,8 @@ export default defineComponent({
             path,
             locale,
             mode: 'ALL',
-            includeAncestors: true
+            includeAncestors: true,
+            visibility: wikiStore.page.visibility
           }
         )
         if (requestSequence !== this.browseRequestSequence) return

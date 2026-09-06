@@ -1,3 +1,4 @@
+import { navigationCacheKey, navigationMenuItems } from '../../shared/navigation-policy.ts'
 import { Model } from 'objection'
 import _ from 'lodash'
 
@@ -49,8 +50,9 @@ export default class Navigation extends Model {
     groups?: number[]
     bypassAuth?: boolean
   } = {}): Promise<NavigationItem[] | NavigationTree[]> {
+    const revision = wiki.config?.nav?.revision
     if (cache) {
-      const cachedTree = await wiki.cache.get(`nav:sidebar:${locale}`)
+      const cachedTree = await wiki.cache.get(navigationCacheKey(locale, revision))
       if (cachedTree) {
         const normalizedTree = normalizeNavigationItems(cachedTree)
         return bypassAuth ? normalizedTree : wiki.models.navigation.getAuthorizedItems(normalizedTree, groups)
@@ -71,7 +73,7 @@ export default class Navigation extends Model {
     }
     for (const tree of navigation.config) {
       tree.items = normalizeNavigationItems(tree.items)
-      if (cache) await wiki.cache.set(`nav:sidebar:${tree.locale}`, tree.items, 300)
+      if (cache) await wiki.cache.set(navigationCacheKey(tree.locale, revision), tree.items, 300)
     }
     if (locale === 'all') {
       return bypassAuth ? navigation.config : navigation.config.map(tree => ({ ...tree, items: wiki.models.navigation.getAuthorizedItems(tree.items, groups) }))
@@ -81,11 +83,12 @@ export default class Navigation extends Model {
   }
 
   static getAuthorizedItems(tree: NavigationItem[] = [], groups: number[] = []): NavigationItem[] {
-    return _.filter(tree, leaf => leaf.visibilityMode === 'all' || _.intersection(leaf.visibilityGroups, groups).length > 0)
+    return navigationMenuItems(tree, groups)
   }
 }
 
 const wiki = WIKI as unknown as {
+  config?: { nav?: { revision?: unknown } }
   cache: {
     get: (key: string) => Promise<NavigationItem[] | null>
     set: (key: string, value: NavigationItem[], ttl: number) => Promise<void>

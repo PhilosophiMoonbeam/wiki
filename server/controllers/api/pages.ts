@@ -427,6 +427,8 @@ router.get('/search', async (req, res, next) => {
 })
 
 router.get('/tree', async (req, res, next) => {
+  const visibility = req.query.visibility
+  if (visibility !== undefined && visibility !== 'public' && visibility !== 'private') return res.status(400).json({ error: 'visibility must be public or private' })
   const locale = _.get(req, 'query.locale')
   const rawMode: unknown = _.get(req, 'query.mode', 'ALL')
   const mode = parseTreeMode(rawMode)
@@ -442,6 +444,7 @@ router.get('/tree', async (req, res, next) => {
         ...requesterInput(req),
         locale,
         mode,
+        ...(visibility === undefined ? {} : { visibility }),
         includeAncestors: _.get(req, 'query.includeAncestors') === 'true',
         ...(path === undefined ? {} : { path }),
         ...(parent === undefined ? {} : { parent })

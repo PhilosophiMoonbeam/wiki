@@ -65,7 +65,7 @@ describe('models/navigation legacy Home normalization', () => {
     const cachedItems = [home, ordinaryLink, restrictedVisibleLink, restrictedHiddenLink, header, divider]
     cacheGet.mockResolvedValue(cachedItems)
 
-    await expect(Navigation.getTree({ cache: true, locale: 'en', groups: [7] })).resolves.toEqual([ordinaryLink, restrictedVisibleLink, header, divider])
+    await expect(Navigation.getTree({ cache: true, locale: 'en', groups: [7] })).resolves.toEqual([ordinaryLink, restrictedVisibleLink])
     expect(cacheGet).toHaveBeenCalledWith('nav:sidebar:en')
   })
 
@@ -86,5 +86,29 @@ describe('models/navigation legacy Home normalization', () => {
     expect(findOne).toHaveBeenCalledWith('key', 'site')
     expect(cacheSet).toHaveBeenNthCalledWith(1, 'nav:sidebar:en', [ordinaryLink, header, divider], 300)
     expect(cacheSet).toHaveBeenNthCalledWith(2, 'nav:sidebar:fr', [{ ...ordinaryLink, id: 'guides', target: '/fr/guides' }], 300)
+  })
+})
+
+describe('published navigation cache revisions and audience cleanup', () => {
+  it('reads the active revision instead of a previously published cache key', async () => {
+    Reflect.set(wikiGlobal.WIKI!, 'config', { nav: { revision: 'published-new' } })
+    cacheGet.mockImplementation(key => key === 'nav:sidebar:en:published-old' ? [ordinaryLink] : undefined)
+    findOne.mockResolvedValue({ key: 'site', config: [{ locale: 'en', items: [] }] })
+    vi.spyOn(Navigation, 'query').mockReturnValue({ findOne } as never)
+    expect(await Navigation.getTree({ cache: true, locale: 'en' })).toEqual([])
+    expect(cacheGet).toHaveBeenCalledWith('nav:sidebar:en:published-new')
+    expect(cacheSet).toHaveBeenCalledWith('nav:sidebar:en:published-new', [], 300)
+  })
+  it('does not serve cached menus for a locale removed by a new publication', async () => {
+    Reflect.set(wikiGlobal.WIKI!, 'config', { nav: { revision: 'after-locale-removal' } })
+    cacheGet.mockImplementation(key => key === 'nav:sidebar:fr' ? [ordinaryLink] : undefined)
+    findOne.mockResolvedValue({ key: 'site', config: [{ locale: 'en', items: [ordinaryLink] }] })
+    vi.spyOn(Navigation, 'query').mockReturnValue({ findOne } as never)
+    expect(await Navigation.getTree({ cache: true, locale: 'fr' })).toEqual([])
+  })
+  it('omits unsafe links, empty headings and surplus separators for the actual audience', () => {
+    const tree = [divider, header, restrictedVisibleLink, { ...header, id: 'public' }, ordinaryLink, divider, divider, { ...ordinaryLink, id: 'unsafe', targetType: 'external', target: 'javascript:alert(1)' }, divider]
+    expect(Navigation.getAuthorizedItems(tree as never, [])).toEqual([{ ...header, id: 'public' }, ordinaryLink])
+    expect(Navigation.getAuthorizedItems(tree as never, [7])).toEqual([header, restrictedVisibleLink, { ...header, id: 'public' }, ordinaryLink])
   })
 })

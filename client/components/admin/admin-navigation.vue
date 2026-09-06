@@ -1,747 +1,1182 @@
-<template lang='pug'>
-  v-container(fluid)
-    v-row
-      v-col(cols='12')
-        admin-hero(
-          icon='mdi-navigation-variant-outline'
-          :title='$t(`admin:navigation.title`)'
-          :description='$t(`admin:navigation.subtitle`)'
-        )
-          template(v-slot:status)
-            v-chip(v-if='dirty', color='warning', variant='tonal', size='small') Unsaved changes
-          template(v-slot:actions)
-            v-btn(
-              icon
-              variant="outlined"
-              href='https://docs.requarks.io/navigation'
-              target='_blank'
-              rel='noopener'
-              aria-label='Open navigation documentation in a new tab'
-              title='Open navigation documentation'
-            )
-              v-icon mdi-help-circle
-            v-btn(
-              icon
-              variant="outlined"
-              @click='refresh'
-              :aria-label='$t(`common:actions.refresh`)'
-              title='Refresh navigation settings'
-              :loading='initialLoading'
-            )
-              v-icon mdi-refresh
-            v-btn(
-              color='success'
-              variant="flat"
-              prepend-icon='mdi-check'
-              :loading='saving'
-              :disabled='!loaded || initialLoading || saving || !dirty'
-              @click='save'
-            ) {{$t('common:actions.apply')}}
-        v-alert(v-if='initialLoading', type='info', variant='tonal', role='status') Loading navigation settings…
-        v-alert(
-          v-else-if='loadError'
-          type='error'
-          variant='tonal'
-          icon='mdi-alert-circle-outline'
-        )
-          .text-body-medium Navigation settings could not be loaded.
-          .text-body-small.mt-1 {{ loadError }}
-          v-btn.mt-3(
-            type='button'
-            variant='outlined'
-            size='small'
-            prepend-icon='mdi-refresh'
-            @click='loadNavigation()'
-          ) Retry
-        v-container.pa-0.mt-3(fluid, v-else-if='loaded')
-          v-row(density="compact")
-            v-col(cols='12', md='3')
-              v-card.animated.fadeInUp
-                v-toolbar(color='primary', density="compact", flat, height='56')
-                  v-toolbar-title.text-body-large {{$t('admin:navigation.mode')}}
-                v-list(
-                  nav
-                  lines='two'
-                  role='radiogroup'
-                  aria-orientation='vertical'
-                  :aria-label='$t(`admin:navigation.mode`)'
-                )
-                  v-list-item(
-                    ref='navigationModeTree'
-                    value='TREE'
-                    role='radio'
-                    :aria-checked='config.mode === `TREE`'
-                    :tabindex='config.mode === `TREE` ? 0 : -1'
-                    :active='config.mode === `TREE`'
-                    @click='selectNavigationMode(`TREE`, true)'
-                    @keydown='onNavigationModeKeydown($event, `TREE`)'
-                  )
-                    template(v-slot:prepend)
-                      v-avatar
-                        img(src='/_assets/svg/icon-tree-structure-dotted.svg', alt='')
-                    v-list-item-title {{$t('admin:navigation.modeSiteTree.title')}}
-                    v-list-item-subtitle {{$t('admin:navigation.modeSiteTree.description')}}
-                    template(v-slot:append)
-                      v-avatar
-                        v-icon(:color='config.mode === `TREE` ? `primary` : undefined') mdi-check-circle
-                  v-list-item(
-                    ref='navigationModeStatic'
-                    value='STATIC'
-                    role='radio'
-                    :aria-checked='config.mode === `STATIC`'
-                    :tabindex='config.mode === `STATIC` ? 0 : -1'
-                    :active='config.mode === `STATIC`'
-                    @click='selectNavigationMode(`STATIC`, true)'
-                    @keydown='onNavigationModeKeydown($event, `STATIC`)'
-                  )
-                    template(v-slot:prepend)
-                      v-avatar
-                        img(src='/_assets/svg/icon-features-list.svg', alt='')
-                    v-list-item-title {{$t('admin:navigation.modeStatic.title')}}
-                    v-list-item-subtitle {{$t('admin:navigation.modeStatic.description')}}
-                    template(v-slot:append)
-                      v-avatar
-                        v-icon(:color='config.mode === `STATIC` ? `primary` : undefined') mdi-check-circle
-                  v-list-item(
-                    ref='navigationModeMixed'
-                    value='MIXED'
-                    role='radio'
-                    :aria-checked='config.mode === `MIXED`'
-                    :tabindex='config.mode === `MIXED` ? 0 : -1'
-                    :active='config.mode === `MIXED`'
-                    @click='selectNavigationMode(`MIXED`, true)'
-                    @keydown='onNavigationModeKeydown($event, `MIXED`)'
-                  )
-                    template(v-slot:prepend)
-                      v-avatar
-                        img(src='/_assets/svg/icon-user-menu-male-dotted.svg', alt='')
-                    v-list-item-title {{$t('admin:navigation.modeCustom.title')}}
-                    v-list-item-subtitle {{$t('admin:navigation.modeCustom.description')}}
-                    template(v-slot:append)
-                      v-avatar
-                        v-icon(:color='config.mode === `MIXED` ? `primary` : undefined') mdi-check-circle
-                  v-list-item(
-                    ref='navigationModeNone'
-                    value='NONE'
-                    role='radio'
-                    :aria-checked='config.mode === `NONE`'
-                    :tabindex='config.mode === `NONE` ? 0 : -1'
-                    :active='config.mode === `NONE`'
-                    @click='selectNavigationMode(`NONE`, true)'
-                    @keydown='onNavigationModeKeydown($event, `NONE`)'
-                  )
-                    template(v-slot:prepend)
-                      v-avatar
-                        img(src='/_assets/svg/icon-cancel-dotted.svg', alt='')
-                    v-list-item-title {{$t('admin:navigation.modeNone.title')}}
-                    v-list-item-subtitle {{$t('admin:navigation.modeNone.description')}}
-                    template(v-slot:append)
-                      v-avatar
-                        v-icon(:color='config.mode === `NONE` ? `primary` : undefined') mdi-check-circle
-                v-card-text.pt-0
-                  v-switch(
-                    v-model='config.expandParent'
-                    color='primary'
-                    inset
-                    hide-details
-                    label='Open the current page parent by default'
-                  )
-                  .text-body-small.text-medium-emphasis.mt-2 When enabled, Browse opens at the current page location. Disable it to start at the site root.
-            v-col(cols='12', md='9', v-if='config.mode === `MIXED` || config.mode === `STATIC`')
-              v-card.animated.fadeInUp.wait-p2s
-                v-row.align-stretch(gap='0')
-                  v-col(cols='12', lg='5', xl='4')
-                    v-card.navigation-builder(flat)
-                      .navigation-builder__locale.pa-2.d-flex
-                        v-select(
-                          :disabled='locales.length < 2'
-                          label='Locale'
-                          hide-details
-                          variant="solo"
-                          flat
-                          bg-color='surface'
-                          density="compact"
-                          v-model='currentLang'
-                          :items='locales'
-                          item-title='nativeName'
-                          item-value='code'
-                        )
-                        v-tooltip(location="top")
-                          template(v-slot:activator='{ props }')
-                            v-btn.ms-2(icon, variant='text', v-bind='props', :aria-label='$t(`admin:navigation.copyFromLocale`)', :disabled='copyLocales.length < 1', @click='openCopyFromLocaleDialog')
-                              v-icon mdi-arrange-send-backward
-                          span {{$t('admin:navigation.copyFromLocale')}}
-                      v-list.navigation-tree.py-2(density="compact", nav)
-                        v-list-item.navigation-tree__home
-                          template(v-slot:prepend)
-                            v-avatar(size='24', rounded='0')
-                              v-icon mdi-home
-                          v-list-item-title {{$t('common:header.home')}}
-                          template(v-slot:append)
-                            v-icon(size='18', aria-hidden='true') mdi-lock
-                        v-list-item(v-if='currentTree.length < 1')
-                          template(v-slot:prepend)
-                            v-avatar(size='24'): v-icon(color="secondary") mdi-alert
-                          em.text-body-small.text-medium-emphasis {{$t('admin:navigation.emptyList')}}
-                        draggable(v-model='currentTree', handle='.nav-drag-handle')
-                          template(v-for='navItem in currentTree', :key='navItem.id')
-                            v-list-item(
-                              v-if='navItem.kind === "link"'
-                              tabindex='0'
-                              :aria-label='itemSelectionLabel(navItem)'
-                              :class='{ "is-selected": navItem === current }'
-                              @click='selectItem(navItem)'
-                            )
-                              template(v-slot:prepend)
-                                v-btn.nav-drag-handle(icon, size='small', variant='text', :aria-label='`Reorder ${navItem.label}`', @click.stop='selectItem(navItem)')
-                                  v-icon(size='18') mdi-drag-horizontal
-                                v-avatar(size='24', rounded='0')
-                                  v-icon(v-if='navItem.icon?.match(/fa[a-z] fa-/)', size='19') {{ navItem.icon }}
-                                  v-icon(v-else) {{ navItem.icon }}
-                              v-list-item-title {{navItem.label}}
-                            .py-2.clickable(
-                              v-else-if='navItem.kind === "divider"'
-                              tabindex='0'
-                              :aria-label='itemSelectionLabel(navItem)'
-                              :class='{ "is-selected": navItem === current }'
-                              @click='selectItem(navItem)'
-                              @keydown.enter.prevent='selectItem(navItem)'
-                              @keydown.space.prevent='selectItem(navItem)'
-                            )
-                              v-btn.nav-drag-handle(icon, size='small', variant='text', :aria-label='`Reorder divider`', @click.stop='selectItem(navItem)')
-                                v-icon(size='18') mdi-drag-horizontal
-                              v-divider
-                            v-list-subheader.ps-4.clickable(
-                              v-else-if='navItem.kind === "header"'
-                              tabindex='0'
-                              :aria-label='itemSelectionLabel(navItem)'
-                              :class='{ "is-selected": navItem === current }'
-                              @click='selectItem(navItem)'
-                              @keydown.enter.prevent='selectItem(navItem)'
-                              @keydown.space.prevent='selectItem(navItem)'
-                            )
-                              v-btn.nav-drag-handle(icon, size='small', variant='text', :aria-label='`Reorder ${navItem.label}`', @click.stop='selectItem(navItem)')
-                                v-icon(size='18') mdi-drag-horizontal
-                              span {{navItem.label}}
-                        v-menu(location="bottom", min-width='200px', style='flex: 1 1;')
-                          template(v-slot:activator='{ props }')
-                            v-btn(v-bind='props', color='primary', variant="flat", prepend-icon='mdi-plus', block) {{$t('common:actions.add')}}
-                          v-list
-                            v-list-item(@click='addItem("link")')
-                              template(v-slot:prepend)
-                                v-avatar(size='24'): v-icon mdi-link
-                              v-list-item-title {{$t('admin:navigation.link')}}
-                            v-list-item(@click='addItem("header")')
-                              template(v-slot:prepend)
-                                v-avatar(size='24'): v-icon mdi-format-title
-                              v-list-item-title {{$t('admin:navigation.header')}}
-                            v-list-item(@click='addItem("divider")')
-                              template(v-slot:prepend)
-                                v-avatar(size='24'): v-icon mdi-minus
-                              v-list-item-title {{$t('admin:navigation.divider')}}
-                  v-col(cols='12', lg='7', xl='8')
-                    v-card(flat, style='border-start-start-radius: 0; border-end-start-radius: 0; border-start-end-radius: var(--wiki-control-radius); border-end-end-radius: var(--wiki-control-radius);')
-                      template(v-if='current.kind === "link"')
-                        v-toolbar(height='56', color="surface-variant", flat)
-                          .text-body-large {{$t('admin:navigation.edit', { kind: $t('admin:navigation.link') })}}
-                          v-spacer
-                          v-btn.px-5(color='error', variant="text", prepend-icon='mdi-delete', :disabled='saving', @click='deleteItem(current)') Remove item
-                        v-card-text
-                          v-text-field(
-                            variant="outlined"
-                            :label='$t("admin:navigation.label")'
-                            prepend-icon='mdi-format-title'
-                            v-model='current.label'
-                            counter='255'
-                          )
-                          v-text-field(
-                            variant="outlined"
-                            :label='$t("admin:navigation.icon")'
-                            prepend-icon='mdi-dice-5'
-                            v-model='current.icon'
-                            hide-details
-                          )
-                          .text-body-small.pt-3.ps-5 The default icon set is #[strong Material Design Icons]. In order to use another icon set, you must first select it in the Theme administration section.
-                          .text-body-small.pt-3.ps-5: strong Material Design Icons
-                          .text-body-small.ps-5 Refer to the #[a(href='https://materialdesignicons.com/', target='_blank', rel='noopener') Material Design Icons Reference] for the list of all possible values. You must prefix all values with #[code mdi-], e.g. #[code mdi-home]
-                          .text-body-small.pt-3.ps-5: strong Font Awesome 5
-                          .text-body-small.ps-5 Refer to the #[a(href='https://fontawesome.com/icons?d=gallery&m=free', target='_blank', rel='noopener') Font Awesome 5 Reference] for the list of all possible values. You must prefix all values with #[code fas fa-], e.g. #[code fas fa-home]. Note that some icons use different prefixes (e.g. #[code fab], #[code fad], #[code fal], #[code far]).
-                          .text-body-small.pt-3.ps-5: strong Font Awesome 4
-                          .text-body-small.ps-5 Refer to the #[a(href='https://fontawesome.com/v4.7.0/icons/', target='_blank', rel='noopener') Font Awesome 4 Reference] for the list of all possible values. You must prefix all values with #[code fa fa-], e.g. #[code fa fa-home]
-                        v-divider
-                        v-card-text
-                          v-select(
-                            variant="outlined"
-                            :label='$t("admin:navigation.targetType")'
-                            prepend-icon='mdi-near-me'
-                            :items='navTypes'
-                            v-model='current.targetType'
-                            hide-details
-                          )
-                          v-text-field.mt-4(
-                            v-if='current.targetType === `external` || current.targetType === `externalblank`'
-                            variant="outlined"
-                            :label='$t("admin:navigation.target")'
-                            prepend-icon='mdi-near-me'
-                            v-model='current.target'
-                            hide-details
-                          )
-                          .d-flex.align-center.mt-4(v-else-if='current.targetType === "page"')
-                            v-btn.ms-8(
-                              color='primary'
-                              prepend-icon='mdi-magnify'
-                              @click='selectPage'
-                            ) {{$t('admin:navigation.selectPageButton')}}
-                            .text-body-small.ms-4.text-primary {{current.target}}
-                          v-text-field(
-                            v-else-if='current.targetType === `search`'
-                            variant="outlined"
-                            :label='$t("admin:navigation.navType.searchQuery")'
-                            prepend-icon='mdi-magnify'
-                            v-model='current.target'
-                          )
-                        v-divider
-
-                      template(v-else-if='current.kind === "header"')
-                        v-toolbar(height='56', color="surface-variant", flat)
-                          .text-body-large {{$t('admin:navigation.edit', { kind: $t('admin:navigation.header') })}}
-                          v-spacer
-                          v-btn.px-5(color='error', variant="text", prepend-icon='mdi-delete', :disabled='saving', @click='deleteItem(current)') Remove item
-                        v-card-text
-                          v-text-field(
-                            variant="outlined"
-                            :label='$t("admin:navigation.label")'
-                            prepend-icon='mdi-format-title'
-                            v-model='current.label'
-                          )
-                        v-divider
-
-                      div(v-else-if='current.kind === "divider"')
-                        v-toolbar(height='56', color="surface-variant", flat)
-                          .text-body-large {{$t('admin:navigation.edit', { kind: $t('admin:navigation.divider') })}}
-                          v-spacer
-                          v-btn.px-5(color='error', variant="text", prepend-icon='mdi-delete', :disabled='saving', @click='deleteItem(current)') Remove item
-
-                      v-card-text(v-if='current.kind')
-                        .text-label-large Visibility
-                        .text-body-small.text-medium-emphasis Choose who can see this item.
-                        v-divider.my-4
-                        v-radio-group(v-model='current.visibilityMode', mandatory, hide-details, aria-label='Visibility')
-                          v-radio(:label='$t("admin:navigation.visibilityMode.all")', value='all', color='primary')
-                          v-radio.mt-3(:label='$t("admin:navigation.visibilityMode.restricted")', value='restricted', color='primary')
-                        v-select.mt-3(
-                          item-title='name'
-                          item-value='id'
-                          variant="outlined"
-                          prepend-icon='mdi-account-group'
-                          label='Groups'
-                          :disabled='current.visibilityMode !== `restricted`'
-                          :hint='current.visibilityMode !== `restricted` ? "Select Restricted to choose groups." : ""'
-                          persistent-hint
-                          v-model='current.visibilityGroups'
-                          :items='groups'
-                          clearable
-                          multiple
-                        )
-                      template(v-else)
-                        v-toolbar(height='56', color="surface-variant", flat)
-                        v-card-text.text-medium-emphasis(v-if='currentTree.length > 0') {{$t('admin:navigation.noSelectionText')}}
-                        v-card-text.text-medium-emphasis(v-else) {{$t('admin:navigation.noItemsText')}}
-
-        .d-flex.flex-wrap.justify-end.ga-2.mt-5.sticky-action-row
-          v-btn(
-            color='success'
-            variant='flat'
-            size='large'
-            prepend-icon='mdi-check'
-            :loading='saving'
-            :disabled='!loaded || initialLoading || saving || !dirty'
-            @click='save'
-          ) {{$t('common:actions.apply')}}
-    v-dialog(v-model='copyFromLocaleDialogIsShown', max-width='650', persistent, aria-labelledby='copy-navigation-dialog-title')
-      v-card
-        .dialog-header.is-short.is-primary
-          v-icon.me-3(color='white') mdi-arrange-send-backward
-          span#copy-navigation-dialog-title {{$t('admin:navigation.copyFromLocale')}}
-        v-card-text.pt-5
-          .text-body-medium {{$t('admin:navigation.copyFromLocaleInfoText')}}
-          v-select.mt-3(
-            :items='copyLocales'
-            item-title='nativeName'
-            item-value='code'
+<template>
+  <v-container fluid class="navigation-workspace">
+    <admin-hero
+      icon="mdi-compass-outline"
+      title="Navigation"
+      description="Give every reader a clear way into your knowledge."
+      ><template #actions
+        ><v-btn
+          variant="text"
+          prepend-icon="mdi-refresh"
+          :loading="loading"
+          :disabled="busy || initializing"
+          @click="reload"
+          >Reload settings</v-btn
+        ><v-btn v-if="dirty" variant="text" :disabled="locked" @click="reset"
+          >Reset draft</v-btn
+        ><v-btn
+          color="primary"
+          variant="flat"
+          :disabled="locked || !dirty"
+          @click="review"
+          >Review changes</v-btn
+        ></template
+      ></admin-hero
+    >
+    <p v-if="!saved && loading" class="navigation-empty" role="status">
+      Loading navigation, locales and audiences…
+    </p>
+    <v-alert v-if="loadError" type="error" variant="tonal"
+      >{{ loadError
+      }}<v-btn variant="text" :disabled="busy" @click="reload"
+        >Reload saved settings</v-btn
+      ></v-alert
+    >
+    <v-alert
+      v-if="notice"
+      :type="attention ? 'warning' : 'success'"
+      variant="tonal"
+      class="mt-4"
+      >{{ notice }}</v-alert
+    >
+    <template v-if="saved && draft">
+      <div class="navigation-status">
+        <span
+          ><i :class="{ 'is-draft': dirty }" />{{
+            dirty ? "Unsaved navigation draft" : "Showing saved navigation"
+          }}</span
+        ><span>{{
+          saved.runtime.state === "applied"
+            ? "Runtime configuration current"
+            : "Runtime activation needs attention"
+        }}</span>
+      </div>
+      <nav class="navigation-tabs" aria-label="Navigation sections">
+        <button
+          v-for="tab in sections"
+          :key="tab.key"
+          type="button"
+          :aria-current="section === tab.key ? 'page' : undefined"
+          :disabled="busy || initializing"
+          @click="selectSection(tab.key)"
+        >
+          {{ tab.title }}
+        </button>
+      </nav>
+      <div class="navigation-layout">
+        <section class="navigation-editor">
+          <template v-if="section === 'structure'">
+            <div class="navigation-heading">
+              <span class="navigation-kicker"
+                >01 / A useful wayfinding system</span
+              >
+              <h2>Arrange the essentials</h2>
+              <p>
+                Build a purposeful menu for each language. Group related links,
+                establish a reading order and keep audiences in view.
+              </p>
+            </div>
+            <v-alert v-if="!customMode" type="info" variant="tonal" class="mb-5"
+              >{{
+                draft.mode === "NONE"
+                  ? "The sidebar is hidden."
+                  : "The sidebar currently shows the page directory."
+              }}
+              Custom menus remain editable here. Choose a custom-menu display
+              mode to show them.</v-alert
+            >
+            <div class="navigation-toolbar">
+              <v-select
+                v-model="currentLocale"
+                :items="localeOptions"
+                item-title="title"
+                item-value="code"
+                label="Menu locale"
+                variant="outlined"
+                density="compact"
+                hide-details
+                :disabled="locked"
+              /><v-btn
+                variant="text"
+                prepend-icon="mdi-content-copy"
+                :disabled="locked || !copyOptions.length"
+                @click="openCopy"
+                >Copy from locale</v-btn
+              ><v-btn
+                variant="text"
+                class="navigation-preview-jump"
+                @click="
+                  previewPanel?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start',
+                  })
+                "
+                >Preview this menu</v-btn
+              >
+            </div>
+            <p v-if="!currentLocaleEnabled" class="navigation-note mb-5">
+              This locale is retained for editing but is not enabled for
+              readers. Manage language availability in
+              <router-link to="/locale">Locale</router-link>.
+            </p>
+            <div class="navigation-builder">
+              <section class="navigation-structure" aria-label="Menu structure">
+                <div class="navigation-section-title">
+                  <h3>Menu order</h3>
+                  <span>{{ currentItems.length }} / {{ maxItems }}</span>
+                </div>
+                <div class="navigation-home">
+                  <v-icon icon="mdi-home-outline" size="18" /><span>Home</span
+                  ><small>Built in</small>
+                </div>
+                <navigation-outline
+                  :items="currentItems"
+                  :selected="selectedId"
+                  :disabled="locked"
+                  @select="selectedId = $event"
+                  @reorder="setItems"
+                />
+                <div v-if="!currentItems.length" class="navigation-empty">
+                  <v-icon icon="mdi-sign-direction" size="28" />
+                  <h3>A starting point</h3>
+                  <p>
+                    Add a page link, then organize related destinations with
+                    headings.
+                  </p>
+                </div>
+                <div class="navigation-add">
+                  <v-btn
+                    variant="tonal"
+                    prepend-icon="mdi-plus"
+                    :disabled="locked || currentItems.length >= maxItems"
+                    @click="addItem('link')"
+                    >Add link</v-btn
+                  ><v-menu
+                    ><template #activator="{ props }"
+                      ><v-btn
+                        v-bind="props"
+                        variant="text"
+                        icon="mdi-dots-horizontal"
+                        aria-label="Add a heading or divider"
+                        :disabled="
+                          locked || currentItems.length >= maxItems
+                        " /></template
+                    ><v-list
+                      ><v-list-item
+                        title="Add heading"
+                        prepend-icon="mdi-format-title"
+                        @click="addItem('header')" /><v-list-item
+                        title="Add divider"
+                        prepend-icon="mdi-minus"
+                        @click="addItem('divider')" /></v-list
+                  ></v-menu>
+                </div>
+                <p class="navigation-note">
+                  Drag a handle, or focus it and press Space to reorder with the
+                  arrow keys.
+                </p>
+              </section>
+              <section
+                class="navigation-item-editor"
+                aria-label="Selected menu item"
+              >
+                <template v-if="selected"
+                  ><div class="navigation-section-title">
+                    <h3>
+                      {{
+                        selected.kind === "link"
+                          ? "Link details"
+                          : selected.kind === "header"
+                            ? "Section heading"
+                            : "Divider"
+                      }}
+                    </h3>
+                    <span
+                      >{{ selectedIndex + 1 }} of
+                      {{ currentItems.length }}</span
+                    >
+                  </div>
+                  <div class="navigation-item-position">
+                    <v-btn
+                      size="small"
+                      variant="text"
+                      prepend-icon="mdi-arrow-up"
+                      :disabled="locked || selectedIndex === 0"
+                      @click="moveItem(-1)"
+                      >Move up</v-btn
+                    ><v-btn
+                      size="small"
+                      variant="text"
+                      prepend-icon="mdi-arrow-down"
+                      :disabled="
+                        locked || selectedIndex === currentItems.length - 1
+                      "
+                      @click="moveItem(1)"
+                      >Move down</v-btn
+                    >
+                  </div>
+                  <v-text-field
+                    v-if="selected.kind !== 'divider'"
+                    v-model="selected.label"
+                    label="Menu label"
+                    maxlength="255"
+                    counter="255"
+                    variant="outlined"
+                    :disabled="locked"
+                  />
+                  <template v-if="selected.kind === 'link'"
+                    ><v-text-field
+                      v-model="selected.icon"
+                      label="Icon"
+                      variant="outlined"
+                      :disabled="locked"
+                      hint="An mdi- icon name, or a Font Awesome class from your Theme icon library."
+                      persistent-hint
+                      ><template #append-inner
+                        ><v-icon
+                          :icon="selected.icon || 'mdi-link-variant'"
+                          size="20" /></template></v-text-field
+                    ><v-select
+                      v-model="selected.targetType"
+                      :items="targetOptions"
+                      label="Destination type"
+                      variant="outlined"
+                      :disabled="locked"
+                      class="mt-5"
+                    /><v-text-field
+                      v-model="selected.target"
+                      :label="
+                        selected.targetType === 'page'
+                          ? 'Page path'
+                          : 'External address'
+                      "
+                      variant="outlined"
+                      :disabled="locked"
+                      :error-messages="
+                        selected.target && !destination
+                          ? ['Enter a valid destination for this link type.']
+                          : []
+                      "
+                      :hint="
+                        selected.targetType === 'page'
+                          ? 'A workspace path, such as /en/guide. Anchors and query strings are supported.'
+                          : 'HTTP(S), mailto: or tel:. External destinations are not fetched by this editor.'
+                      "
+                      persistent-hint
+                    /><v-btn
+                      v-if="selected.targetType === 'page'"
+                      class="mt-3"
+                      variant="text"
+                      prepend-icon="mdi-file-search-outline"
+                      :disabled="locked"
+                      @click="selectPageOpen = true"
+                      >Choose a page</v-btn
+                    >
+                    <p v-if="destination" class="navigation-destination">
+                      <span>Destination</span><code>{{ destination }}</code>
+                    </p></template
+                  >
+                  <p
+                    v-else-if="selected.kind === 'divider'"
+                    class="navigation-note"
+                  >
+                    Separate related groups of links. Redundant separators are
+                    omitted from the reader’s menu.
+                  </p>
+                  <div class="navigation-setting-group">
+                    <h3>Audience</h3>
+                    <v-radio-group
+                      v-model="selected.visibilityMode"
+                      :disabled="locked"
+                      hide-details
+                      label="Who sees this item?"
+                      ><v-radio
+                        label="Everyone who can open the workspace"
+                        value="all" /><v-radio
+                        label="Members of selected groups"
+                        value="restricted" /></v-radio-group
+                    ><v-select
+                      v-if="selected.visibilityMode === 'restricted'"
+                      v-model="selected.visibilityGroups"
+                      :items="saved.groups"
+                      item-title="name"
+                      item-value="id"
+                      label="Audience groups"
+                      variant="outlined"
+                      multiple
+                      chips
+                      closable-chips
+                      :disabled="locked"
+                      class="mt-5"
+                    />
+                    <p
+                      v-if="
+                        selected.visibilityMode === 'restricted' &&
+                        !selected.visibilityGroups.length
+                      "
+                      class="navigation-note mt-3"
+                    >
+                      No group is selected. This item will be hidden from every
+                      audience.
+                    </p>
+                    <p class="navigation-note mt-4">
+                      Menu visibility does not grant access to a page. Page
+                      permissions and publication rules still apply.
+                    </p>
+                  </div>
+                  <div class="navigation-item-actions">
+                    <v-btn
+                      variant="text"
+                      prepend-icon="mdi-content-copy"
+                      :disabled="locked || currentItems.length >= maxItems"
+                      @click="duplicateItem"
+                      >Duplicate item</v-btn
+                    ><v-btn
+                      variant="text"
+                      prepend-icon="mdi-delete-outline"
+                      :disabled="locked"
+                      @click="removeItem"
+                      >Remove item</v-btn
+                    >
+                  </div>
+                </template>
+                <div v-else class="navigation-empty">
+                  <v-icon icon="mdi-cursor-default-click-outline" size="28" />
+                  <h3>Choose an item</h3>
+                  <p>
+                    Select a link, heading or divider to refine its destination
+                    and audience.
+                  </p>
+                </div>
+              </section>
+            </div>
+          </template>
+          <template v-else-if="section === 'display'">
+            <div class="navigation-heading">
+              <span class="navigation-kicker"
+                >02 / Paths into the workspace</span
+              >
+              <h2>Choose how readers explore</h2>
+              <p>
+                Balance a curated menu with the page directory. Switching
+                display mode keeps every locale’s custom structure.
+              </p>
+            </div>
+            <fieldset class="navigation-mode-grid" :disabled="locked">
+              <legend class="navigation-sr-only">Sidebar display mode</legend>
+              <label
+                v-for="option in modeOptions"
+                :key="option.value"
+                :class="{ 'is-selected': draft.mode === option.value }"
+                ><input
+                  v-model="draft.mode"
+                  type="radio"
+                  name="navigation-display-mode"
+                  :value="option.value"
+                /><v-icon :icon="option.icon" size="22" /><strong>{{
+                  option.title
+                }}</strong
+                ><span>{{ option.description }}</span></label
+              >
+            </fieldset>
+            <div class="navigation-setting-group">
+              <h3>Where Browse begins</h3>
+              <v-switch
+                v-model="draft.expandParent"
+                inset
+                :disabled="locked"
+                label="Open the current page’s parent directory"
+                color="primary"
+                hide-details
+              />
+              <p class="navigation-note mt-3">
+                When off, Browse starts at the site root. This setting applies
+                to Page directory and Menu + directory modes.
+              </p>
+            </div>
+            <div class="navigation-setting-group">
+              <div class="navigation-section-title">
+                <h3>Locale coverage</h3>
+                <router-link to="/locale">Manage languages ↗</router-link>
+              </div>
+              <p class="navigation-note mb-5">
+                Each language has its own menu. Copying a structure preserves
+                the original labels and destinations until you edit them.
+              </p>
+              <div
+                v-for="locale in localeOptions"
+                :key="locale.code"
+                class="navigation-locale-row"
+              >
+                <div>
+                  <strong>{{ locale.name }}</strong
+                  ><small
+                    >{{ locale.code }} ·
+                    {{
+                      locale.enabled
+                        ? "Enabled for readers"
+                        : "Not enabled for readers"
+                    }}</small
+                  >
+                </div>
+                <span
+                  >{{
+                    draft.tree.find((tree) => tree.locale === locale.code)
+                      ?.items.length || 0
+                  }}
+                  items</span
+                ><v-btn
+                  size="small"
+                  variant="text"
+                  :disabled="locked"
+                  @click="editLocale(locale.code)"
+                  >Edit menu</v-btn
+                ><v-btn
+                  v-if="draft.tree.some((tree) => tree.locale === locale.code)"
+                  icon="mdi-delete-outline"
+                  size="small"
+                  variant="text"
+                  :aria-label="'Remove menu for ' + locale.name"
+                  :disabled="locked"
+                  @click="removeLocale(locale.code)"
+                />
+              </div>
+            </div>
+          </template>
+          <template v-else
+            ><div class="navigation-heading">
+              <span class="navigation-kicker">03 / Publication record</span>
+              <h2>A considered path forward</h2>
+              <p>
+                The latest 50 navigation publications, with the administrator’s
+                reason and affected language structures.
+              </p>
+            </div>
+            <p v-if="!saved.history.length" class="navigation-empty">
+              No navigation changes have been recorded yet.
+            </p>
+            <article
+              v-for="event in saved.history"
+              :key="event.id"
+              class="navigation-event"
+            >
+              <time>{{ date(event.createdAt) }}</time>
+              <h3>{{ event.reason }}</h3>
+              <p>{{ event.fields.map(fieldLabel).join(" · ") }}</p>
+              <small>{{
+                event.actorId === null
+                  ? "API administrator"
+                  : "Administrator #" + event.actorId
+              }}</small>
+            </article></template
+          >
+        </section>
+        <aside ref="previewPanel" class="navigation-preview-panel">
+          <div class="navigation-preview-heading">
+            <span class="navigation-kicker">Audience preview</span
+            ><strong>{{ currentLocale }} / {{ modeName(draft.mode) }}</strong>
+          </div>
+          <v-select
+            v-model="previewAudience"
+            :items="audienceOptions"
+            label="Preview as"
             variant="outlined"
-            prepend-icon='mdi-web'
-            v-model='copyFromLocaleCode'
-            :label='$t(`admin:navigation.sourceLocale`)'
-            :hint='$t(`admin:navigation.sourceLocaleHint`)'
+            density="compact"
+            hide-details
+          /><v-select
+            v-if="previewAudience === 'groups'"
+            v-model="previewGroups"
+            :items="saved.groups"
+            item-title="name"
+            item-value="id"
+            label="Preview groups"
+            variant="outlined"
+            multiple
+            chips
+            closable-chips
+            class="mt-4"
+            hide-details
+          /><navigation-preview
+            :items="currentItems"
+            :groups="audienceGroups"
+            :mode="draft.mode"
+            :locale="currentLocale"
+          />
+          <p v-if="customMode" class="navigation-note">
+            {{ visibleItems.filter((item) => item.kind === "link").length }} of
+            {{ currentItems.filter((item) => item.kind === "link").length }}
+            custom links visible to this audience. Empty headings and redundant
+            separators are omitted.
+          </p>
+          <p v-else class="navigation-note">
+            Custom links are retained but are not shown in this display mode.
+          </p>
+          <p class="navigation-note mt-3">
+            This previews menu visibility, not page access. Destinations remain
+            subject to their own permissions.
+          </p>
+          <div class="navigation-setting-group">
+            <h3>Publication</h3>
+            <p class="navigation-note">
+              Readers receive the saved menu on their next page load. Unsaved
+              changes stay in this editor.
+            </p>
+            <v-btn
+              v-if="saved.runtime.state !== 'applied'"
+              class="mt-4"
+              variant="tonal"
+              :loading="initializing"
+              :disabled="locked || dirty"
+              @click="initialize"
+              >Retry runtime activation</v-btn
+            >
+          </div>
+        </aside>
+      </div>
+      <div v-if="dirty" class="navigation-savebar">
+        <span
+          >Navigation draft · {{ changedFields.length }} changed
+          {{ changedFields.length === 1 ? "area" : "areas" }}</span
+        ><v-btn variant="text" :disabled="locked" @click="reset">Reset</v-btn
+        ><v-btn
+          color="primary"
+          variant="flat"
+          :disabled="locked"
+          @click="review"
+          >Review changes</v-btn
+        >
+      </div>
+    </template>
+    <page-selector
+      v-model="selectPageOpen"
+      mode="select"
+      :must-exist="true"
+      :open-handler="selectPage"
+      path="home"
+      :locale="currentLocale"
+    />
+    <v-dialog v-model="copyOpen" max-width="580"
+      ><v-card title="Copy a locale menu"
+        ><v-card-text
+          ><p class="mb-5">
+            Copy into {{ currentLocale }}. Labels, destinations and audience
+            groups retain their source values. Changes stay in this draft until
+            you publish.
+          </p>
+          <v-select
+            v-model="copySource"
+            :items="copyOptions"
+            item-title="title"
+            item-value="code"
+            label="Source locale"
+            variant="outlined"
+          /><v-radio-group v-model="copyMode" label="How to copy"
+            ><v-radio label="Append to this menu" value="append" /><v-radio
+              label="Replace this menu"
+              value="replace"
+          /></v-radio-group>
+          <p>
+            {{ copyCount }} source items · {{ currentItems.length }} current
+            items
+          </p>
+          <v-alert
+            v-if="copyMode === 'replace'"
+            type="info"
+            variant="tonal"
+            class="mt-4"
+            >The current draft menu for {{ currentLocale }} will be replaced.
+            Reset the draft to recover the saved menu.</v-alert
+          ></v-card-text
+        ><v-card-actions
+          ><v-btn @click="copyOpen = false">Cancel</v-btn><v-spacer /><v-btn
+            variant="flat"
+            color="primary"
+            :disabled="locked || !copyCount || copyTotal > maxItems"
+            @click="copyLocale"
+            >Copy {{ copyCount }} items</v-btn
+          ></v-card-actions
+        ></v-card
+      ></v-dialog
+    >
+    <v-dialog v-model="reviewing" :persistent="busy" max-width="950"
+      ><v-card v-if="saved && reviewed" title="Publish navigation changes"
+        ><v-card-text
+          ><p class="mb-5">
+            Review the complete affected structures. Item order, destinations
+            and audiences below are the exact draft being published.
+          </p>
+          <details
+            v-for="field in reviewFields"
+            :key="field"
+            class="navigation-review-field"
+            open
+          >
+            <summary>{{ fieldLabel(field) }}</summary>
+            <div>
+              <section>
+                <strong>Saved</strong>
+                <pre tabindex="0">{{ reviewValue(saved.policy, field) }}</pre>
+              </section>
+              <section>
+                <strong>Publishing</strong>
+                <pre tabindex="0">{{ reviewValue(reviewed, field) }}</pre>
+              </section>
+            </div>
+          </details>
+          <v-textarea
+            v-model="reason"
+            label="Reason for this change"
+            variant="outlined"
+            rows="2"
+            maxlength="1000"
+            :disabled="busy || stale"
+            class="mt-5"
+            hint="3–1,000 characters. Recorded with this publication."
             persistent-hint
-            )
-        v-card-chin
-          v-spacer
-          v-btn(variant="text", @click='copyFromLocaleDialogIsShown = false') {{$t('common:actions.cancel')}}
-          v-btn.px-3(variant="flat", color='primary', prepend-icon='mdi-chevron-right', :disabled='!copySourceCount', @click='copyFromLocale') {{$t('common:actions.copy')}} ({{copySourceCount}})
-
-    page-selector(mode='select', v-model='selectPageModal', :open-handler='selectPageHandle', path='home', :locale='currentLang')
+          /><v-alert
+            v-if="saveError"
+            type="error"
+            variant="tonal"
+            class="mt-4"
+            >{{ saveError }}</v-alert
+          ></v-card-text
+        ><v-card-actions
+          ><v-btn :disabled="busy" @click="reviewing = false"
+            >Back to draft</v-btn
+          ><v-spacer /><v-btn
+            v-if="stale"
+            :disabled="busy"
+            @click="reloadReview"
+            >Reload saved settings</v-btn
+          ><v-btn
+            color="primary"
+            variant="flat"
+            :loading="busy"
+            :disabled="locked || reason.trim().length < 3"
+            @click="confirm"
+            >Publish navigation</v-btn
+          ></v-card-actions
+        ></v-card
+      ></v-dialog
+    >
+  </v-container>
 </template>
-
-<script lang='ts'>
-import _ from 'lodash'
-import { markRaw } from 'vue'
-
-import { fetchGroupOptions, type GroupOption } from '../../helpers/groups-api'
-import { fetchLocales, type LocaleRow } from '../../helpers/locales-api'
-import { fetchNavigation, saveNavigation, type NavigationConfig, type NavigationItem, type NavigationTreeRow } from '../../helpers/navigation-api'
-import { getErrorMessage } from '../../helpers/root-ui-store'
-import { wikiStore } from '@/store/index.ts'
-
-import draggable from '@/components/common/draggable-list.vue'
-
-/* global siteConfig, siteLangs */
-
-const createEmptyNavigationItem = (): NavigationItem => ({
-  id: '',
-  kind: '',
-  visibilityGroups: []
-})
-
-const isHomeLink = (item: NavigationItem): boolean =>
-  item.kind === 'link' && item.targetType === 'home'
-
-const normalizeNavigationItems = (items: NavigationItem[]): NavigationItem[] =>
-  items.filter(item => !isHomeLink(item))
-
-const normalizeNavigationTrees = (trees: NavigationTreeRow[]): NavigationTreeRow[] =>
-  trees.map(tree => ({
-    ...tree,
-    items: normalizeNavigationItems(tree.items)
-  }))
-
-const NAVIGATION_MODES = ['TREE', 'STATIC', 'MIXED', 'NONE'] as const
-type NavigationMode = typeof NAVIGATION_MODES[number]
-
-const NAVIGATION_MODE_REFS: Record<NavigationMode, string> = {
-  TREE: 'navigationModeTree',
-  STATIC: 'navigationModeStatic',
-  MIXED: 'navigationModeMixed',
-  NONE: 'navigationModeNone'
-}
-
-export default {
-  components: {
-    draggable
+<script setup lang="ts">
+import {
+  computed,
+  ref,
+  watch,
+  onMounted,
+  onBeforeUnmount,
+  useTemplateRef,
+} from "vue";
+import {
+  useRoute,
+  useRouter,
+  onBeforeRouteLeave,
+  onBeforeRouteUpdate,
+} from "vue-router";
+import NavigationOutline from "./navigation-outline.vue";
+import NavigationPreview from "./navigation-preview.vue";
+import {
+  NavigationPolicySchema,
+  navigationChangedFields,
+  navigationMenuItems,
+  navigationDestination,
+  MAX_NAVIGATION_ITEMS,
+  type NavigationPolicy,
+  type NavigationItem,
+  type NavigationWorkspace,
+} from "../../../shared/navigation-policy.ts";
+import {
+  fetchNavigationWorkspace,
+  saveNavigationWorkspace,
+  retryNavigationRuntime,
+} from "../../helpers/navigation-workspace-api.ts";
+const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+const errorMessage = (error: unknown) =>
+  error instanceof Error
+    ? error.message
+    : "Navigation administration is unavailable.";
+const route = useRoute(),
+  router = useRouter(),
+  previewPanel = useTemplateRef<HTMLElement>("previewPanel");
+const saved = ref<NavigationWorkspace | null>(null),
+  draft = ref<NavigationPolicy | null>(null),
+  reviewed = ref<NavigationPolicy | null>(null);
+const loading = ref(false),
+  busy = ref(false),
+  initializing = ref(false),
+  stale = ref(false),
+  reviewing = ref(false),
+  copyOpen = ref(false),
+  selectPageOpen = ref(false);
+const loadError = ref(""),
+  saveError = ref(""),
+  notice = ref(""),
+  attention = ref(false),
+  reason = ref(""),
+  reviewFingerprint = ref(""),
+  selectedId = ref(""),
+  currentLocale = ref(siteConfig.lang);
+const copySource = ref(""),
+  copyMode = ref<"append" | "replace">("append"),
+  previewAudience = ref("visitor"),
+  previewGroups = ref<number[]>([]);
+const sections = [
+  { key: "structure", title: "Menu structure" },
+  { key: "display", title: "Display & locales" },
+  { key: "activity", title: "Activity" },
+];
+const modeOptions = [
+  {
+    value: "MIXED",
+    title: "Menu + directory",
+    icon: "mdi-view-split-vertical",
+    description: "Curated links, with Browse alongside.",
   },
-  data() {
-    return {
-      selectPageModal: false,
-      trees: [] as NavigationTreeRow[],
-      current: createEmptyNavigationItem(),
-      currentLang: siteConfig.lang,
-      groups: [] as GroupOption[],
-      copyFromLocaleDialogIsShown: false,
-      config: {
-        mode: 'NONE',
-        expandParent: true
-      } as NavigationConfig,
-      allLocales: [] as LocaleRow[],
-      copyFromLocaleCode: '',
-      initialLoading: true,
-      loaded: false,
-      saving: false,
-      persistedConfig: null as NavigationConfig | null,
-      persistedTrees: [] as NavigationTreeRow[],
-      loadError: ''
+  {
+    value: "STATIC",
+    title: "Custom menu",
+    icon: "mdi-format-list-bulleted",
+    description: "A focused set of hand-picked destinations.",
+  },
+  {
+    value: "TREE",
+    title: "Page directory",
+    icon: "mdi-file-tree-outline",
+    description: "Explore the hierarchy of accessible pages.",
+  },
+  {
+    value: "NONE",
+    title: "Hidden sidebar",
+    icon: "mdi-dock-left",
+    description: "Leave more room for the page itself.",
+  },
+];
+const targetOptions = [
+  { title: "Wiki page", value: "page" },
+  { title: "External link", value: "external" },
+  { title: "External link in a new tab", value: "externalblank" },
+];
+const audienceOptions = [
+  { title: "Visitor / guest account", value: "visitor" },
+  { title: "Selected groups", value: "groups" },
+];
+const section = computed(
+  () =>
+    sections.find((item) => "#" + item.key === route.hash)?.key || "structure",
+);
+const locked = computed(
+  () =>
+    loading.value ||
+    busy.value ||
+    initializing.value ||
+    stale.value ||
+    !saved.value,
+);
+const changedFields = computed(() =>
+  saved.value && draft.value
+    ? navigationChangedFields(saved.value.policy, draft.value)
+    : [],
+);
+const dirty = computed(() => changedFields.value.length > 0);
+const reviewFields = computed(() =>
+  saved.value && reviewed.value
+    ? navigationChangedFields(saved.value.policy, reviewed.value)
+    : [],
+);
+const currentItems = computed(
+  () =>
+    draft.value?.tree.find((tree) => tree.locale === currentLocale.value)
+      ?.items || [],
+);
+const selected = computed(() =>
+  currentItems.value.find((item) => item.id === selectedId.value),
+);
+const selectedIndex = computed(() =>
+  currentItems.value.findIndex((item) => item.id === selectedId.value),
+);
+const destination = computed(() =>
+  navigationDestination(selected.value?.targetType, selected.value?.target),
+);
+const customMode = computed(() =>
+  ["MIXED", "STATIC"].includes(draft.value?.mode || ""),
+);
+const maxItems = MAX_NAVIGATION_ITEMS;
+const localeOptions = computed(() => {
+  const locales = new Map(
+    saved.value?.locales.map((locale) => [locale.code, locale]),
+  );
+  for (const tree of draft.value?.tree || [])
+    if (!locales.has(tree.locale))
+      locales.set(tree.locale, {
+        code: tree.locale,
+        name: tree.locale,
+        nativeName: tree.locale,
+        enabled: false,
+      });
+  if (saved.value && !locales.has(saved.value.defaultLocale))
+    locales.set(saved.value.defaultLocale, {
+      code: saved.value.defaultLocale,
+      name: saved.value.defaultLocale,
+      nativeName: saved.value.defaultLocale,
+      enabled: true,
+    });
+  return [...locales.values()]
+    .map((locale) => ({
+      ...locale,
+      title: `${locale.nativeName} (${locale.code})`,
+    }))
+    .sort((a, b) => a.code.localeCompare(b.code));
+});
+const currentLocaleEnabled = computed(
+  () =>
+    localeOptions.value.find((locale) => locale.code === currentLocale.value)
+      ?.enabled,
+);
+const copyOptions = computed(() =>
+  localeOptions.value.filter(
+    (locale) =>
+      locale.code !== currentLocale.value &&
+      draft.value?.tree.some(
+        (tree) => tree.locale === locale.code && tree.items.length,
+      ),
+  ),
+);
+const copyCount = computed(
+  () =>
+    draft.value?.tree.find((tree) => tree.locale === copySource.value)?.items
+      .length || 0,
+);
+const copyTotal = computed(
+  () =>
+    copyCount.value +
+    (copyMode.value === "append" ? currentItems.value.length : 0),
+);
+const audienceGroups = computed(() =>
+  previewAudience.value === "visitor"
+    ? saved.value?.guestGroups || []
+    : previewGroups.value,
+);
+const visibleItems = computed(() =>
+  navigationMenuItems(currentItems.value, audienceGroups.value),
+);
+let sequence = 0,
+  disposed = false;
+watch(currentLocale, () => {
+  selectedId.value = currentItems.value[0]?.id || "";
+});
+async function load() {
+  if (busy.value) return;
+  const seq = ++sequence;
+  loading.value = true;
+  loadError.value = "";
+  try {
+    const result = await fetchNavigationWorkspace();
+    if (disposed || seq !== sequence) return;
+    saved.value = result;
+    draft.value = copy(result.policy);
+    stale.value = false;
+    if (
+      !localeOptions.value.some((locale) => locale.code === currentLocale.value)
+    )
+      currentLocale.value = result.defaultLocale;
+    selectedId.value =
+      currentItems.value.find((item) => item.id === selectedId.value)?.id ||
+      currentItems.value[0]?.id ||
+      "";
+  } catch (error) {
+    if (!disposed && seq === sequence) {
+      loadError.value = errorMessage(error);
+      stale.value = true;
     }
-  },
-  computed: {
-    dirty (): boolean {
-      return this.persistedConfig !== null && (
-        JSON.stringify(this.config) !== JSON.stringify(this.persistedConfig) ||
-        JSON.stringify(this.trees) !== JSON.stringify(this.persistedTrees)
-      )
-    },
-    navTypes () {
-      return [
-        { title: this.$t('admin:navigation.navType.external'), value: 'external' },
-        { title: this.$t('admin:navigation.navType.externalblank'), value: 'externalblank' },
-        { title: this.$t('admin:navigation.navType.page'), value: 'page' }
-        // { title: this.$t('admin:navigation.navType.searchQuery'), value: 'search' }
-      ]
-    },
-    locales () {
-      const allowedCodes = new Set([...siteLangs.map(locale => locale.code), 'en', siteConfig.lang])
-      return this.allLocales.filter(locale => allowedCodes.has(locale.code))
-    },
-    copyLocales () {
-      return this.locales.filter(locale => locale.code !== this.currentLang)
-    },
-    copySourceCount () {
-      return normalizeNavigationItems(_.find(this.trees, ['locale', this.copyFromLocaleCode])?.items || []).length
-    },
-    currentTree: {
-      get () {
-        return _.get(_.find(this.trees, ['locale', this.currentLang]), 'items', null) || []
-      },
-      set (val: NavigationItem[]) {
-        const tree = _.find(this.trees, ['locale', this.currentLang])
-        if (tree) {
-          tree.items = normalizeNavigationItems(val)
-        } else {
-          this.trees = [...this.trees, {
-            locale: this.currentLang,
-            items: normalizeNavigationItems(val)
-          }]
-        }
-      }
-    }
-  },
-  watch: {
-    currentLang () {
-      this.current = this.currentTree[0] || createEmptyNavigationItem()
-    }
-  },
-  methods: {
-    async loadAllLocales() {
-      wikiStore.startLoading('admin-navigation-locales')
-      try {
-        this.allLocales = markRaw(await fetchLocales(window.fetch.bind(window), 'Locales response is invalid'))
-      } catch (err) {
-        wikiStore.showNotification({
-          style: 'red',
-          message: getErrorMessage(err),
-          icon: 'alert'
-        })
-      }
-      wikiStore.stopLoading('admin-navigation-locales')
-    },
-    async loadGroups() {
-      wikiStore.startLoading('admin-navigation-groups')
-      try {
-        this.groups = markRaw(await fetchGroupOptions(window.fetch.bind(window), 'Groups response is invalid'))
-      } catch (err) {
-        wikiStore.showNotification({
-          style: 'red',
-          message: getErrorMessage(err),
-          icon: 'alert'
-        })
-      }
-      wikiStore.stopLoading('admin-navigation-groups')
-    },
-    selectNavigationMode (mode: NavigationMode, focus = false) {
-      this.config.mode = mode
-      if (focus) this.focusNavigationMode(mode)
-    },
-    focusNavigationMode (mode: NavigationMode) {
-      this.$nextTick(() => {
-        const control = this.$refs[NAVIGATION_MODE_REFS[mode]] as {
-          focus?: () => void
-          $el?: HTMLElement
-        } | undefined
-        if (control?.focus) control.focus()
-        else control?.$el?.focus()
-      })
-    },
-    onNavigationModeKeydown (event: KeyboardEvent, mode: NavigationMode) {
-      const currentIndex = NAVIGATION_MODES.indexOf(mode)
-      let targetIndex = currentIndex
-      switch (event.key) {
-        case 'ArrowDown':
-        case 'ArrowRight':
-          targetIndex = (currentIndex + 1) % NAVIGATION_MODES.length
-          break
-        case 'ArrowUp':
-        case 'ArrowLeft':
-          targetIndex = (currentIndex - 1 + NAVIGATION_MODES.length) % NAVIGATION_MODES.length
-          break
-        case 'Home':
-          targetIndex = 0
-          break
-        case 'End':
-          targetIndex = NAVIGATION_MODES.length - 1
-          break
-        case ' ':
-          break
-        default:
-          return
-      }
-      event.preventDefault()
-      const targetMode = NAVIGATION_MODES[targetIndex]
-      this.selectNavigationMode(targetMode, true)
-    },
-    addItem(kind: string) {
-      let newItem: NavigationItem = {
-        id: crypto.randomUUID(),
-        kind,
-        visibilityMode: 'all',
-        visibilityGroups: []
-      }
-      switch (kind) {
-        case 'link':
-          newItem = {
-            ...newItem,
-            label: this.$t('admin:navigation.untitled', { kind: this.$t('admin:navigation.link') }),
-            icon: 'mdi-chevron-right',
-            targetType: 'page',
-            target: ''
-          }
-          break
-        case 'header':
-          newItem.label = this.$t('admin:navigation.untitled', { kind: this.$t('admin:navigation.header') })
-          break
-      }
-      this.currentTree = [...this.currentTree, newItem]
-      this.current = newItem
-    },
-    deleteItem(item: NavigationItem) {
-      if (!window.confirm(`Remove this ${item.kind}? This change will be pending until Apply.`)) return
-      this.currentTree = this.currentTree.filter(candidate => candidate !== item)
-      this.current = createEmptyNavigationItem()
-    },
-    selectItem(item: NavigationItem) {
-      this.current = item
-    },
-    itemSelectionLabel (item: NavigationItem) {
-      const label = item.kind === 'divider' ? 'Divider' : item.label || 'Untitled navigation item'
-      return item === this.current ? `${label}, selected` : label
-    },
-    selectPage() {
-      this.selectPageModal = true
-    },
-    selectPageHandle ({ path, locale }: { path: string, locale: string }) {
-      this.current.target = `/${locale}/${path}`
-    },
-    openCopyFromLocaleDialog () {
-      if (!this.copyLocales.some(locale => locale.code === this.copyFromLocaleCode)) {
-        this.copyFromLocaleCode = this.copyLocales[0]?.code || ''
-      }
-      this.copyFromLocaleDialogIsShown = true
-    },
-    copyFromLocale () {
-      if (!this.copyLocales.some(locale => locale.code === this.copyFromLocaleCode)) return
-      const source = normalizeNavigationItems(_.get(_.find(this.trees, ['locale', this.copyFromLocaleCode]), 'items', null) || [])
-      if (source.length < 1) return
-      this.copyFromLocaleDialogIsShown = false
-      const copies = _.cloneDeep(source).map(item => ({ ...item, id: crypto.randomUUID() }))
-      this.currentTree = [...this.currentTree, ...copies]
-    },
-    async save() {
-      if (!this.loaded || this.initialLoading || this.saving || !this.dirty) return
-      this.saving = true
-      wikiStore.startLoading('admin-navigation-save')
-      try {
-        const normalizedTrees = normalizeNavigationTrees(this.trees)
-        const savedTrees = _.cloneDeep(normalizedTrees)
-        const savedConfig = _.cloneDeep(this.config)
-        this.trees = normalizedTrees
-        await saveNavigation(window.fetch.bind(window), savedTrees, savedConfig.mode, savedConfig.expandParent)
-        this.persistedConfig = markRaw(savedConfig)
-        this.persistedTrees = markRaw(savedTrees)
-        wikiStore.showNotification({
-          message: this.$t('admin:navigation.saveSuccess'),
-          style: 'success',
-          icon: 'check'
-        })
-      } catch (err) {
-        wikiStore.showError(err)
-      } finally {
-        this.saving = false
-        wikiStore.stopLoading('admin-navigation-save')
-      }
-    },
-    async loadNavigation(notify = false) {
-      this.initialLoading = true
-      this.loaded = false
-      this.loadError = ''
-      wikiStore.startLoading('admin-navigation-refresh')
-      try {
-        const navigation = await fetchNavigation(window.fetch.bind(window), 'Navigation response is invalid')
-        const normalizedTrees = normalizeNavigationTrees(navigation.tree)
-        this.config = _.cloneDeep(navigation.config)
-        this.trees = _.cloneDeep(normalizedTrees)
-        this.persistedConfig = markRaw(_.cloneDeep(this.config))
-        this.persistedTrees = markRaw(_.cloneDeep(normalizedTrees))
-        this.current = createEmptyNavigationItem()
-        this.loaded = true
-        if (notify) {
-          wikiStore.showNotification({
-            message: 'Navigation has been refreshed.',
-            style: 'success',
-            icon: 'cached'
-          })
-        }
-      } catch (err) {
-        this.loadError = getErrorMessage(err)
-        wikiStore.showError(err)
-      } finally {
-        this.initialLoading = false
-        wikiStore.stopLoading('admin-navigation-refresh')
-      }
-    },
-    async refresh() {
-      if (this.dirty && !window.confirm('Discard unsaved navigation changes and refresh?')) return
-      await this.loadNavigation(true)
-    }
-  },
-  created() {
-    this.loadAllLocales()
-    this.loadGroups()
-    this.loadNavigation()
+  } finally {
+    if (!disposed && seq === sequence) loading.value = false;
   }
 }
+async function reload() {
+  if (
+    busy.value ||
+    initializing.value ||
+    (dirty.value && !window.confirm("Discard unsaved navigation changes?"))
+  )
+    return;
+  await load();
+}
+function reset() {
+  if (!locked.value && saved.value) {
+    draft.value = copy(saved.value.policy);
+    selectedId.value = currentItems.value[0]?.id || "";
+    notice.value = "";
+  }
+}
+function selectSection(key: string) {
+  void router.replace({
+    query: route.query,
+    hash: key === "structure" ? "" : "#" + key,
+  });
+}
+function setItems(items: NavigationItem[]) {
+  if (locked.value || !draft.value) return;
+  const tree = draft.value.tree.find(
+    (tree) => tree.locale === currentLocale.value,
+  );
+  if (tree) tree.items = items;
+  else draft.value.tree.push({ locale: currentLocale.value, items });
+}
+function addItem(kind: NavigationItem["kind"]) {
+  if (locked.value || currentItems.value.length >= maxItems) return;
+  const item: NavigationItem = {
+    id: crypto.randomUUID(),
+    kind,
+    label:
+      kind === "link" ? "New link" : kind === "header" ? "New section" : "",
+    icon: kind === "link" ? "mdi-link-variant" : "",
+    targetType: "page",
+    target: "",
+    visibilityMode: "all",
+    visibilityGroups: [],
+  };
+  setItems([...currentItems.value, item]);
+  selectedId.value = item.id;
+}
+function duplicateItem() {
+  if (locked.value || !selected.value || currentItems.value.length >= maxItems)
+    return;
+  const item = { ...copy(selected.value), id: crypto.randomUUID() };
+  const items = [...currentItems.value];
+  items.splice(selectedIndex.value + 1, 0, item);
+  setItems(items);
+  selectedId.value = item.id;
+}
+function removeItem() {
+  if (
+    locked.value ||
+    !selected.value ||
+    !window.confirm(
+      `Remove ${selected.value.label || "this divider"} from the draft?`,
+    )
+  )
+    return;
+  const index = selectedIndex.value;
+  setItems(currentItems.value.filter((item) => item.id !== selectedId.value));
+  selectedId.value =
+    currentItems.value[Math.min(index, currentItems.value.length - 1)]?.id ||
+    "";
+}
+function moveItem(direction: number) {
+  if (locked.value || !selected.value) return;
+  const from = selectedIndex.value,
+    to = from + direction;
+  if (to < 0 || to >= currentItems.value.length) return;
+  const items = [...currentItems.value];
+  items.splice(to, 0, ...items.splice(from, 1));
+  setItems(items);
+}
+function selectPage(value: { path: string; locale: string; visibility?: "public" | "private" }) {
+  if (!locked.value && selected.value?.kind === "link")
+    selected.value.target = `${value.visibility === "private" ? "/_private" : ""}/${value.locale}/${value.path}`;
+}
+function editLocale(code: string) {
+  currentLocale.value = code;
+  selectSection("structure");
+}
+function removeLocale(code: string) {
+  if (
+    locked.value ||
+    !draft.value ||
+    !window.confirm(
+      `Remove the custom menu for ${code} from this draft? The language itself remains installed.`,
+    )
+  )
+    return;
+  draft.value.tree = draft.value.tree.filter((tree) => tree.locale !== code);
+}
+function openCopy() {
+  copySource.value = copyOptions.value[0]?.code || "";
+  copyMode.value = "append";
+  copyOpen.value = true;
+}
+function copyLocale() {
+  if (
+    locked.value ||
+    !draft.value ||
+    !copyCount.value ||
+    copyTotal.value > maxItems ||
+    copySource.value === currentLocale.value
+  )
+    return;
+  const source =
+    draft.value.tree.find((tree) => tree.locale === copySource.value)?.items ||
+    [];
+  const items = copy(source).map((item) => ({
+    ...item,
+    id: crypto.randomUUID(),
+  }));
+  setItems(
+    copyMode.value === "replace" ? items : [...currentItems.value, ...items],
+  );
+  selectedId.value = items[0]?.id || "";
+  copyOpen.value = false;
+}
+function review() {
+  if (locked.value || !draft.value || !saved.value || !dirty.value) return;
+  const validation = NavigationPolicySchema.safeParse(draft.value);
+  if (!validation.success) {
+    notice.value = validation.error.issues
+      .map((issue) => issue.message)
+      .join(" ");
+    attention.value = true;
+    window.scrollTo({ top: 0 });
+    return;
+  }
+  if (!navigationChangedFields(saved.value.policy, validation.data).length) {
+    draft.value = copy(saved.value.policy);
+    return;
+  }
+  reviewed.value = copy(validation.data);
+  reviewFingerprint.value = saved.value.fingerprint;
+  reason.value = "";
+  saveError.value = "";
+  notice.value = "";
+  reviewing.value = true;
+}
+async function confirm() {
+  if (
+    locked.value ||
+    !reviewing.value ||
+    !reviewed.value ||
+    !saved.value ||
+    reason.value.trim().length < 3
+  )
+    return;
+  busy.value = true;
+  saveError.value = "";
+  try {
+    const result = await saveNavigationWorkspace(
+      copy(reviewed.value),
+      reviewFingerprint.value,
+      reason.value.trim(),
+    );
+    if (disposed) return;
+    saved.value = {
+      ...saved.value,
+      policy: copy(reviewed.value),
+      runtime: { ...saved.value.runtime, state: "needs-attention" },
+    };
+    draft.value = copy(reviewed.value);
+    reviewing.value = false;
+    reviewed.value = null;
+    reason.value = "";
+    attention.value = result.activation !== "applied";
+    notice.value = attention.value
+      ? "Navigation saved. Runtime activation needs attention."
+      : "Navigation published. Readers see the new menu on their next page load.";
+    busy.value = false;
+    stale.value = true;
+    await load();
+  } catch (error) {
+    if (!disposed) {
+      const status =
+        error && typeof error === "object" ? Reflect.get(error, "status") : 0;
+      stale.value =
+        !status || Number(status) >= 500 || [401, 403, 409].includes(status);
+      saveError.value =
+        errorMessage(error) +
+        (!status
+          ? " The outcome is unconfirmed. Reload before publishing again."
+          : "");
+      if (stale.value) {
+        notice.value =
+          "Reload saved settings before another review. Your draft is retained.";
+        attention.value = true;
+      }
+    }
+  } finally {
+    if (!disposed) busy.value = false;
+  }
+}
+async function reloadReview() {
+  if (
+    busy.value ||
+    !window.confirm("Discard this review and load saved navigation?")
+  )
+    return;
+  reviewing.value = false;
+  await load();
+}
+async function initialize() {
+  if (locked.value || dirty.value || !saved.value) return;
+  initializing.value = true;
+  try {
+    const result = await retryNavigationRuntime(saved.value.fingerprint);
+    notice.value =
+      result.activation === "applied"
+        ? "Runtime navigation configuration applied."
+        : "Runtime activation needs attention. Review server diagnostics.";
+    attention.value = result.activation !== "applied";
+    await load();
+  } catch (error) {
+    notice.value = errorMessage(error);
+    attention.value = true;
+  } finally {
+    initializing.value = false;
+  }
+}
+const modeName = (value: string) =>
+  modeOptions.find((mode) => mode.value === value)?.title || value;
+const fieldLabel = (field: string) =>
+  field === "mode"
+    ? "Sidebar display"
+    : field === "expandParent"
+      ? "Browse starting point"
+      : "Menu for " + field.replace("locale:", "");
+const reviewValue = (policy: NavigationPolicy, field: string) =>
+  field === "mode"
+    ? modeName(policy.mode)
+    : field === "expandParent"
+      ? policy.expandParent
+        ? "Current page’s parent"
+        : "Site root"
+      : JSON.stringify(
+          policy.tree.find(
+            (tree) => tree.locale === field.replace("locale:", ""),
+          )?.items ?? "No custom menu",
+          null,
+          2,
+        );
+const date = (value: string) =>
+  new Date(value).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+const canLeave = () =>
+  !busy.value &&
+  !initializing.value &&
+  ((!dirty.value && !(reviewing.value && reason.value)) ||
+    window.confirm("Discard unsaved navigation changes?"));
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (
+    busy.value ||
+    initializing.value ||
+    dirty.value ||
+    (reviewing.value && reason.value)
+  ) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+}
+onBeforeRouteLeave(canLeave);
+onBeforeRouteUpdate((to, from) => to.path === from.path || canLeave());
+onMounted(() => {
+  void load();
+  window.addEventListener("beforeunload", beforeUnload);
+});
+onBeforeUnmount(() => {
+  disposed = true;
+  sequence++;
+  window.removeEventListener("beforeunload", beforeUnload);
+});
 </script>
-
-<style lang='scss' scoped>
-
-.navigation-builder {
-  height: 100%;
-  overflow: hidden;
-  border: 1px solid var(--wiki-surface-border);
-  border-start-start-radius: var(--wiki-radius-sm) !important;
-  border-end-start-radius: var(--wiki-radius-sm) !important;
-  border-start-end-radius: 0 !important;
-  border-end-end-radius: 0 !important;
-  background: var(--wiki-surface-soft);
-}
-
-.navigation-builder__locale {
-  height: 56px;
-  gap: var(--wiki-space-2);
-  align-items: center;
-  border-bottom: 1px solid var(--wiki-surface-border);
-  background:
-    radial-gradient(circle at 0 0, color-mix(in srgb, rgb(var(--v-theme-primary)) 14%, transparent), transparent 62%),
-    rgb(var(--v-theme-surface-variant));
-}
-
-.navigation-tree {
-  min-height: 14rem;
-  border-radius: 0 !important;
-  background: color-mix(in srgb, rgb(var(--v-theme-surface)) 94%, rgb(var(--v-theme-primary)) 6%) !important;
-  color: rgb(var(--v-theme-on-surface));
-}
-
-.navigation-tree :deep(.v-list-item),
-.clickable {
-  margin: 2px var(--wiki-space-2);
-  border: 1px solid transparent;
-  border-radius: var(--wiki-radius-xs);
-  transition:
-    background-color var(--wiki-motion-fast) var(--wiki-motion-ease),
-    border-color var(--wiki-motion-fast) var(--wiki-motion-ease);
-}
-
-.navigation-tree :deep(.is-selected),
-.clickable.is-selected {
-  border-color: color-mix(in srgb, rgb(var(--v-theme-primary)) 32%, transparent);
-  background: color-mix(in srgb, rgb(var(--v-theme-primary)) 16%, transparent) !important;
-  color: rgb(var(--v-theme-on-surface)) !important;
-}
-
-.clickable {
-  cursor: pointer;
-
-  &:hover {
-    background-color: color-mix(in srgb, rgb(var(--v-theme-primary)) 10%, transparent);
-  }
-}
-
-</style>
+<style lang="scss" src="./navigation-workspace.scss"></style>

@@ -7,6 +7,7 @@ import type { Knex } from 'knex'
 import type { SearchResult as ProviderSearchResult } from '../modules/types.ts'
 import { canDeletePage, canReadPage, canWritePage, managesSystem, pageRoute, principalId, scopePageQuery, type PageVisibility } from '../helpers/page-access.ts'
 import { listPageIndexCandidates, PAGE_INDEX_CANDIDATE_LIMIT } from '../repositories/page-index.ts'
+import { pageTreeAccess, treeAncestorIds } from '../repositories/page-tree-access.ts'
 import { isPageEditorKey, normalizeAvailableEditors } from '../../shared/page-editors.ts'
 import { OKF_PRODUCER_CONTEXT } from '../okf/mutation-context.ts'
 import { assertPageUnlocked } from './page-protection.ts'
@@ -47,6 +48,7 @@ interface PageDetail extends PageRecord {
   scriptJs: unknown
 }
 interface PageTreeRecord extends Record<string, unknown> {
+  id: number
   parent?: number | null
   ancestors?: string | number[]
   path: string
@@ -1075,48 +1077,70 @@ const getByPath = async (input: OperationInput) => {
   return { ...page, locale: page.localeCode, editor: page.editorKey, scriptJs: page.extra.js, scriptCss: page.extra.css }
 }
 
-const getTree = async (input: OperationInput) => {
+const getTreeSnapshot = async (input: OperationInput, db: Knex.Transaction) => {
   const requester = input.requester
   const locale = input.locale === undefined ? wiki.config.lang.code : stringValue(input.locale, 'locale')
   const path = input.path === undefined ? undefined : stringValue(input.path, 'path')
   let parentId = input.parent === undefined ? undefined : nonNegativeInteger(input.parent, 'parent')
   const mode = typeof input.mode === 'string' ? input.mode : ''
   const includeAncestors = input.includeAncestors === true
+  const access = await pageTreeAccess(db, requester, locale)
   let currentPage: PageTreeRecord | undefined
   if (path && !parentId) {
-    currentPage = await wiki.models
-      .knex('pageTree')
+    currentPage = await db('pageTree')
       .where(builder => {
         scopePageQuery(builder, requester)
         builder.where({ path, localeCode: locale })
+        if (input.visibility === 'public' || input.visibility === 'private') builder.where('visibility', input.visibility)
       })
-      .first('parent', 'ancestors')
-    if (!currentPage) return []
+      .first('id', 'parent', 'ancestors')
+    if (!currentPage || (!access.readable.has(currentPage.id) && !access.reachable.has(currentPage.id))) return []
     parentId = currentPage.parent || 0
   }
-  const results = await wiki.models
-    .knex('pageTree')
+  const results = await db('pageTree')
     .where(builder => {
       scopePageQuery(builder, requester)
       builder.where('localeCode', locale)
       if (mode === 'FOLDERS') builder.andWhere('isFolder', true)
       else if (mode === 'PAGES') builder.whereNotNull('pageId')
-      if (!parentId || parentId < 1) builder.whereNull('parent')
-      else {
-        builder.where('parent', parentId)
-        if (includeAncestors && currentPage?.ancestors && currentPage.ancestors.length > 0) {
-          builder.orWhereIn('id', _.isString(currentPage.ancestors) ? (JSON.parse(currentPage.ancestors) as number[]) : currentPage.ancestors)
+      builder.where(branch => {
+        if (!parentId || parentId < 1) branch.whereNull('parent')
+        else {
+          branch.where('parent', parentId)
+          if (includeAncestors && currentPage) branch.orWhereIn('id', treeAncestorIds(currentPage.ancestors))
         }
-      }
+      })
     })
     .orderBy([{ column: 'isFolder', order: 'desc' }, 'title'])
-  return results.map(result => ({
-    ...result,
-    isFolder: Boolean(result.isFolder),
-    parent: result.parent || 0,
-    locale: result.localeCode,
-    canEdit: typeof result.pageId === 'number' && canWritePage(requester, result)
-  }))
+  return results.flatMap(result => {
+    const readable = access.readable.has(result.id)
+    const reachable = Boolean(result.isFolder) && access.reachable.has(result.id)
+    if ((!readable && !reachable) || (mode === 'PAGES' && !readable)) return []
+    return [{
+      ...result,
+      // A denied page can also be a folder leading to readable descendants.
+      // Preserve traversal without exposing that page's title, ID or edit action.
+      title: readable ? result.title : result.path.split('/').at(-1),
+      pageId: readable ? result.pageId : null,
+      isFolder: Boolean(result.isFolder),
+      parent: result.parent || 0,
+      locale: result.localeCode,
+      canEdit: readable && access.editable.has(result.id)
+    }]
+  }).sort((a, b) => Number(b.isFolder) - Number(a.isFolder) || String(a.title).localeCompare(String(b.title)))
+}
+
+// Tree IDs are rebuilt on page moves; authorization and returned rows must share a snapshot.
+const getTree = async (input: OperationInput) => {
+  const tx = await wiki.models.knex.transaction({ isolationLevel: 'repeatable read', readOnly: true })
+  try {
+    const result = await getTreeSnapshot(input, tx)
+    await tx.commit()
+    return result
+  } catch (error) {
+    await tx.rollback()
+    throw error
+  }
 }
 
 const checkConflict = async (input: OperationInput) => {
