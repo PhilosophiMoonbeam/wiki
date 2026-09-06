@@ -12,7 +12,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | Rendering | Module configuration, pipeline inspection and stored output | Implemented; first milestone verified |
 | Comments | Providers, discussion and moderation | Implemented; first milestone verified |
 | Users | Discovery, details, creation and access lifecycle | Implemented; first milestone verified |
-| Groups | Membership, permissions, page rules and effective access | Implemented; deployment verification pending |
+| Groups | Membership, permissions, page rules and effective access | Implemented; first milestone verified |
 | Authentication | Providers, sign-in, provisioning and diagnostics | Pending |
 | Security | Sessions, protections and policies | Pending |
 | Wiki Agent | Providers/models, skills, browser, tools, memory, MCP and runtime | Implemented; first milestone verified |
@@ -300,3 +300,11 @@ Nineteen focused frontend behavior cases replace six obsolete source-string migr
 Integration boundary: deletion checks committed enrollment/navigation/credential references, and agent grants retain database foreign keys. Legacy Authentication and Navigation writers still store group references in JSON without a shared reference-validation transaction. Concurrent stale edits in those areas can recreate dangling references after deletion; they do not recreate the deleted group or its permissions. Their forthcoming overhauls must validate current group identities transactionally. Distributed cache notifications also retain the existing best-effort event transport; this deployment has one application container. No cross-node immediate-revocation guarantee is claimed.
 
 The Groups source is ready for final static/build checks, a fresh pre-migration-18 database backup and deployment verification. The running production image remains `5b4bac50` until that gate completes.
+
+### Groups deployment and live verification
+
+Deployed `tsepistle:7f2769c8` (revision `7f2769c8a418e59c17b1999a3725c04e66502036`) to the local Docker service; health and migration 18 are verified. The pre-migration backup is `before-group-administration-18-20260906T112615Z.dump` (2,907,825 bytes, 602 verified archive entries, mode 600). `compose.before-7f2769c8.yml` preserves the prior Users deployment configuration. Restoring the old image alone does not undo migration 18 or its recorded administration history.
+
+Unintercepted live browser verification passed 48 views across desktop/tablet/mobile and both themes, with no detected WCAG AA violations, horizontal overflow or JavaScript errors. Actual UI workflows created a group with no implicit access, cleared its purpose, granted a page permission with a scoped path rule, compared allowed/denied paths, added a reviewed member, evaluated that member’s combined policy and compared an unsaved draft with saved access. The session existing before membership assignment was invalidated. A freshly signed-in delegated content-group administrator could inspect the group but could not grant system authority; root and Guest deletion were rejected. Deleting the temporary group through the reviewed UI ended the member’s refreshed session.
+
+Temporary groups 7–8 and account 16 were removed. Original groups 1–3 and the original account population are preserved; the group directory exactly matches its baseline. No email was sent and no content fixtures were created. Retained administrative events accurately record these synthetic changes. Final client/server type checks, lint, focused frontend and authorization tests, Vite build and bundle budgets passed before the release build. This is the twelfth verified subsection milestone; Authentication, Security and the remaining workspace/operations areas are still pending under the active overall goal.
