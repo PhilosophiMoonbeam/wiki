@@ -1,170 +1,22 @@
-<template lang="pug">
-  v-card(flat)
-    .group-users-toolbar.bg-surface-variant
-      v-text-field.group-users-search(
-        variant="outlined"
-        prepend-inner-icon='mdi-magnify'
-        v-model='search'
-        @update:model-value='pagination = 1'
-        label='Search Group Users...'
-        hide-details
-        density="compact"
-        )
-      v-btn.group-users-assign(color='primary', variant="flat", @click='searchUserDialog = true', :disabled='!groupReady || group.id === 2 || busyUserId !== 0')
-        v-icon(start) mdi-clipboard-account
-        | Assign User
-    v-data-table(
-      :items='group.users'
-      item-value='id'
-      :headers='headers'
-      :search='search'
-      v-model:page='pagination'
-      :items-per-page='15'
-      must-sort
-      hide-default-footer
-      aria-label='Users assigned to this group'
-    )
-      template(v-slot:item.actions='{ item }')
-        v-menu(location="bottom end", min-width='200')
-          template(v-slot:activator='{ props }')
-            v-btn(icon, v-bind='props', size="small", :aria-label='`User actions for ${item.name}`')
-              v-icon.text-grey-darken-1 mdi-dots-horizontal
-          v-list(density="compact", nav)
-            v-list-item(:to='`/users/` + item.id')
-              template(v-slot:append): v-icon(color='primary') mdi-account-outline
-              v-list-item-title View User Profile
-            template(v-if='item.id !== 2 && (group.id !== 1 || item.id !== 1)')
-              v-list-item(@click='unassignUser(item.id)', :disabled='busyUserId !== 0')
-                template(v-slot:append): v-icon(color='orange') mdi-account-remove-outline
-                v-list-item-title Unassign {{busyUserId === item.id ? '(working...)' : ''}}
-      template(v-slot:no-data)
-        v-alert.ma-3(icon='mdi-alert', variant="outlined")
-          span(v-if='search') No users match “{{search}}”. 
-          span(v-else) No users are assigned to this group yet.
-          v-btn.ml-2(v-if='search', variant="text", size="small", @click='search = ``') Clear search
-      template(v-slot:bottom='{ pageCount }')
-        .text-center.py-2(v-if='pageCount > 1')
-          v-pagination(v-model='pagination', :length='pageCount', aria-label='Group users pagination')
-
-    user-search(v-model='searchUserDialog', @select='assignUser')
+<template>
+  <section aria-labelledby="group-members-heading"><div class="group-heading"><div><span class="group-kicker">Who shares this access</span><h2 id="group-members-heading">{{ candidates ? 'Add people to this group' : 'Members' }}</h2><p>{{ candidates ? 'Choose existing accounts, then review their new membership.' : 'A person’s access combines the policies of all their groups. Membership changes end their existing sign-in sessions.' }}</p></div><div class="group-actions"><v-btn v-if="candidates" variant="text" prepend-icon="mdi-arrow-left" @click="setMode(false)">Current members</v-btn><v-btn v-else-if="canManage" variant="outlined" prepend-icon="mdi-account-plus-outline" :disabled="disabled" @click="setMode(true)">Add members</v-btn></div></div>
+    <v-alert v-if="disabled && canManage" type="info" variant="tonal" class="mb-4">{{ lockReason }}</v-alert>
+    <form class="group-directory-filters" @submit.prevent="searchNow"><v-text-field v-model="search" :label="candidates ? 'Find an account to add' : 'Search current members'" variant="outlined" hide-details clearable prepend-inner-icon="mdi-magnify" @update:model-value="queueSearch" /><v-btn variant="text" :loading="loading" @click="load">Reload members</v-btn></form>
+    <div v-if="selected.length" class="group-selection-bar"><strong>{{ selected.length }} selected</strong><v-btn variant="text" :disabled="disabled" @click="selected = []">Clear selection</v-btn><v-spacer /><v-btn :color="candidates ? 'primary' : undefined" variant="flat" :disabled="disabled" @click="$emit('review', { action: candidates ? 'add' : 'remove', people: selected })">{{ candidates ? 'Review additions' : 'Review removals' }}</v-btn></div>
+    <async-state v-if="loading" state="loading" title="Loading membership" /><async-state v-else-if="error" state="error" title="Membership could not be loaded" :message="error" retry-label="Try again" @retry="load" /><async-state v-else-if="!directory?.items.length" state="empty" :title="search ? 'No matching accounts' : candidates ? 'No accounts available to add' : 'No members yet'" :message="search ? 'Try another name or email address.' : candidates ? 'Create accounts in Users, then add them here.' : 'Add people when this group’s access policy is ready.'" />
+    <template v-else><ul class="group-member-list"><li v-for="person in directory.items" :key="person.id" class="group-member-row"><input v-if="canManage" type="checkbox" :aria-label="'Select ' + person.name" :checked="selected.some(item => item.id === person.id)" :disabled="disabled || !person.canRemove || (selected.length >= 100 && !selected.some(item => item.id === person.id))" @change="select(person, ($event.target as HTMLInputElement).checked)" /><div class="group-member-person"><router-link v-if="canReadAccounts" :to="'/users/' + person.id">{{ person.name }}</router-link><strong v-else>{{ person.name }}</strong><span>{{ person.email }}</span></div><div class="group-member-state"><span>{{ person.isActive ? 'Active account' : 'Inactive account' }}</span><small v-if="!person.canRemove">Protected membership</small></div><v-btn v-if="!candidates" variant="text" icon="mdi-shield-search" size="small" :aria-label="'Check access for ' + person.name" @click="$emit('evaluate', { id: person.id, name: person.name })" /></li></ul><div class="group-pagination"><span>{{ offset + 1 }}–{{ Math.min(offset + directory.items.length, directory.total) }} of {{ directory.total }}</span><div class="group-actions"><v-btn variant="text" :disabled="offset === 0" @click="paginate(-1)">Previous</v-btn><v-btn variant="text" :disabled="offset + 25 >= directory.total" @click="paginate(1)">Next</v-btn></div></div></template>
+  </section>
 </template>
-
-<script lang='ts'>
-import type { PropType } from 'vue'
-
-import UserSearch from '../common/user-search.vue'
-
-import { assignGroupUser, createEmptyGroupEditorState, unassignGroupUser, type GroupEditorState } from '../../helpers/groups-api'
-import { getErrorMessage } from '../../helpers/root-ui-store'
-import { wikiStore } from '@/store/index.ts'
-import type { UserSearchRow } from '../../helpers/users-api'
-
+<script lang="ts">
+import AsyncState from '@/components/common/async-state.vue'
+import { fetchGroupMembers } from '../../helpers/group-workspace-api.ts'
+import { getErrorMessage } from '../../helpers/root-ui-store.ts'
+import type { GroupMembers, GroupMember } from '../../../shared/group-policy.ts'
 export default {
-  emits: ['refresh', 'update:modelValue'],
-  props: {
-    modelValue: {
-      type: Object as PropType<GroupEditorState>,
-      default: createEmptyGroupEditorState
-    }
-  },
-  components: {
-    UserSearch
-  },
-  data() {
-    return {
-      headers: [
-        { title: 'ID', key: 'id', value: 'id', width: 70 },
-        { title: 'Name', key: 'name', value: 'name' },
-        { title: 'Email', key: 'email', value: 'email' },
-        { title: 'Actions', key: 'actions', value: 'actions', sortable: false, width: 50 }
-      ],
-      searchUserDialog: false,
-      pagination: 1,
-      search: '',
-      busyUserId: 0
-    }
-  },
-  computed: {
-    group: {
-      get(): GroupEditorState { return this.modelValue },
-      set(val: GroupEditorState) { this.$emit('update:modelValue', val) }
-    },
-    groupReady(): boolean { return this.group.id > 0 }
-  },
-  methods: {
-    async assignUser(user: UserSearchRow) {
-      if (!this.groupReady || this.group.id === 2 || user.id <= 0 || this.busyUserId !== 0) return
-      this.busyUserId = user.id
-      wikiStore.startLoading('admin-groups-assign')
-      try {
-        await assignGroupUser(window.fetch.bind(window), this.group.id, user.id)
-        wikiStore.showNotification({
-          style: 'success',
-          message: `User has been assigned to ${this.group.name}.`,
-          icon: 'assignment_ind'
-        })
-        this.$emit('refresh')
-      } catch (err) {
-        wikiStore.showNotification({
-          style: 'red',
-          message: getErrorMessage(err),
-          icon: 'warning'
-        })
-      } finally {
-        this.busyUserId = 0
-        wikiStore.stopLoading('admin-groups-assign')
-      }
-    },
-    async unassignUser(id: number) {
-      if (!this.groupReady || id <= 0 || id === 2 || this.busyUserId !== 0) return
-      if (this.group.id === 1 && id === 1) return
-      this.busyUserId = id
-      wikiStore.startLoading('admin-groups-unassign')
-      try {
-        await unassignGroupUser(window.fetch.bind(window), this.group.id, id)
-        wikiStore.showNotification({
-          style: 'success',
-          message: `User has been unassigned from ${this.group.name}.`,
-          icon: 'assignment_ind'
-        })
-        this.$emit('refresh')
-      } catch (err) {
-        wikiStore.showNotification({
-          style: 'red',
-          message: getErrorMessage(err),
-          icon: 'warning'
-        })
-      } finally {
-        this.busyUserId = 0
-        wikiStore.stopLoading('admin-groups-unassign')
-      }
-    }
-  }
+  components: { AsyncState }, props: { groupId: { type: Number, required: true }, revision: { type: String, required: true }, disabled: Boolean, canManage: Boolean, canReadAccounts: Boolean, lockReason: { type: String, default: 'Save or reset the policy draft before changing membership.' } }, emits: ['review','evaluate'],
+  data() { return { candidates: false, search: '', offset: 0, selected: [] as Array<{ id: number; name: string }>, directory: null as GroupMembers | null, loading: false, error: '', sequence: 0, disposed: false, timer: null as ReturnType<typeof setTimeout> | null } },
+  watch: { groupId: { immediate: true, handler() { this.candidates = false; this.search = ''; this.offset = 0; this.selected = []; void this.load() } }, revision() { this.selected = []; void this.load() } },
+  beforeUnmount() { this.disposed = true; this.sequence++; if (this.timer) clearTimeout(this.timer) },
+  methods: { async load() { const sequence = ++this.sequence; this.loading = true; this.error = ''; try { const result = await fetchGroupMembers(this.groupId, new URLSearchParams({ search: this.search || '', candidates: String(this.candidates), limit: '25', offset: String(this.offset) })); if (!this.disposed && sequence === this.sequence) this.directory = result } catch (error) { if (!this.disposed && sequence === this.sequence) this.error = getErrorMessage(error) } finally { if (!this.disposed && sequence === this.sequence) this.loading = false } }, queueSearch() { if (this.timer) clearTimeout(this.timer); this.timer = setTimeout(() => this.searchNow(), 250) }, searchNow() { if (this.timer) clearTimeout(this.timer); this.offset = 0; void this.load() }, paginate(direction: number) { this.offset = Math.max(0, this.offset + direction * 25); void this.load() }, setMode(candidates: boolean) { this.candidates = candidates; this.selected = []; this.search = ''; this.offset = 0; void this.load() }, select(person: GroupMember, checked: boolean) { if (this.disabled || !this.canManage || !person.canRemove || (checked && this.selected.length >= 100 && !this.selected.some(item => item.id === person.id))) return; this.selected = checked ? [...this.selected.filter(item => item.id !== person.id), { id: person.id, name: person.name }] : this.selected.filter(item => item.id !== person.id) } }
 }
 </script>
-
-<style lang="scss" scoped>
-.group-users-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: .75rem;
-  padding: 1rem;
-
-  .group-users-search {
-    flex: 1 1 280px;
-    min-width: 0;
-  }
-}
-
-@media (max-width: 600px) {
-  .group-users-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-
-    .group-users-assign {
-      width: 100%;
-    }
-  }
-}
-</style>

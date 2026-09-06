@@ -1,6 +1,6 @@
 import knexModule, { type Knex } from 'knex'
-import { beforeAll, afterAll, beforeEach, describe, it, expect } from '../bun-test.mts'
-import { createGroupAdministrationStore, normalizeGroupPolicy } from '../../operations/group-administration.ts'
+import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from '../bun-test.mts'
+import { createGroupAdministrationStore, getGroupAdministrationStore, normalizeGroupPolicy } from '../../operations/group-administration.ts'
 import { up, down } from '../../db/migrations/tsepistle-000018-group-administration.ts'
 const database = process.env.WIKI_TEST_POSTGRES_DATABASE ?? '',
   password = process.env.WIKI_TEST_POSTGRES_PASSWORD
@@ -301,6 +301,28 @@ suite('PostgreSQL reviewed group administration', () => {
     const directory = await store.list(admin, {})
     expect(directory.items.find(group => group.id === 3)?.ruleCount).toBe(100)
     expect(directory.items[0]).not.toHaveProperty('pageRules')
+  })
+  it('reports committed success and continues revocations when a cache refresh or peer notification fails', async () => {
+    const previousWiki = globalThis.WIKI
+    const reloadGroups = vi.fn().mockRejectedValue(new Error('Cache unavailable')),
+      revokeUserTokens = vi.fn(),
+      emit = vi.fn().mockImplementationOnce(() => {
+        throw new Error('Peer unavailable')
+      }),
+      warn = vi.fn()
+    try {
+      globalThis.WIKI = { models: { knex: db }, auth: { reloadGroups, revokeUserTokens }, events: { outbound: { emit } }, logger: { warn } } as never
+      const runtime = getGroupAdministrationStore()
+      const result = await runtime.savePolicy(admin, 3, { ...(await review()), policy: { ...policy(), permissions: ['read:pages', 'write:pages'] } })
+      expect(result.sessionsEnded).toBe(1)
+      expect(revokeUserTokens).toHaveBeenCalledWith({ id: 3, kind: 'u' })
+      expect(emit).toHaveBeenCalledWith('addAuthRevoke', { id: 3, kind: 'u' })
+      expect(warn).toHaveBeenCalledTimes(2)
+      expect((await db('users').where('id', 3).first()).authVersion).toBe(1)
+      expect(await db('groupAdministrationEvents').where('groupId', 3)).toHaveLength(1)
+    } finally {
+      globalThis.WIKI = previousWiki
+    }
   })
   it('guards migration rollback once administrative history exists', async () => {
     await down(db)

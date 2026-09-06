@@ -1,284 +1,75 @@
-<template lang='pug'>
-  v-container(fluid)
-    v-row(v-if='groupLoadState !== `ready`')
-      v-col(cols='12')
-        v-alert(v-if='groupLoadState === `loading`', type='info', variant='tonal', role='status') Loading group details...
-        v-alert(v-else, type='error', variant='tonal', role='alert')
-          span Unable to load this group.
-          v-btn.ml-2(variant="text", @click='loadGroup') Retry
-        v-skeleton-loader.mt-3(v-if='groupLoadState === `loading`', type='article')
-    v-row(v-if='groupReady')
-      v-col(cols='12')
-        AdminHero(
-          title='Edit Group'
-          :description='group.name'
-          icon='mdi-account-group-outline'
-          heading-id='admin-groups-edit-heading'
-        )
-          template(v-slot:extra)
-            .text-body-small.text-orange Settings, permissions, and page rules are staged until Update Group.
-            .text-body-small.text-orange(v-if='group.isSystem') System group — settings are protected
-          template(v-slot:actions)
-            v-btn(color='grey' icon variant="outlined" to='/groups' aria-label='Back to groups')
-              v-icon mdi-arrow-left
-            v-dialog(v-model='deleteGroupDialog' max-width='500' :fullscreen='$vuetify.display.smAndDown' v-if='!group.isSystem' :persistent='groupAction === `delete`' aria-labelledby='delete-group-dialog-title')
-              template(v-slot:activator='{ props }')
-                v-btn(color='red' icon variant="outlined" v-bind='props' aria-label='Delete group' :disabled='!groupReady || groupAction !== ``')
-                  v-icon(color='red') mdi-trash-can-outline
-              v-card
-                .dialog-header.is-red#delete-group-dialog-title Delete Group?
-                v-card-text.pa-4 Are you sure you want to delete group #[strong {{ group.name }}]? All users will be unassigned from this group.
-                v-card-actions
-                  v-spacer
-                  v-btn(variant="text" @click='deleteGroupDialog = false' :disabled='groupAction !== ``') Cancel
-                  v-btn(color='red' @click='deleteGroup' :disabled='groupAction !== ``' :loading='groupAction === `delete`') Delete
-            v-btn(
-              color='success'
-              size="large"
-              variant="flat"
-              @click='updateGroup'
-              :icon='$vuetify.display.smAndDown'
-              :disabled='!groupReady || !groupNameValid || !groupRedirectValid || groupAction !== ``'
-              :loading='groupAction === `update`'
-              aria-label='Update group'
-            )
-              v-icon(:start='$vuetify.display.mdAndUp') mdi-check
-              span(v-if='$vuetify.display.mdAndUp') Update Group
-        v-card.mt-3
-          v-tabs.grad-tabs(v-model='tab', color='primary', fixed-tabs, show-arrows, stacked)
-            v-tab(value='settings')
-              span Settings
-              v-icon mdi-cog-box
-            v-tab(value='permissions')
-              span Permissions
-              v-icon mdi-lock-pattern
-            v-tab(value='rules')
-              span Page Rules
-              v-icon mdi-file-lock
-            v-tab(value='users')
-              span Users
-              v-icon mdi-account-group
-
-          v-tabs-window(v-model='tab')
-            v-tabs-window-item(value='settings', :transition='false', :reverse-transition='false')
-              v-card(flat)
-                template(v-if='group.id <= 2')
-                  v-card-text
-                    v-alert.radius-7.mb-0(
-                      type="warning"
-                      variant="tonal"
-                      icon='mdi-lock-outline'
-                      ) This is a system group and its settings cannot be modified.
-                  v-divider
-                v-card-text
-                  v-text-field(
-                    variant="outlined"
-                    v-model='group.name'
-                    label='Group Name'
-                    :rules='[groupNameRule]'
-                    :counter='255'
-                    maxlength='255'
-                    prepend-icon='mdi-account-group'
-                    style='max-width: 600px;'
-                    :disabled='group.id <= 2'
-                  )
-                template(v-if='group.id !== 2')
-                  v-divider
-                  v-card-text
-                    v-text-field(
-                      variant="outlined"
-                      v-model='group.redirectOnLogin'
-                      label='Redirect on Login'
-                      persistent-hint
-                      hint='The path / URL where the user will be redirected upon successful login.'
-                      prepend-icon='mdi-arrow-top-left-thick'
-                      append-icon='mdi-folder-search'
-                      @click:append='selectPage'
-                      style='max-width: 850px;'
-                      :counter='255'
-                      maxlength='255'
-                      :rules='[groupRedirectRule]'
-                    )
-
-            v-tabs-window-item(value='permissions', :transition='false', :reverse-transition='false')
-              group-permissions(v-model='group', @refresh='refresh')
-
-            v-tabs-window-item(value='rules', :transition='false', :reverse-transition='false')
-              group-rules(v-model='group', @refresh='refresh')
-
-            v-tabs-window-item(value='users', :transition='false', :reverse-transition='false')
-              group-users(v-model='group', @refresh='refresh')
-
-          v-card-chin
-            v-spacer
-            .text-body-small.text-grey.pr-2 Group ID #[strong {{group.id}}]
-
-    page-selector(mode='select', v-model='selectPageModal', :open-handler='selectPageHandle', path='home', :locale='currentLang')
+<template>
+  <v-container fluid class="group-workspace"><admin-hero :title="saved?.name || 'Group'" :description="saved?.description || 'Manage a shared access policy.'" eyebrow="People & access" icon="mdi-account-group-outline"><template #actions><v-btn :to="directoryPath" variant="text" prepend-icon="mdi-arrow-left" :disabled="busy">All groups</v-btn><v-btn variant="text" prepend-icon="mdi-refresh" :loading="loading" :disabled="busy" @click="reload">Reload group</v-btn><template v-if="saved?.capabilities.edit"><v-btn v-if="dirty" variant="text" :disabled="busy || loading" @click="reset">Reset draft</v-btn><v-btn color="primary" variant="flat" prepend-icon="mdi-check" :disabled="!dirty || busy || loading || stale || Boolean(policyIssue)" @click="reviewPolicy">Review policy</v-btn></template></template></admin-hero>
+    <async-state v-if="!saved && loading" state="loading" title="Loading group workspace" /><async-state v-else-if="!saved && loadError" state="error" title="The group could not be loaded" :message="loadError" retry-label="Try again" @retry="load" />
+    <template v-if="saved"><v-alert v-if="notice" type="success" variant="tonal" class="mt-5">{{ notice }}</v-alert><v-alert v-if="loadError" type="error" variant="tonal" class="mt-5">{{ loadError }}<v-btn variant="text" :disabled="busy" @click="reload">Retry reload</v-btn></v-alert>
+      <div class="group-workspace-status"><div class="group-actions"><span class="group-pill">Group #{{ saved.id }}</span><span v-if="saved.isSystem" class="group-pill"><v-icon icon="mdi-lock-outline" size="14" />System group</span><span>{{ saved.memberCount }} {{ saved.memberCount === 1 ? 'member' : 'members' }}</span></div><span role="status">{{ dirty ? 'Unsaved policy changes' : stale ? 'Reload required before another change' : 'Showing saved policy' }}</span></div>
+      <p v-if="saved.capabilities.explanation" class="group-note">{{ saved.capabilities.explanation }}</p><v-alert v-if="policyIssue && dirty" type="warning" variant="tonal" class="mt-4">{{ policyIssue }}</v-alert>
+      <div class="group-tabs" role="tablist" aria-label="Group workspace"><button v-for="tab in tabs" :id="'group-tab-' + tab.key" :key="tab.key" role="tab" :aria-selected="section === tab.key" :aria-controls="'group-panel-' + tab.key" :tabindex="section === tab.key ? 0 : -1" :disabled="busy" @click="setSection(tab.key)" @keydown="tabKey($event, tab.key)">{{ tab.title }}</button></div>
+      <section v-show="section === 'overview'" id="group-panel-overview" role="tabpanel" aria-labelledby="group-tab-overview"><div class="group-workspace-grid"><div><section class="group-surface"><div class="group-heading"><div><h2>Identity &amp; purpose</h2></div></div><div class="group-form-grid"><v-text-field v-model="draft.name" label="Group name" variant="outlined" maxlength="255" :disabled="policyLocked || !saved.capabilities.rename" /><v-text-field v-model="draft.redirectOnLogin" label="Sign-in destination" variant="outlined" maxlength="255" hint="A workspace path or HTTP(S) URL. / uses the homepage." persistent-hint :disabled="policyLocked" /><v-textarea v-model="draft.description" label="Purpose" variant="outlined" rows="3" auto-grow maxlength="1000" class="is-wide" :disabled="policyLocked" /></div><p class="group-note mt-3">A member can belong to several groups. Their permissions and page rules are combined.</p></section>
+          <section v-if="saved.capabilities.delete" class="group-surface mt-5"><h3 class="text-title-medium">Retire this group</h3><p class="group-note mt-2 mb-4">Deletion removes its memberships and ends affected sign-in sessions. Accounts and their content remain; administrative history is retained.</p><v-btn color="error" variant="outlined" :disabled="busy || loading || dirty || stale || hasDependencies" @click="reviewDelete">Review deletion</v-btn><p v-if="hasDependencies" class="group-note mt-3">Resolve the connected uses shown alongside this policy before deleting the group.</p></section></div>
+          <aside><section class="group-surface"><span class="group-kicker">Saved policy</span><dl class="group-facts"><div><dt>Members</dt><dd>{{ saved.memberCount }}</dd></div><div><dt>Permissions</dt><dd>{{ saved.permissions.length }}</dd></div><div><dt>Page rules</dt><dd>{{ saved.pageRules.length }}</dd></div><div><dt>Updated</dt><dd>{{ date(saved.updatedAt) }}</dd></div></dl></section><section class="group-surface mt-5"><span class="group-kicker">Connected uses</span><ul class="group-dependencies"><li v-for="dependency in dependencies" :key="dependency.key"><router-link v-if="dependency.canOpen" :to="dependency.to">{{ dependency.title }}</router-link><span v-else>{{ dependency.title }}</span><strong>{{ dependency.count }}</strong></li></ul><p class="group-note mt-3">These references must be resolved before deletion. Permissions for each destination still apply.</p></section></aside></div></section>
+      <section v-show="section === 'permissions'" id="group-panel-permissions" role="tabpanel" aria-labelledby="group-tab-permissions"><group-permissions v-model="draft" :allowed="saved.allowedPermissions" :disabled="policyLocked || !saved.capabilities.permissions" /></section>
+      <section v-show="section === 'rules'" id="group-panel-rules" role="tabpanel" aria-labelledby="group-tab-rules"><group-rules :key="saved.id + ':' + saved.fingerprint" v-model="draft" :disabled="policyLocked" :unrestricted="draft.permissions.includes('manage:system')" @evaluate="setSection('access')" @draft-state="ruleDraft = $event" /></section>
+      <section v-show="section === 'members'" id="group-panel-members" role="tabpanel" aria-labelledby="group-tab-members"><group-users :key="saved.id" :group-id="saved.id" :revision="saved.fingerprint" :disabled="busy || loading || dirty || stale" :can-manage="saved.capabilities.members" :can-read-accounts="canReadAccounts" :lock-reason="dirty ? 'Save or reset the policy draft before changing membership.' : 'Wait for the current operation or reload the group before changing membership.'" @review="reviewMembers" @evaluate="checkMember" /></section>
+      <section v-show="section === 'access'" id="group-panel-access" role="tabpanel" aria-labelledby="group-tab-access"><group-access :key="saved.id" :group-id="saved.id" :revision="saved.fingerprint" :draft="draft" :has-draft="dirty" :initial-member="accessMember" /></section>
+      <section v-show="section === 'activity'" id="group-panel-activity" role="tabpanel" aria-labelledby="group-tab-activity"><div class="group-heading"><div><span class="group-kicker">Administrative history</span><h2>A record of access decisions</h2><p>The latest 50 recorded changes, with reasons and their effects. Earlier activity is not reconstructed.</p></div></div><async-state v-if="!saved.history.length" state="empty" title="No changes recorded yet" message="New policy and membership changes will appear here." /><ol v-else class="group-activity"><li v-for="event in saved.history" :key="event.id"><span class="group-activity-dot" aria-hidden="true" /><div><div class="group-activity-heading"><h3>{{ eventTitle(event.action) }}</h3><time :datetime="event.createdAt">{{ date(event.createdAt) }}</time></div><small>{{ event.actorId ? 'Administrator account #' + event.actorId : 'Workspace credential' }}</small><p>{{ event.reason }}</p><ul v-if="eventDetails(event.details).length"><li v-for="detail in eventDetails(event.details)" :key="detail">{{ detail }}</li></ul></div></li></ol></section>
+    </template>
+    <v-dialog v-model="dialog" max-width="760" :fullscreen="$vuetify.display.smAndDown" :persistent="busy" aria-labelledby="group-review-title"><v-card class="group-dialog group-review-dialog"><div class="group-dialog-header"><h2 id="group-review-title">{{ reviewTitle }}</h2><p>{{ reviewDescription }}</p></div><v-card-text>
+        <template v-if="operation === 'policy'"><dl class="group-review-list"><div v-for="change in reviewedChanges" :key="change.key"><dt>{{ change.title }}</dt><dd><span class="group-review-before">{{ change.before || 'Empty' }}</span><strong>{{ change.after || 'Empty' }}</strong></dd></div></dl><div v-if="reviewedRules.length"><h3 class="text-title-small">Page-rule changes</h3><dl class="group-review-list"><div v-for="change in reviewedRules" :key="change.key"><dt>{{ change.title }}</dt><dd><span v-if="change.before" class="group-review-before">{{ change.before }}</span><strong>{{ change.after || 'Removed from this policy' }}</strong></dd></div></dl></div></template>
+        <template v-else-if="operation === 'members'"><ul class="group-review-people"><li v-for="person in reviewedPeople" :key="person.id"><strong>{{ person.name }}</strong><span>Account #{{ person.id }}</span></li></ul><p class="group-note">{{ membershipAction === 'add' ? 'This policy will combine with each person’s existing memberships.' : 'Each person will retain access granted by their other groups and private ownership.' }}</p></template>
+        <template v-else><v-alert type="warning" variant="tonal" class="mb-4">This permanently removes the group and its {{ saved?.memberCount }} memberships.</v-alert><v-text-field v-model="deleteConfirmation" :label="'Type ' + saved?.id + ' to confirm group deletion'" variant="outlined" autocomplete="off" :disabled="busy" /></template>
+        <v-alert v-if="endsSessions" type="info" variant="tonal" class="my-4">Existing sign-ins and pending recovery links for affected members will end. If you are affected, you will return to sign-in. Account credentials remain usable for a fresh sign-in.</v-alert>
+        <v-textarea v-model="reason" label="Administrative reason" variant="outlined" rows="2" auto-grow maxlength="1000" hint="3–1,000 characters. Keep credentials and private information out of this record." persistent-hint :disabled="busy" /><v-alert v-if="actionError" type="error" variant="tonal" class="mt-4">{{ actionError }}<v-btn v-if="conflict" variant="text" :disabled="busy" @click="reloadReview">Reload saved group</v-btn></v-alert>
+      </v-card-text><v-card-actions><v-btn variant="text" :disabled="busy" @click="dialog = false">{{ operation === 'policy' ? 'Keep editing' : 'Cancel' }}</v-btn><v-spacer /><v-btn :color="operation === 'delete' ? 'error' : 'primary'" variant="flat" :loading="busy" :disabled="!canConfirm" @click="confirm">{{ operation === 'policy' ? 'Save group policy' : operation === 'delete' ? 'Delete group' : membershipAction === 'add' ? 'Add reviewed members' : 'Remove reviewed members' }}</v-btn></v-card-actions></v-card></v-dialog>
+  </v-container>
 </template>
-
-<script lang='ts'>
-import { createEmptyGroupEditorState, deleteGroup, fetchGroupDetails, updateGroup } from '../../helpers/groups-api'
-import { wikiStore } from '@/store/index.ts'
-
+<script lang="ts">
+import AsyncState from '@/components/common/async-state.vue'
 import GroupPermissions from './admin-groups-edit-permissions.vue'
 import GroupRules from './admin-groups-edit-rules.vue'
 import GroupUsers from './admin-groups-edit-users.vue'
-
-type PageSelection = {
-  path: string
-  locale: string
-}
-
-function toRouteGroupId (value: unknown): number {
-  const id = Number(value)
-  return Number.isSafeInteger(id) ? id : 0
-}
-
-/* global siteConfig */
-
+import GroupAccess from './admin-groups-access.vue'
+import { groupPermissions, type GroupPolicyDraft, type GroupWorkspace, type GroupPageRule } from '../../../shared/group-policy.ts'
+import { fetchGroupWorkspace, saveGroupPolicy, changeGroupMembers, removeReviewedGroup, groupPolicyCopy, groupPolicySignature, emptyGroupPolicy, groupRequestStatus } from '../../helpers/group-workspace-api.ts'
+import { getErrorMessage } from '../../helpers/root-ui-store.ts'
+import { wikiStore } from '@/store/index.ts'
+type Change = { key: string; title: string; before: string; after: string }
+const permissionTitle = (key: string) => groupPermissions.find(p => p.key === key)?.title ?? key
+const matches = { START: 'path starts with', END: 'path ends with', EXACT: 'exact path', TAG: 'tag matches', REGEX: 'regular expression' }
+const ruleSummary = (rule: GroupPageRule) => `${rule.deny ? 'Deny' : 'Allow'} ${rule.roles.map(permissionTitle).join(', ')} · ${matches[rule.match]} ${rule.path || 'all paths'} · ${rule.locales.length ? rule.locales.join(', ') : 'any language'}`
+const titles: Record<string,string> = { name: 'Group name', description: 'Purpose', redirectOnLogin: 'Sign-in destination', permissions: 'Permissions', pageRules: 'Page rules' }
 export default {
-  components: {
-    GroupPermissions,
-    GroupRules,
-    GroupUsers
-  },
-  data() {
-    return {
-      group: createEmptyGroupEditorState(),
-      groupLoadRequestId: 0,
-      groupLoadState: 'loading' as 'loading' | 'ready' | 'error',
-      groupAction: '',
-      deleteGroupDialog: false,
-      tab: 'settings',
-      selectPageModal: false,
-      currentLang: siteConfig.lang
-    }
-  },
+  components: { AsyncState, GroupPermissions, GroupRules, GroupUsers, GroupAccess },
+  data() { return { saved: null as GroupWorkspace | null, draft: emptyGroupPolicy(), loading: false, loadError: '', sequence: 0, disposed: false, stale: false, notice: '', busy: false, ruleDraft: false, section: 'overview', tabs: [{ key: 'overview', title: 'Overview' },{ key: 'permissions', title: 'Permissions' },{ key: 'rules', title: 'Page rules' },{ key: 'members', title: 'Members' },{ key: 'access', title: 'Access check' },{ key: 'activity', title: 'Activity' }], accessMember: null as { id: number; name: string } | null, dialog: false, operation: 'policy' as 'policy' | 'members' | 'delete', reason: '', deleteConfirmation: '', actionError: '', conflict: false, reviewFingerprint: '', reviewedPolicy: emptyGroupPolicy(), reviewedChanges: [] as Change[], reviewedRules: [] as Change[], reviewedPeople: [] as Array<{ id: number; name: string }>, membershipAction: 'add' as 'add' | 'remove', endsSessions: false } },
   computed: {
-    groupReady(): boolean { return this.groupLoadState === 'ready' && this.group.id > 0 },
-    groupNameValid(): boolean {
-      return this.group.name.trim().length > 0 && this.group.name.length <= 255
-    },
-    groupRedirectValid(): boolean { return this.group.redirectOnLogin.length <= 255 }
+    directoryPath(): string { const from = this.$route.query.from; return typeof from === 'string' && (from === '/groups' || from.startsWith('/groups?')) ? from : '/groups' },
+    dirty(): boolean { return Boolean(this.saved && groupPolicySignature(this.saved) !== groupPolicySignature(this.draft)) },
+    policyLocked(): boolean { return this.busy || this.loading || this.stale || !this.saved?.capabilities.edit },
+    canReadAccounts(): boolean { return wikiStore.user.permissions.some(p => ['manage:users','manage:system'].includes(p)) },
+    policyIssue(): string { if (!this.draft.name.trim()) return 'Enter a group name before reviewing the policy.'; if (this.draft.name.trim().length > 255 || this.draft.description.trim().length > 1000) return 'Shorten the group name or purpose.'; if (this.draft.permissions.includes('use:agent-browser') && !this.draft.permissions.includes('use:agents')) return 'Agent browsing also requires Use the Wiki Agent.'; const redirect = this.draft.redirectOnLogin.trim() || '/'; try { const url = new URL(redirect, window.location.origin); if (!['http:','https:'].includes(url.protocol) || url.username || url.password || redirect.includes('\\') || redirect.startsWith('//') || (!redirect.startsWith('/') && !/^https?:\/\//.test(redirect))) throw new Error() } catch { return 'Use a workspace path starting with / or an HTTP(S) sign-in destination.' } return '' },
+    dependencies() { if (!this.saved) return []; const has = (permission: string) => wikiStore.user.permissions.includes('manage:system') || wikiStore.user.permissions.includes(permission); return [{ key: 'api', title: 'Active API credentials', count: this.saved.apiKeyCount, to: '/api', canOpen: has('manage:api') },{ key: 'auth', title: 'Sign-in enrollment', count: this.saved.dependencies.authentication, to: '/auth', canOpen: has('manage:system') },{ key: 'navigation', title: 'Navigation entries', count: this.saved.dependencies.navigation, to: '/navigation', canOpen: has('manage:navigation') },{ key: 'providers', title: 'Agent provider grants', count: this.saved.dependencies.agentProviders, to: '/agents#providers', canOpen: has('manage:system') },{ key: 'skills', title: 'Agent skill grants', count: this.saved.dependencies.agentSkills, to: '/agents#skills', canOpen: has('manage:system') }] },
+    hasDependencies(): boolean { return this.dependencies.some(item => item.count > 0) },
+    reviewTitle(): string { return this.operation === 'policy' ? 'Review group policy' : this.operation === 'delete' ? 'Delete this group' : this.membershipAction === 'add' ? 'Review new memberships' : 'Review membership removals' },
+    reviewDescription(): string { return this.operation === 'policy' ? 'Check the changes to purpose, permissions and page rules before applying them.' : this.operation === 'delete' ? 'Confirm that this shared access policy is no longer needed.' : 'These changes apply to the accounts listed below.' },
+    canConfirm(): boolean { return this.dialog && !this.busy && !this.loading && !this.stale && !this.conflict && this.reason.trim().length >= 3 && this.reason.trim().length <= 1000 && (this.operation !== 'delete' || this.deleteConfirmation === String(this.saved?.id)) }
   },
-  watch: {
-    '$route.params.id' () {
-      this.group = createEmptyGroupEditorState()
-      this.groupLoadState = 'loading'
-      this.groupAction = ''
-      this.loadGroup()
-    }
-  },
+  watch: { '$route.params.id': { immediate: true, handler() { this.sequence++; this.saved = null; this.draft = emptyGroupPolicy(); this.dialog = false; this.ruleDraft = false; this.notice = ''; this.accessMember = null; void this.load() } }, '$route.hash': { immediate: true, handler(hash: string) { this.section = this.tabs.some(tab => tab.key === hash.slice(1)) ? hash.slice(1) : 'overview' } } },
+  mounted() { window.addEventListener('beforeunload', this.beforeUnload) }, beforeUnmount() { this.disposed = true; this.sequence++; window.removeEventListener('beforeunload', this.beforeUnload) },
+  beforeRouteLeave(): boolean { return this.canLeave() }, beforeRouteUpdate(to, from): boolean { return !this.busy && (to.params.id === from.params.id || this.canLeave()) },
   methods: {
-    groupNameRule (value: unknown): true | string {
-      if (typeof value !== 'string' || value.trim().length === 0) return 'Group name is required.'
-      return value.length <= 255 || 'Group name must be 255 characters or fewer.'
-    },
-    groupRedirectRule (value: unknown): true | string {
-      return typeof value !== 'string' || value.length <= 255 || 'Redirect must be 255 characters or fewer.'
-    },
-    async loadGroup () {
-      const requestId = ++this.groupLoadRequestId
-      const routeGroupId = toRouteGroupId(this.$route.params.id)
-      this.groupLoadState = 'loading'
-
-      wikiStore.startLoading('admin-groups-refresh')
-      try {
-        const group = await fetchGroupDetails(window.fetch.bind(window), routeGroupId, 'Group detail response is invalid')
-        if (requestId !== this.groupLoadRequestId || routeGroupId !== toRouteGroupId(this.$route.params.id)) return false
-        this.group = group
-        this.groupLoadState = group.id > 0 ? 'ready' : 'error'
-        return this.groupReady
-      } catch (err) {
-        if (requestId !== this.groupLoadRequestId || routeGroupId !== toRouteGroupId(this.$route.params.id)) return false
-        this.group = createEmptyGroupEditorState()
-        this.groupLoadState = 'error'
-        wikiStore.showError(err)
-        return false
-      } finally {
-        wikiStore.stopLoading('admin-groups-refresh')
-      }
-    },
-    selectPage () {
-      this.selectPageModal = true
-    },
-    selectPageHandle ({ path, locale }: PageSelection) {
-      if (!this.groupReady) return
-      this.group.redirectOnLogin = `/${locale}/${path}`
-    },
-    async updateGroup() {
-      if (!this.groupReady || this.groupAction !== '') return
-      if (!this.groupNameValid) return
-      if (!this.groupRedirectValid) return
-      const requestId = this.groupLoadRequestId
-      const groupId = this.group.id
-      this.groupAction = 'update'
-      wikiStore.startLoading('admin-groups-update')
-      try {
-        await updateGroup(window.fetch.bind(window), groupId, {
-          name: this.group.name,
-          redirectOnLogin: this.group.redirectOnLogin,
-          permissions: this.group.permissions,
-          pageRules: this.group.pageRules
-        })
-        if (requestId !== this.groupLoadRequestId || groupId !== this.group.id) return
-        wikiStore.showNotification({
-          style: 'success',
-          message: `Group changes have been saved.`,
-          icon: 'check'
-        })
-      } catch (err) {
-        if (requestId === this.groupLoadRequestId && groupId === this.group.id) {
-          wikiStore.showError(err)
-        }
-      } finally {
-        wikiStore.stopLoading('admin-groups-update')
-        if (requestId === this.groupLoadRequestId && groupId === this.group.id) {
-          this.groupAction = ''
-        }
-      }
-    },
-    async deleteGroup() {
-      if (!this.groupReady || this.groupAction !== '') return
-      const requestId = this.groupLoadRequestId
-      const groupId = this.group.id
-      const groupName = this.group.name
-      this.groupAction = 'delete'
-      wikiStore.startLoading('admin-groups-delete')
-      try {
-        await deleteGroup(window.fetch.bind(window), groupId)
-        if (requestId !== this.groupLoadRequestId || groupId !== this.group.id) return
-        wikiStore.showNotification({
-          style: 'success',
-          message: `Group ${groupName} has been deleted.`,
-          icon: 'delete'
-        })
-        this.deleteGroupDialog = false
-        this.$router.replace('/groups')
-      } catch (err) {
-        if (requestId === this.groupLoadRequestId && groupId === this.group.id) {
-          wikiStore.showError(err)
-        }
-      } finally {
-        wikiStore.stopLoading('admin-groups-delete')
-        if (requestId === this.groupLoadRequestId && groupId === this.group.id) {
-          this.groupAction = ''
-        }
-      }
-    },
-    async refresh() {
-      return this.loadGroup()
-    }
-  },
-  created () {
-    this.loadGroup()
-  },
-  beforeUnmount () {
-    this.groupLoadRequestId++
+    async load() { if (this.busy) return; const sequence = ++this.sequence, id = Number(this.$route.params.id); this.loading = true; this.loadError = ''; try { const saved = await fetchGroupWorkspace(id); if (!this.disposed && sequence === this.sequence) { this.saved = saved; this.draft = groupPolicyCopy(saved); this.stale = false; this.ruleDraft = false } } catch (error) { if (!this.disposed && sequence === this.sequence) { this.loadError = getErrorMessage(error); this.stale = true } } finally { if (!this.disposed && sequence === this.sequence) this.loading = false } },
+    async reload() { if (this.busy || ((this.dirty || this.ruleDraft) && !window.confirm('Discard unsaved policy changes and reload this group?'))) return; await this.load() }, reset() { if (this.saved && !this.busy) { this.draft = groupPolicyCopy(this.saved); this.ruleDraft = false } },
+    startReview(operation: 'policy' | 'members' | 'delete') { if (!this.saved || this.busy || this.loading || this.stale) return false; this.notice = ''; this.operation = operation; this.reviewFingerprint = this.saved.fingerprint; this.reason = ''; this.actionError = ''; this.conflict = false; this.deleteConfirmation = ''; this.dialog = true; return true },
+    reviewPolicy() { if (!this.saved || !this.dirty || this.policyIssue || !this.saved.capabilities.edit || !this.startReview('policy')) return; this.reviewedPolicy = groupPolicyCopy(this.draft); this.reviewedChanges = (['name','description','redirectOnLogin'] as const).filter(key => this.saved![key] !== this.draft[key]).map(key => ({ key, title: titles[key]!, before: this.saved![key], after: this.draft[key] })); const added = this.draft.permissions.filter(p => !this.saved!.permissions.includes(p)), removed = this.saved.permissions.filter(p => !this.draft.permissions.includes(p)); if (added.length || removed.length) this.reviewedChanges.push({ key: 'permissions', title: 'Permissions', before: removed.length ? 'Remove: ' + removed.map(permissionTitle).join(', ') : 'No permissions removed', after: added.length ? 'Add: ' + added.map(permissionTitle).join(', ') : 'No permissions added' }); this.reviewedRules = []; for (const rule of this.saved.pageRules) { const next = this.draft.pageRules.find(item => item.id === rule.id); if (!next || ruleSummary(rule) !== ruleSummary(next)) this.reviewedRules.push({ key: rule.id, title: next ? 'Updated rule' : 'Removed rule', before: ruleSummary(rule), after: next ? ruleSummary(next) : '' }) } for (const rule of this.draft.pageRules) if (!this.saved.pageRules.some(item => item.id === rule.id)) this.reviewedRules.push({ key: rule.id, title: 'New rule', before: '', after: ruleSummary(rule) }); this.endsSessions = this.saved.memberCount > 0 && Boolean(added.length || removed.length || this.reviewedRules.length) },
+    reviewMembers(input: { action: 'add' | 'remove'; people: Array<{ id: number; name: string }> }) { if (!this.saved?.capabilities.members || this.dirty || !input.people.length || !this.startReview('members')) return; this.membershipAction = input.action; this.reviewedPeople = input.people.map(person => ({ ...person })); this.endsSessions = true },
+    reviewDelete() { if (!this.saved?.capabilities.delete || this.dirty || this.hasDependencies || !this.startReview('delete')) return; this.endsSessions = this.saved.memberCount > 0 },
+    async confirm() { if (!this.saved || !this.canConfirm) return; this.busy = true; this.actionError = ''; const id = this.saved.id, operation = this.operation; try { const result = operation === 'policy' ? await saveGroupPolicy(id, this.reviewedPolicy, this.reason.trim(), this.reviewFingerprint) : operation === 'members' ? await changeGroupMembers(id, this.membershipAction, this.reviewedPeople.map(person => person.id), this.reason.trim(), this.reviewFingerprint) : await removeReviewedGroup(id, this.reason.trim(), this.reviewFingerprint); if (this.disposed) return; this.dialog = false; this.reason = ''; this.busy = false; this.ruleDraft = false; if (result.currentSessionEnded) { this.draft = groupPolicyCopy(this.saved); window.location.assign('/login'); return } if (operation === 'delete') { this.draft = groupPolicyCopy(this.saved); await this.$router.push(this.directoryPath); return } if (operation === 'policy') { this.saved = { ...this.saved, ...groupPolicyCopy(this.reviewedPolicy) }; this.draft = groupPolicyCopy(this.reviewedPolicy) } this.notice = (operation === 'policy' ? 'Group policy saved.' : this.membershipAction === 'add' ? 'Reviewed members added.' : 'Reviewed members removed.') + (result.sessionsEnded ? ` Existing sign-ins ended for ${result.sessionsEnded} account(s).` : ''); this.stale = true; await this.load() } catch (error) { if (!this.disposed) { this.conflict = [0,401,403,409].includes(groupRequestStatus(error)); this.actionError = getErrorMessage(error) + (groupRequestStatus(error) === 0 ? ' The outcome is unconfirmed. Reload the group before repeating this action.' : '') } } finally { if (!this.disposed) this.busy = false } },
+    async reloadReview() { if (this.busy || (this.dirty && !window.confirm('Discard this draft and load the current group?'))) return; this.dialog = false; await this.load() },
+    checkMember(member: { id: number; name: string }) { this.accessMember = { ...member }; this.setSection('access') },
+    setSection(section: string) { if (this.busy) return; this.section = section; void this.$router.replace({ query: this.$route.query, hash: '#' + section }) }, tabKey(event: KeyboardEvent, key: string) { if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return; event.preventDefault(); const index = event.key === 'Home' ? 0 : event.key === 'End' ? this.tabs.length - 1 : (this.tabs.findIndex(tab => tab.key === key) + (event.key === 'ArrowRight' ? 1 : -1) + this.tabs.length) % this.tabs.length, next = this.tabs[index]!.key; this.setSection(next); this.$nextTick(() => document.getElementById('group-tab-' + next)?.focus()) },
+    date(value: string) { const date = new Date(value); return Number.isNaN(date.valueOf()) ? 'Not recorded' : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) }, eventTitle(action: string) { return ({ 'group-created': 'Group created', 'policy-updated': 'Access policy updated', 'members-added': 'Members added', 'members-removed': 'Members removed', 'group-deleted': 'Group deleted' } as Record<string,string>)[action] ?? action }, eventDetails(details: Record<string,unknown>): string[] { const items: string[] = []; if (Array.isArray(details.fields)) items.push('Changed: ' + details.fields.map(field => titles[String(field)] ?? String(field)).join(', ')); if (Array.isArray(details.permissionsAdded) && details.permissionsAdded.length) items.push('Granted: ' + details.permissionsAdded.map(p => permissionTitle(String(p))).join(', ')); if (Array.isArray(details.permissionsRemoved) && details.permissionsRemoved.length) items.push('Removed: ' + details.permissionsRemoved.map(p => permissionTitle(String(p))).join(', ')); if (Array.isArray(details.userIds)) items.push('Accounts: ' + details.userIds.map(id => '#' + String(id)).join(', ')); if (typeof details.sessionsEnded === 'number' && details.sessionsEnded > 0) items.push('Existing sign-ins ended for ' + details.sessionsEnded + ' account(s)'); return items },
+    canLeave(): boolean { return !this.busy && ((!this.dirty && !this.ruleDraft && !(this.dialog && this.reason)) || window.confirm('Discard unsaved group changes?')) }, beforeUnload(event: BeforeUnloadEvent) { if (this.dirty || this.ruleDraft || this.busy || (this.dialog && this.reason)) { event.preventDefault(); event.returnValue = '' } }
   }
 }
 </script>
-
-<style lang='scss'>
-
-</style>
+<style lang="scss" src="./group-workspace.scss"></style>

@@ -1,0 +1,37 @@
+<template>
+  <v-dialog :model-value="modelValue" max-width="660" :fullscreen="$vuetify.display.smAndDown" :persistent="saving" aria-labelledby="group-create-title" @update:model-value="close">
+    <v-card class="group-dialog group-create-dialog"><div class="group-dialog-header"><h2 id="group-create-title">{{ reviewing ? 'Review this new group' : 'Create a group' }}</h2><p>{{ reviewing ? 'Confirm its starting access before adding people.' : 'Give a shared responsibility a clear home.' }}</p></div>
+      <v-card-text><async-state v-if="loading" state="loading" title="Loading creation policy" /><async-state v-else-if="loadError" state="error" title="Creation policy is unavailable" :message="loadError" retry-label="Try again" @retry="load" />
+        <template v-else-if="options"><div v-if="!reviewing" class="group-dialog-fields"><v-text-field v-model="name" label="Group name" variant="outlined" maxlength="255" :disabled="saving" /><v-textarea v-model="description" label="Purpose" variant="outlined" rows="2" auto-grow maxlength="1000" hint="What should this group be responsible for?" persistent-hint :disabled="saving" /><div><h3 class="text-title-small mb-3">Starting access</h3><div class="group-preset-list" aria-label="Starting access"><button v-for="item in presets" :key="item.key" type="button" :aria-pressed="preset === item.key" :disabled="saving" @click="preset = item.key"><v-icon :icon="preset === item.key ? 'mdi-radiobox-marked' : 'mdi-radiobox-blank'" size="21" /><span><strong>{{ item.title }}</strong><small>{{ item.description }}</small></span></button></div><p class="text-body-small text-medium-emphasis">Permissions and page rules can be refined after creation. Private ownership remains separate.</p></div></div>
+          <template v-else><dl class="group-review-list"><div><dt>Group</dt><dd>{{ policy.name }}</dd></div><div v-if="policy.description"><dt>Purpose</dt><dd>{{ policy.description }}</dd></div><div><dt>Starting access</dt><dd>{{ selectedPreset.title }} · {{ selectedPreset.description }}</dd></div><div><dt>Permissions</dt><dd>{{ policy.permissions.map(permissionTitle).join(', ') || 'None' }}</dd></div><div><dt>Members & credentials</dt><dd>No members are added and no credentials are issued during creation.</dd></div></dl><v-textarea v-model="reason" label="Administrative reason" variant="outlined" rows="2" auto-grow maxlength="1000" :disabled="saving" /></template>
+          <v-alert v-if="saveError" type="error" variant="tonal" class="mt-4">{{ saveError }}<v-btn v-if="conflict" variant="text" :disabled="saving" @click="load">Reload creation policy</v-btn></v-alert>
+        </template>
+      </v-card-text><v-card-actions><v-btn variant="text" :disabled="saving" @click="reviewing ? reviewing = false : close(false)">{{ reviewing ? 'Keep editing' : 'Cancel' }}</v-btn><v-spacer /><v-btn v-if="!reviewing" color="primary" variant="flat" :disabled="!valid || loading || !options" @click="reviewing = true">Review group</v-btn><v-btn v-else color="primary" variant="flat" :loading="saving" :disabled="!valid || reason.trim().length < 3 || conflict" @click="create">Create group</v-btn></v-card-actions>
+    </v-card>
+  </v-dialog>
+</template>
+<script lang="ts">
+import AsyncState from '@/components/common/async-state.vue'
+import { groupPermissions, type GroupPolicyDraft } from '../../../shared/group-policy.ts'
+import { fetchGroupCreationOptions, createReviewedGroup, groupRequestStatus, type GroupCreationOptions } from '../../helpers/group-workspace-api.ts'
+import { getErrorMessage } from '../../helpers/root-ui-store.ts'
+const presets = [
+  { key: 'empty', title: 'Start with no access', description: 'Build a specific policy before adding members.', permissions: [] as string[] },
+  { key: 'readers', title: 'Read & discuss', description: 'Read all public pages, use assets and join discussions.', permissions: ['read:pages','read:assets','read:comments','write:comments'] },
+  { key: 'authors', title: 'Knowledge contributors', description: 'Create and edit public pages, read their source and history, upload assets and join discussions.', permissions: ['read:pages','write:pages','read:source','read:history','read:assets','write:assets','read:comments','write:comments'] }
+]
+export default {
+  components: { AsyncState }, props: { modelValue: Boolean }, emits: ['update:modelValue','created'],
+  data() { return { name: '', description: '', preset: 'empty', reason: '', presets, options: null as GroupCreationOptions | null, loading: false, saving: false, reviewing: false, loadError: '', saveError: '', conflict: false, sequence: 0, disposed: false } },
+  computed: { selectedPreset() { return presets.find(item => item.key === this.preset)! }, policy(): GroupPolicyDraft { const permissions = [...this.selectedPreset.permissions]; return { name: this.name.trim(), description: this.description.trim(), redirectOnLogin: '/', permissions, pageRules: permissions.length ? [{ id: 'starting-access', path: '', match: 'START', deny: false, roles: permissions, locales: [] }] : [] } }, valid(): boolean { return Boolean(this.name.trim() && this.name.trim().length <= 255 && this.description.trim().length <= 1000 && this.options && this.policy.permissions.every(p => this.options!.allowedPermissions.includes(p))) } },
+  watch: { modelValue: { immediate: true, handler(value: boolean) { if (value) { this.name = ''; this.description = ''; this.preset = 'empty'; this.reason = ''; this.reviewing = false; this.saveError = ''; void this.load() } else this.sequence++ } } },
+  mounted() { window.addEventListener('beforeunload', this.beforeUnload) }, beforeUnmount() { this.disposed = true; this.sequence++; window.removeEventListener('beforeunload', this.beforeUnload) },
+  methods: {
+    async load() { const sequence = ++this.sequence; this.loading = true; this.loadError = ''; this.options = null; try { const options = await fetchGroupCreationOptions(); if (!this.disposed && sequence === this.sequence) { this.options = options; this.conflict = false; this.saveError = '' } } catch (error) { if (!this.disposed && sequence === this.sequence) this.loadError = getErrorMessage(error) } finally { if (!this.disposed && sequence === this.sequence) this.loading = false } },
+    permissionTitle(key: string) { return groupPermissions.find(p => p.key === key)?.title ?? key },
+    async create() { if (!this.valid || !this.options || this.saving || this.conflict || this.reason.trim().length < 3) return; this.saving = true; this.saveError = ''; try { const result = await createReviewedGroup(this.policy, this.reason.trim(), this.options.fingerprint); this.name = ''; this.description = ''; this.reason = ''; this.$emit('created', result.id); this.$emit('update:modelValue', false) } catch (error) { this.conflict = [0,401,403,409].includes(groupRequestStatus(error)); this.saveError = getErrorMessage(error) + (groupRequestStatus(error) === 0 ? ' The outcome is unconfirmed. Check the directory before creating this group again.' : '') } finally { this.saving = false } },
+    canLeave(): boolean { return !this.saving && ((!this.modelValue || (!this.name && !this.description && !this.reason)) || window.confirm('Discard the new group draft?')) },
+    close(value: boolean) { if (!value && this.canLeave()) this.$emit('update:modelValue', false) }, beforeUnload(event: BeforeUnloadEvent) { if (this.modelValue && (this.saving || this.name || this.description || this.reason)) { event.preventDefault(); event.returnValue = '' } }
+  }
+}
+</script>

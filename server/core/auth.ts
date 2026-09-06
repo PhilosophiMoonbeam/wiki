@@ -601,13 +601,21 @@ const auth: AuthService = {
   },
 
   async reloadGroups() {
-    const [groups, tags] = await Promise.all([getWiki().models.groups.query(), getWiki().models.tags.query()])
-    const aliases = tagAliasMap(tags)
-    const indexedGroups: Record<string, GroupRecord> = {}
-    for (const group of groups) indexedGroups[String(group.id)] = group
-    this.groups = indexedGroups
-    this.tagAliases = aliases
-    this.guest.cacheExpiration = DateTime.utc().minus({ days: 1 })
+    try {
+      const [groups, tags] = await Promise.all([getWiki().models.groups.query(), getWiki().models.tags.query()])
+      const aliases = tagAliasMap(tags)
+      const indexedGroups: Record<string, GroupRecord> = {}
+      for (const group of groups) indexedGroups[String(group.id)] = group
+      this.groups = indexedGroups
+      this.tagAliases = aliases
+    } catch (error) {
+      // A failed refresh must not preserve a permission that was just removed.
+      this.groups = {}
+      this.tagAliases = {}
+      throw error
+    } finally {
+      this.guest.cacheExpiration = DateTime.utc().minus({ days: 1 })
+    }
   },
 
   async reloadApiKeys() {
@@ -663,7 +671,7 @@ const auth: AuthService = {
   subscribeToEvents() {
     const inbound = getWiki().events.inbound
     inbound.on('reloadGroups', () => {
-      void this.reloadGroups()
+      void this.reloadGroups().catch(error => getWiki().logger.warn(error))
     })
     inbound.on('reloadApiKeys', () => {
       void this.reloadApiKeys()

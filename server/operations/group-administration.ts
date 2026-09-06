@@ -598,15 +598,20 @@ export const getGroupAdministrationStore = () => {
     onCommitted: async (id, members) => {
       // State and history have already committed. Notification trouble must not
       // present a successful write as retryable or erase its recorded outcome.
-      try {
-        await wiki.auth.reloadGroups()
-        wiki.events.outbound.emit('reloadGroups')
-        for (const userId of members) {
-          wiki.auth.revokeUserTokens({ id: userId, kind: 'u' })
-          wiki.events.outbound.emit('addAuthRevoke', { id: userId, kind: 'u' })
+      const deliver = async (work: () => unknown) => {
+        try {
+          await work()
+        } catch {
+          wiki.logger.warn(`Group ${id} committed; an authorization notification could not be delivered.`)
         }
-      } catch {
-        wiki.logger.warn(`Group ${id} committed; authorization notifications could not be fully delivered.`)
+      }
+      // Each delivery is independent: a cache read failure must not skip peer
+      // refreshes or revocation notifications for the affected accounts.
+      await deliver(() => wiki.events.outbound.emit('reloadGroups'))
+      await deliver(() => wiki.auth.reloadGroups())
+      for (const userId of members) {
+        await deliver(() => wiki.auth.revokeUserTokens({ id: userId, kind: 'u' }))
+        await deliver(() => wiki.events.outbound.emit('addAuthRevoke', { id: userId, kind: 'u' }))
       }
     }
   })

@@ -1,218 +1,31 @@
-<template lang='pug'>
-  v-container(fluid)
-    v-row
-      v-col(cols='12')
-        AdminHero(
-          title='Groups'
-          description='Manage groups and their permissions'
-          icon='mdi-account-group-outline'
-          heading-id='admin-groups-heading'
-        )
-          template(v-slot:actions)
-            v-btn(
-              icon
-              variant="outlined"
-              color='grey'
-              href='https://docs.requarks.io/groups'
-              target='_blank'
-              rel='noopener'
-              aria-label='Group documentation — opens in a new tab'
-            )
-              v-icon mdi-help-circle
-            v-btn(
-              icon
-              color='grey'
-              variant="outlined"
-              @click='refresh'
-              :loading='loading'
-              :disabled='loading'
-              aria-label='Refresh groups'
-            )
-              v-icon mdi-refresh
-            v-dialog(v-model='newGroupDialog' max-width='500' :fullscreen='$vuetify.display.smAndDown' :persistent='creating' aria-labelledby='new-group-title')
-              template(v-slot:activator='{ props }')
-                v-btn(color='primary' variant="flat" v-bind='props' size="large" :icon='$vuetify.display.smAndDown' aria-label='New group')
-                  v-icon(:start='$vuetify.display.mdAndUp') mdi-plus
-                  span(v-if='$vuetify.display.mdAndUp') New Group
-              v-card
-                .dialog-header.is-short
-                  h2#new-group-title New Group
-                v-card-text.pt-5
-                  v-alert(v-if='createError' type='error' variant='tonal' class='mb-3') {{ createError }}
-                  v-text-field(variant="outlined" prepend-icon='mdi-account-group' v-model='newGroupName' label='Group Name' counter='255' maxlength='255' @keydown.enter.prevent='createGroup' @update:model-value='createError = ``' ref='groupNameIpt')
-                v-card-chin.admin-dialog-actions
-                  v-spacer
-                  v-btn(variant="text" @click='newGroupDialog = false' :disabled='creating') Cancel
-                  v-btn(color='primary' @click='createGroup' :loading='creating' :disabled='creating') Create
-        v-card.mt-3.animated.fadeInUp
-          .admin-filter-bar.pa-2.d-flex.align-center
-            v-text-field(variant="solo" flat v-model='search' prepend-inner-icon='mdi-account-search-outline' label='Search groups' hide-details density="compact" @update:model-value='pagination = 1')
-            v-spacer
-            v-btn(v-if='hasActiveFilters' variant='text' size='small' color='primary' @click='clearFilters') Clear filters
-          v-alert(v-if='errorMessage && groups.length' type='error' variant='tonal' class='ma-3')
-            .d-flex.align-center
-              span {{ errorMessage }}
-              v-spacer
-              v-btn(variant='text' color='primary' @click='loadGroups') Try again
-          v-divider
-          v-data-table.admin-responsive-table(
-            :items='groups'
-            :headers='responsiveHeaders'
-            :hide-default-header='$vuetify.display.smAndDown'
-            :search='search'
-            v-model:page='pagination'
-            :items-per-page='15'
-            :loading='loading'
-            must-sort
-            hide-default-footer
-            aria-label='Groups'
-          )
-            template(v-slot:item='props')
-              tr(v-if='$vuetify.display.mdAndUp')
-                td {{ props.item.id }}
-                td
-                  router-link.admin-record-link(:to='`/groups/${props.item.id}`') {{ props.item.name }}
-                td {{ props.item.userCount }}
-                td {{ $helpers.formatMoment(props.item.createdAt, 'calendar') }}
-                td {{ $helpers.formatMoment(props.item.updatedAt, 'calendar') }}
-                td
-                  span.admin-status.admin-status--system(v-if='props.item.isSystem') System group
-                  span.text-medium-emphasis(v-else) Custom group
-              tr.admin-mobile-table-row(v-else)
-                td(:colspan='responsiveHeaders.length')
-                  .admin-mobile-record
-                    .d-flex.align-center
-                      router-link.admin-mobile-record-title(:to='`/groups/${props.item.id}`') {{ props.item.name }}
-                      v-spacer
-                      span.admin-status.admin-status--system(v-if='props.item.isSystem') System
-                      span.text-medium-emphasis(v-else) Custom
-                    .admin-mobile-record-meta {{ props.item.userCount }} users
-                    .text-body-small.text-medium-emphasis.mt-2 Updated {{ $helpers.formatMoment(props.item.updatedAt, 'calendar') }}
-            template(v-slot:no-data)
-              async-state(v-if='loading' state='loading' title='Loading groups' message='Fetching the latest group list.')
-              async-state(v-else-if='errorMessage' state='error' title='Groups could not be loaded' :message='errorMessage' retry-label='Try again' @retry='loadGroups')
-              async-state(v-else-if='hasActiveFilters' state='empty' title='No groups match this search' message='Clear the search to see all groups.')
-              async-state(v-else state='empty' title='No groups yet' message='Create a group to organize access.')
-            template(v-slot:bottom='{ pageCount }')
-              nav(v-if='pageCount > 1' aria-label='Groups pagination')
-                .text-center.py-2
-                  v-pagination(v-model='pagination' :length='pageCount')
+<template>
+  <v-container fluid class="group-directory"><admin-hero title="Groups" description="Give people a shared purpose and the access to fulfil it." eyebrow="People & access" icon="mdi-account-group-outline"><template #actions><v-btn variant="text" prepend-icon="mdi-refresh" :loading="loading" :disabled="creating" @click="load">Reload directory</v-btn><v-btn v-if="directory?.canCreate" color="primary" variant="flat" prepend-icon="mdi-plus" @click="creating = true">Create group</v-btn></template></admin-hero>
+    <nav class="group-directory-stats" aria-label="Group filters"><button v-for="stat in stats" :key="stat.key" :aria-pressed="kind === stat.key" @click="setKind(stat.key)"><span>{{ stat.title }}</span><strong>{{ stat.value }}</strong></button></nav>
+    <section aria-labelledby="group-directory-title"><div class="group-heading"><div><span class="group-kicker">Access directory</span><h2 id="group-directory-title">Organized around responsibility</h2></div><router-link to="/users" class="text-body-small">Manage people <v-icon icon="mdi-arrow-right" size="16" /></router-link></div>
+      <form class="group-directory-filters" @submit.prevent="searchNow"><v-text-field v-model="search" label="Search group name or purpose" prepend-inner-icon="mdi-magnify" variant="outlined" hide-details density="comfortable" clearable @update:model-value="queueSearch" /><v-btn v-if="search || kind !== 'all'" variant="text" @click="clearFilters">Clear filters</v-btn></form>
+      <async-state v-if="loading" state="loading" title="Loading groups" message="Reading access policies and memberships." /><async-state v-else-if="error" state="error" title="The group directory is unavailable" :message="error" retry-label="Try again" @retry="load" /><async-state v-else-if="!directory?.items.length" state="empty" :title="search || kind !== 'all' ? 'No matching groups' : 'No groups to show'" message="Try another search or create a group around a shared responsibility." />
+      <template v-else><ul class="group-register"><li v-for="group in directory.items" :key="group.id" class="group-register-row"><div class="group-register-identity"><router-link :to="groupLink(group.id)" class="group-register-name">{{ group.name }}<v-icon v-if="group.isSystem" icon="mdi-lock-outline" size="16" aria-label="System group" /></router-link><p class="group-register-purpose">{{ group.description || (group.id === 1 ? 'Full workspace administration and access to all content.' : group.id === 2 ? 'The policy applied to anonymous visitors.' : 'No purpose recorded yet.') }}</p><div class="group-register-meta"><span class="group-pill">{{ group.permissions.includes('manage:system') ? 'Full system access' : group.permissions.length + ' permissions' }}</span><span class="group-pill">{{ group.ruleCount }} page {{ group.ruleCount === 1 ? 'rule' : 'rules' }}</span><span v-if="group.isSystem" class="group-pill">System</span></div></div><div class="group-register-number"><strong>{{ group.memberCount }}</strong><span>{{ group.memberCount === 1 ? 'member' : 'members' }}</span></div><div class="group-register-number"><strong>{{ group.apiKeyCount }}</strong><span>active credentials</span></div><v-btn :to="groupLink(group.id)" variant="text" append-icon="mdi-arrow-right" class="group-register-action" :aria-label="'Manage ' + group.name">Manage</v-btn></li></ul><div class="group-pagination"><span aria-live="polite">{{ offset + 1 }}–{{ Math.min(offset + directory.items.length, directory.total) }} of {{ directory.total }} groups</span><div class="group-actions"><v-btn variant="text" :disabled="offset === 0" @click="paginate(-1)">Previous</v-btn><v-btn variant="text" :disabled="offset + directory.limit >= directory.total" @click="paginate(1)">Next</v-btn></div></div></template>
+    </section><group-create ref="createForm" v-model="creating" @created="created" />
+  </v-container>
 </template>
-
-<script lang='ts'>
-import { markRaw } from 'vue'
+<script lang="ts">
 import AsyncState from '@/components/common/async-state.vue'
-import { createGroup, fetchGroupsList, type GroupListRow } from '../../helpers/groups-api'
-import { getErrorMessage } from '../../helpers/root-ui-store'
-import { wikiStore } from '@/store/index.ts'
-
+import GroupCreate from './admin-groups-create.vue'
+import { fetchGroupDirectory } from '../../helpers/group-workspace-api.ts'
+import { getErrorMessage } from '../../helpers/root-ui-store.ts'
+import type { GroupDirectory } from '../../../shared/group-policy.ts'
 export default {
-  components: { AsyncState },
-  data() {
-    return {
-      newGroupDialog: false,
-      newGroupName: '',
-      pagination: 1,
-      groups: [] as GroupListRow[],
-      headers: markRaw([
-        { title: 'ID', key: 'id', value: 'id', width: 80, sortable: true },
-        { title: 'Name', key: 'name', value: 'name' },
-        { title: 'Users', key: 'userCount', value: 'userCount', width: 200 },
-        { title: 'Created', key: 'createdAt', value: 'createdAt', width: 250 },
-        { title: 'Last Updated', key: 'updatedAt', value: 'updatedAt', width: 250 },
-        { title: 'Status', key: 'isSystem', value: 'isSystem', width: 120, sortable: false }
-      ]),
-      search: '',
-      loading: false,
-      errorMessage: '',
-      creating: false,
-      createError: '',
-      isDisposed: false
-    }
-  },
-  computed: {
-    responsiveHeaders() {
-      return this.$vuetify.display.smAndDown ? this.headers.filter(header => (header.key ?? header.value) === 'name') : this.headers
-    },
-    hasActiveFilters() {
-      return Boolean(this.search.trim())
-    }
-  },
-  watch: {
-    newGroupDialog(newValue: boolean) {
-      if (newValue) {
-        this.createError = ''
-        this.$nextTick(() => {
-          const input = this.$refs.groupNameIpt
-          if (typeof input === 'object' && input !== null && 'focus' in input && typeof input.focus === 'function') input.focus()
-        })
-      }
-    }
-  },
+  components: { AsyncState, GroupCreate },
+  data() { return { directory: null as GroupDirectory | null, search: '', kind: 'all', offset: 0, loading: false, error: '', creating: false, sequence: 0, disposed: false, timer: null as ReturnType<typeof setTimeout> | null } },
+  computed: { stats() { return [{ key: 'all', title: 'All groups', value: this.directory?.counts.groups ?? '—' },{ key: 'administrative', title: 'Administrative', value: this.directory?.counts.administrative ?? '—' },{ key: 'empty', title: 'Without members', value: this.directory?.counts.empty ?? '—' },{ key: 'system', title: 'System identities', value: this.directory?.counts.system ?? '—' }] } },
+  watch: { '$route.query': { immediate: true, handler() { const q = this.$route.query, search = typeof q.search === 'string' ? q.search : '', kind = typeof q.kind === 'string' && ['all','administrative','empty','system','custom'].includes(q.kind) ? q.kind : 'all', offset = /^\d+$/.test(String(q.offset ?? '')) ? Math.min(Number(q.offset), 1000000) : 0; if (this.directory && search === this.search && kind === this.kind && offset === this.offset) return; this.search = search; this.kind = kind; this.offset = offset; void this.load(false) } } },
+  beforeUnmount() { this.disposed = true; this.sequence++; if (this.timer) clearTimeout(this.timer) },
+  beforeRouteLeave() { return (this.$refs.createForm as { canLeave: () => boolean } | undefined)?.canLeave() ?? true },
   methods: {
-    clearFilters() {
-      this.search = ''
-      this.pagination = 1
-    },
-    async loadGroups() {
-      if (this.isDisposed) return false
-      this.loading = true
-      this.errorMessage = ''
-      wikiStore.startLoading('admin-groups-refresh')
-      try {
-        const groups = await fetchGroupsList(window.fetch.bind(window), 'Groups list response is invalid')
-        if (this.isDisposed) return false
-        this.groups = markRaw(groups)
-        return true
-      } catch (err) {
-        if (this.isDisposed) return false
-        this.errorMessage = getErrorMessage(err)
-        wikiStore.showNotification({ style: 'red', message: this.errorMessage, icon: 'alert' })
-        return false
-      } finally {
-        if (!this.isDisposed) this.loading = false
-        wikiStore.stopLoading('admin-groups-refresh')
-      }
-    },
-    async refresh() {
-      if (await this.loadGroups()) wikiStore.showNotification({ message: 'Groups have been refreshed.', style: 'success', icon: 'cached' })
-    },
-    async createGroup() {
-      if (this.creating || this.isDisposed) return
-      if (this.newGroupName.trim().length < 1) {
-        this.createError = 'Enter a group name.'
-        return
-      }
-      this.newGroupName = this.newGroupName.trim()
-      this.creating = true
-      this.createError = ''
-      wikiStore.startLoading('admin-groups-create')
-      try {
-        const data = await createGroup(window.fetch.bind(window), this.newGroupName)
-        if (this.isDisposed) return
-        if (data.succeeded !== true) throw new Error(data.message || 'An unexpected error occurred.')
-        this.newGroupName = ''
-        this.newGroupDialog = false
-        if (await this.loadGroups()) wikiStore.showNotification({ style: 'success', message: 'Group has been created successfully.', icon: 'check' })
-      } catch (err) {
-        if (this.isDisposed) return
-        this.createError = getErrorMessage(err)
-        wikiStore.showError(err)
-      } finally {
-        if (!this.isDisposed) this.creating = false
-        wikiStore.stopLoading('admin-groups-create')
-      }
-    }
-  },
-  created() {
-    this.loadGroups()
-  },
-  beforeUnmount() {
-    this.isDisposed = true
+    async load(sync = true) { const sequence = ++this.sequence; this.loading = true; this.error = ''; if (sync) { const query: Record<string,string> = {}; if (this.search) query.search = this.search; if (this.kind !== 'all') query.kind = this.kind; if (this.offset) query.offset = String(this.offset); void this.$router.replace({ query }) } try { const directory = await fetchGroupDirectory(new URLSearchParams({ search: this.search || '', kind: this.kind, offset: String(this.offset), limit: '25' })); if (!this.disposed && sequence === this.sequence) this.directory = directory } catch (error) { if (!this.disposed && sequence === this.sequence) this.error = getErrorMessage(error) } finally { if (!this.disposed && sequence === this.sequence) this.loading = false } },
+    groupLink(id: number) { return { path: `/groups/${id}`, query: { from: this.$route.fullPath } } },
+    queueSearch() { if (this.timer) clearTimeout(this.timer); this.timer = setTimeout(() => this.searchNow(), 250) }, searchNow() { if (this.timer) clearTimeout(this.timer); this.offset = 0; void this.load() }, setKind(kind: string) { this.kind = kind; this.searchNow() }, clearFilters() { this.search = ''; this.kind = 'all'; this.searchNow() }, paginate(direction: number) { this.offset = Math.max(0, this.offset + direction * 25); void this.load() }, created(id: number) { this.creating = false; void this.$router.push(this.groupLink(id)) }
   }
 }
 </script>
-
-<style lang='scss'>
-
-</style>
+<style lang="scss" src="./group-workspace.scss"></style>
