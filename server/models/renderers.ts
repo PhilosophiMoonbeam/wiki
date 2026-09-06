@@ -4,7 +4,8 @@ import path from 'node:path'
 import fs from 'fs-extra'
 import _ from 'lodash'
 import * as yaml from 'js-yaml'
-import { DepGraph } from 'dependency-graph'
+import { buildRenderingPlan } from '../../shared/rendering-policy.ts'
+import { projectRenderingModules } from '../helpers/rendering-policy.ts'
 import commonHelper from '../helpers/common.ts'
 import { readModuleDefinition, type LoadedModuleDefinition, type ModuleConfig } from './moduleTypes.ts'
 
@@ -111,48 +112,18 @@ export default class Renderer extends Model {
     }
   }
 
-  static async getRenderingPipeline (contentType: string): Promise<RendererDefinition[] | false> {
-    const renderersDb = await WIKI.models.renderers.query().where('isEnabled', true)
-    if (!renderersDb.length) {
-      WIKI.logger.error('Rendering pipeline is empty!')
-      return false
-    }
-    const renderers = renderersDb.map((storedRenderer): RendererDefinition => {
-      const definition = _.find(WIKI.data.renderers, ['key', storedRenderer.key])
-      if (!definition) throw new Error(`Renderer definition not found: ${storedRenderer.key}`)
-      return { ...definition, config: storedRenderer.config }
-    })
-    const rawCores = renderers.filter(renderer => renderer.dependsOn === undefined).map(core => {
-      core.children = renderers.filter(renderer => renderer.dependsOn === core.key)
-      return core
-    })
-    const graph = new DepGraph({ circular: true })
-    rawCores.forEach(core => {
-      graph.addNode(core.key)
-    })
-    rawCores.forEach(core => {
-      rawCores.forEach(coreTarget => {
-        if (core.key !== coreTarget.key && core.output === coreTarget.input) graph.addDependency(core.key, coreTarget.key)
-      })
-    })
-    let activeCoreKeys = rawCores.filter(core => core.input === contentType).map(core => core.key)
-    for (const coreKey of [...activeCoreKeys]) activeCoreKeys = _.union(activeCoreKeys, graph.dependenciesOf(coreKey))
-    const activeCores = rawCores.filter(core => activeCoreKeys.includes(core.key))
-    const graphActive = new DepGraph({ circular: true })
-    activeCores.forEach(core => {
-      graphActive.addNode(core.key)
-    })
-    activeCores.forEach(core => {
-      activeCores.forEach(coreTarget => {
-        if (core.key !== coreTarget.key && core.output === coreTarget.input) graphActive.addDependency(core.key, coreTarget.key)
-      })
-    })
-    const orderedCores: RendererDefinition[] = []
-    for (const coreKey of graphActive.overallOrder().reverse()) {
-      const core = rawCores.find(candidate => candidate.key === coreKey)
-      if (core) orderedCores.push(core)
-    }
-    return orderedCores
+  static async getRenderingPipeline (contentType: string): Promise<RendererDefinition[]> {
+    // The administration trace and the rendering worker share one planner.
+    const stored = await WIKI.models.renderers.query().orderBy('key')
+    const modules = projectRenderingModules(stored, WIKI.data.renderers)
+    return buildRenderingPlan(modules, contentType).map(stage => ({
+      ...WIKI.data.renderers.find(definition => definition.key === stage.core.key)!,
+      config: stage.core.config,
+      children: [...stage.before, ...stage.after].map(child => ({
+        ...WIKI.data.renderers.find(definition => definition.key === child.key)!,
+        config: child.config
+      }))
+    }))
   }
 }
 

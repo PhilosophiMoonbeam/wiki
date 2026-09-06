@@ -1,6 +1,8 @@
 const { databaseInit } = vi.hoisted(() => ({ databaseInit: vi.fn() }))
 vi.mockModule('../../core/db.ts', import.meta.url, () => ({ default: { init: databaseInit } }))
 
+vi.mockModule('../../modules/rendering/html-core/renderer.ts', import.meta.url, () => ({ default: { render() { return this.input } } }))
+
 const deferred = () => {
   let resolve
   const promise = new Promise(resolvePromise => {
@@ -55,7 +57,7 @@ const models = {
         firstRenderPaused.resolve()
         await resumeFirstRender.promise
       }
-      return []
+      return [{ key: 'htmlCore', config: {}, children: [] }]
     })
   }
 }
@@ -119,4 +121,15 @@ describe('render-page revision fence', () => {
     expect(currentPage.render).toBe('<p>revision 2</p>')
     expect(savePageToCache).toHaveBeenCalledOnce()
   })
+  it('preserves stored output when no parser can transform the source', async () => {
+    currentPage = { id: 43, sourceRevision: 1, content: '<script>unsafe()</script>', contentType: 'markdown', render: '<p>Existing output</p>' }
+    databaseInit.mockResolvedValue(models)
+    models.renderers.getRenderingPipeline.mockResolvedValueOnce([])
+    await expect(renderPage(43)).rejects.toThrow('No enabled rendering pipeline')
+    expect(currentPage.render).toBe('<p>Existing output</p>')
+    expect(pages.query).not.toHaveBeenCalled()
+    expect(savePageToCache).not.toHaveBeenCalled()
+    expect(models.knex.destroy).toHaveBeenCalledOnce()
+  })
+
 })

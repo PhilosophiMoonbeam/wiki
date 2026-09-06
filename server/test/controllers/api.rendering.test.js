@@ -1,3 +1,5 @@
+const writeLegacy = vi.fn().mockResolvedValue({})
+vi.mockModule('../../operations/rendering-workspace.ts', import.meta.url, () => ({ writeLegacyRenderingSettings: writeLegacy, readRenderingWorkspace: vi.fn(), writeRenderingWorkspace: vi.fn(), inspectRenderingOutput: vi.fn() }))
 vi.mockModule('express', import.meta.url, () => {
   const routers = []
 
@@ -25,9 +27,11 @@ const express = await import('express')
 describe('controllers/api rendering endpoints', () => {
   beforeEach(() => {
     vi.resetModules()
+    writeLegacy.mockReset().mockResolvedValue({})
     express.__routers.length = 0
 
     global.WIKI = {
+      logger: { warn: vi.fn() },
       auth: {
         checkAccess: vi.fn()
       },
@@ -241,7 +245,7 @@ describe('controllers/api rendering endpoints', () => {
 
   it('saves renderer configuration with GraphQL mutation parity', async () => {
     global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const { patch, where } = mockRendererPatch()
+    mockRendererPatch()
     const handler = await loadSaveRenderersHandler()
     const req = {
       user: { permissions: ['manage:system'] },
@@ -268,20 +272,10 @@ describe('controllers/api rendering endpoints', () => {
 
     await handler(req, res, vi.fn())
 
-    expect(patch).toHaveBeenNthCalledWith(1, {
-      isEnabled: true,
-      config: {
-        safeMode: false,
-        flavor: 'commonmark',
-        missingValue: null
-      }
-    })
-    expect(where).toHaveBeenNthCalledWith(1, 'key', 'markdownCore')
-    expect(patch).toHaveBeenNthCalledWith(2, {
-      isEnabled: false,
-      config: {}
-    })
-    expect(where).toHaveBeenNthCalledWith(2, 'key', 'emojiRenderer')
+    expect(writeLegacy).toHaveBeenCalledWith([
+      { key: 'markdownCore', isEnabled: true, config: { safeMode: false, flavor: 'commonmark', missingValue: null } },
+      { key: 'emojiRenderer', isEnabled: false, config: {} }
+    ])
     expect(res.json).toHaveBeenCalledWith({ message: 'Renderers updated successfully' })
   })
 
@@ -313,8 +307,7 @@ describe('controllers/api rendering endpoints', () => {
 
   it('returns JSON errors when renderer save fails unexpectedly', async () => {
     global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const patch = vi.fn(() => ({ where: vi.fn().mockRejectedValue(new Error('database unavailable')) }))
-    global.WIKI.models.renderers.query.mockReturnValue({ patch })
+    writeLegacy.mockRejectedValue(new Error('database unavailable'))
     const handler = await loadSaveRenderersHandler()
     const req = { user: {}, body: { renderers: [{ key: 'markdownCore', isEnabled: true, config: [] }] } }
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn(), sendStatus: vi.fn() }
@@ -322,7 +315,7 @@ describe('controllers/api rendering endpoints', () => {
     await handler(req, res, vi.fn())
 
     expect(res.status).toHaveBeenCalledWith(500)
-    expect(res.json).toHaveBeenCalledWith({ error: 'database unavailable' })
+    expect(res.json).toHaveBeenCalledWith({ error: 'Rendering request failed. Try again or check server logs.' })
   })
 
   it('forwards unexpected failures to next', async () => {

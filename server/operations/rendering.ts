@@ -1,5 +1,6 @@
 import _ from 'lodash'
 
+import { writeLegacyRenderingSettings } from './rendering-workspace.ts'
 import configuration, { validateRows } from './configuration.ts'
 
 const { parseConfig, serializeConfig } = configuration
@@ -58,12 +59,7 @@ const updateRenderers = async (renderers: unknown): Promise<void> => {
     isEnabled: renderer.isEnabled,
     config: parseConfig(renderer.config, { errorMessage: 'Invalid renderers payload' })
   }))
-  for (const renderer of updates) {
-    await rendererModel.query().patch({
-      isEnabled: renderer.isEnabled,
-      config: renderer.config
-    }).where('key', renderer.key)
-  }
+  await writeLegacyRenderingSettings(updates)
 }
 
 export default { listRenderers, updateRenderers }

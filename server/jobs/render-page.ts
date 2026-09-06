@@ -57,6 +57,7 @@ export default async function renderPage(pageId: number | string): Promise<void>
 
     await wiki.models.renderers.fetchDefinitions()
     const pipeline = await wiki.models.renderers.getRenderingPipeline(page.contentType)
+    if (!pipeline.length) throw new Error(`No enabled rendering pipeline for ${page.contentType}. Existing output was preserved.`)
     let output = page.content
     for (const core of pipeline) {
       const rendererModule = (await import(`../modules/rendering/${_.kebabCase(core.key)}/renderer.ts`)) as unknown as { default: Renderer }
