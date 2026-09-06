@@ -25,6 +25,7 @@ export interface WebhookDelivery {
   statusCode: number | null
   responseSnippet: string | null
   lastError: string | null
+  nextRunAt: string | null
   createdAt: string
   deliveredAt: string | null
 }
@@ -94,9 +95,25 @@ export const rotateWebhookSecret = async (fetchImpl: FetchImpl, id: string): Pro
 export const fetchWebhookDeliveries = async (fetchImpl: FetchImpl, id: string): Promise<WebhookDelivery[]> => {
   const payload = await jsonRequest(fetchImpl, `/_api/webhooks/${encodeURIComponent(id)}/deliveries`)
   if (!Array.isArray(payload)) throw new Error('Webhook deliveries response is invalid')
-  return payload as WebhookDelivery[]
+  return payload.map(value => {
+    if (!isRecord(value) ||
+      !['id', 'eventId', 'eventType', 'jobId', 'createdAt'].every(key => typeof value[key] === 'string') ||
+      !['pending', 'running', 'succeeded', 'failed', 'cancelled'].includes(String(value.state)) ||
+      !['eventVersion', 'attempts', 'maxAttempts'].every(key => Number.isSafeInteger(value[key]) && Number(value[key]) >= 0) ||
+      !(value.statusCode === null || Number.isSafeInteger(value.statusCode)) ||
+      !['responseSnippet', 'lastError', 'deliveredAt', 'nextRunAt'].every(key => value[key] === null || typeof value[key] === 'string')) {
+      throw new Error('Webhook delivery response is invalid')
+    }
+    return value as unknown as WebhookDelivery
+  })
 }
 
 export const changeWebhookDelivery = async (fetchImpl: FetchImpl, id: string, action: 'retry' | 'cancel'): Promise<void> => {
   await jsonRequest(fetchImpl, `/_api/webhooks/deliveries/${encodeURIComponent(id)}/${action}`, { method: 'POST' })
+}
+
+export const sendWebhookTest = async (fetchImpl: FetchImpl, id: string): Promise<string> => {
+  const payload = await jsonRequest(fetchImpl, `/_api/webhooks/${encodeURIComponent(id)}/test`, { method: 'POST' })
+  if (!isRecord(payload) || typeof payload.deliveryId !== 'string') throw new Error('Webhook test response is invalid')
+  return payload.deliveryId
 }

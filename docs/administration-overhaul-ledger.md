@@ -16,9 +16,9 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | Authentication | Providers, sign-in, provisioning and diagnostics | Pending |
 | Security | Sessions, protections and policies | Pending |
 | Wiki Agent | Providers/models, skills, browser, tools, memory, MCP and runtime | Implemented; first milestone verified |
-| Search | Providers, retrieval, index lifecycle and evaluation | Implemented; deployment verification pending |
+| Search | Providers, retrieval, index lifecycle and evaluation | Implemented; first milestone verified |
 | API | Credentials/scopes, integration setup and reference | Pending |
-| Webhooks | Events, endpoints, deliveries, tests and recovery | Pending |
+| Webhooks | Events, endpoints, deliveries, tests and recovery | Implemented; deployment verification pending |
 | General | Identity, announcements, features and defaults | Pending |
 | Theme | Appearance, previews and reversible editing | Pending |
 | Navigation | Structure, ordering, audiences and preview | Pending |
@@ -67,3 +67,23 @@ Initial code review confirms that engine selection/configuration and rebuilding 
 - Enumerated configuration settings are validated before any engine rows are changed, preventing an invalid dictionary selection from being persisted through the API.
 
 Verification: draft/reset/save-failure/navigation tests; REST transport and schema tests; administrator access and error-redaction tests; engine inspection tests; shared/client/server type checks, lint, build and bundle budgets. The exact inspection SQL was also executed against isolated PostgreSQL temporary tables covering current, missing, stale, private, unpublished and orphaned entries. All three sections passed browser preview at 1440px, 900px and 390px in light/dark themes with no page overflow, JavaScript errors or WCAG A/AA violations. Interactive checks covered a real query, configuration reset, navigation cancellation, inspection failure/retry, rebuild review cancellation and section persistence. Production verification is the next gate.
+
+Search deployment `dd87cd09` is healthy. Unintercepted browser verification covered all three sections at 1440px, 900px and 390px in light and dark themes with no overflow, JavaScript errors or WCAG A/AA violations. Real queries, inspection and a server-confirmed index rebuild passed; the post-rebuild snapshot reported zero missing, stale or excluded entries with matching dictionary metadata.
+
+## Webhooks findings
+
+The old endpoint editor required manually typed event subscriptions, allowed silent draft loss when changing selection, and displayed delivery state without the stored error, response or retry schedule. Actual page producers emit hyphenated names that subscription validation rejected. There was no targeted receiver test or embedded integration contract.
+
+### Webhooks implementation and verification
+
+- Endpoint directory with name/URL search and status filtering; a compact mobile chooser. Each selected endpoint has directly linked Setup, Deliveries and Receiver guide sections, with endpoint identity preserved in the URL.
+- Destination and subscription steps, actual page/review event catalog, custom subscription support, and matching server/client validation for hyphenated event names. New endpoints start disabled while their receiver signing secret is configured. Existing API callers retain the prior default behavior.
+- Saved/draft separation, change-gated save/reset, navigation and endpoint-switch protection, recoverable failed saves, and protected one-time signing secret display. Rotation and deletion clearly explain consequences for queued and in-flight deliveries.
+- Delivery search/state filters and expandable response, error, identifiers, timestamps and next-attempt details. Retry and cancellation use the existing durable state machine. Disabled deliveries are identified as skipped instead of implying a receiver acknowledged them.
+- New administrator-only POST `/_api/webhooks/:id/test` queues a targeted `webhook.test` event containing only a synthetic marker/message. It uses the same signed worker delivery path, attempts once, rejects disabled/missing endpoints and duplicate active tests, and cannot fan out to other subscribers. The PostgreSQL endpoint lock serializes concurrent test creation; all inserts are transactional.
+- Receiver guide documents the actual envelope, signature inputs/headers, timeout, acknowledgement, idempotency, metadata access and queue-history retention. Responses are private/no-store; unexpected server errors are logged and redacted from the client.
+- Capability limits: history retains only the latest response per delivery and is bounded to the latest 100 records; terminal queue cleanup can remove history after 30 days. There is no durable per-attempt timeline, automatic UI polling, per-page webhook ACL or permanent webhook audit archive. These limits are explicit in the interface.
+
+Validation: targeted queue, operation, authorization, subscription, worker and client workflow tests; shared/client/server type checks; lint; Vite build. Preview browser review covered three sections at 1440px, 900px and 390px in light and dark themes with no overflow, JavaScript errors or WCAG A/AA violations. Controlled fixtures exercised create/save/failure/reset, event selection, endpoint and route draft guards, secret acknowledgement/rotation, test queueing, delivery retry/cancel, refresh recovery, deletion and bookmark restoration. No test messages were sent to external receivers during verification.
+
+The targeted test transaction also passed against PostgreSQL temporary copies of the four relevant tables: one queued delivery, synthetic event marked published, active-test conflict, and disabled-endpoint rejection. No worker was invoked and no live rows were modified.

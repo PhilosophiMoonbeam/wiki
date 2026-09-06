@@ -1,3 +1,5 @@
+import { isWebhookEventName } from '../../shared/webhook-events.ts'
+import { queueWebhookTest } from '../core/webhook-test.ts'
 import { randomUUID } from 'node:crypto'
 import type { Knex } from 'knex'
 import { DurableJobStore } from '../core/durable-jobs.ts'
@@ -13,7 +15,6 @@ interface WikiContext {
 }
 
 const wiki = WIKI as unknown as WikiContext
-const validEventType = /^(\*|[a-z][a-z0-9]*(?:\.[a-z0-9]+)*)$/
 
 const requiredString = (value: unknown, label: string, maxLength: number): string => {
   if (typeof value !== 'string' || value.trim().length < 1 || value.trim().length > maxLength) {
@@ -24,7 +25,7 @@ const requiredString = (value: unknown, label: string, maxLength: number): strin
 
 const eventList = (value: unknown): string[] => {
   if (!Array.isArray(value) || value.length < 1 || value.length > 50 ||
-    !value.every(event => typeof event === 'string' && validEventType.test(event))) {
+    !value.every(event => typeof event === 'string' && isWebhookEventName(event))) {
     throw new TypeError('events must contain 1 through 50 valid event names')
   }
   return [...new Set(value as string[])]
@@ -46,6 +47,7 @@ const list = async () => {
 }
 
 const create = async (input: Record<string, unknown>) => {
+  if (input.isEnabled !== undefined && typeof input.isEnabled !== 'boolean') throw new TypeError('isEnabled must be a boolean')
   const name = requiredString(input.name, 'name', 128)
   const url = requiredString(input.url, 'url', 2_048)
   const events = eventList(input.events)
@@ -123,6 +125,7 @@ const changeDelivery = async (deliveryId: string, action: 'retry' | 'cancel'): P
 }
 
 export default {
+  sendTest: (id: string) => queueWebhookTest(wiki.models.knex, id),
   changeDelivery,
   create,
   list,

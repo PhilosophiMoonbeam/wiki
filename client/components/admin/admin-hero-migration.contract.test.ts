@@ -43,7 +43,7 @@ const routedAdminPageFiles = [
 
 const legacyHeaderClass = /\.admin-header(?![\w-])/
 const legacyHeaderTitleClass = /\.admin-header-title(?![\w-])/
-const adminHeroElement = /(?:^|\n)\s*(?:admin-hero|AdminHero)(?=[.(\s]|$)/
+const adminHeroElement = /(?:^|\n)\s*<?(?:admin-hero|AdminHero)(?=[.(\s>/]|$)/
 
 interface DirectPugChild {
   attributes: string[]
