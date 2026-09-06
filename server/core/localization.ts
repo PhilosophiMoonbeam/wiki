@@ -16,7 +16,7 @@ type WikiContext = WikiSource & {
   config: { lang: { code: string; namespaces: string[]; namespacing: boolean; revision?: string } }
   data: { localeNamespaces: string[] }
   logger: { info(message: string): void; error(message: string): void }
-  models: { locales: { query(): { findOne(column: string, value: string): Promise<LocaleRow | null> } } }
+  models: { locales: { query(): { select(column: string): Promise<{ code: string }[]>; findOne(column: string, value: string): Promise<LocaleRow | null> } } }
 }
 const wiki = WIKI as WikiContext
 let refreshQueue: Promise<void> = Promise.resolve()
@@ -25,6 +25,7 @@ const engineLocale = (locale: string): string => Intl.getCanonicalLocales(locale
 const localization = {
   engine: i18next,
   namespaces: [] as string[],
+  localeCodes: [] as string[],
   appliedRevision: null as string | null,
   appliedLocale: null as string | null,
   init() {
@@ -51,6 +52,7 @@ const localization = {
       for (const code of codes) LocaleCodeSchema.parse(code)
       const english: unknown = await fs.readJson(path.join(wiki.SERVERPATH, 'locales/en.json'))
       if (!_.isPlainObject(english)) throw new Error('Bundled English locale is invalid.')
+      const installed = await wiki.models.locales.query().select('code')
       const resources = new Map<string, Record<string, unknown>>()
       // Read every package before mutating the engine; failed refreshes retain the last good resources.
       for (const code of codes) {
@@ -88,6 +90,7 @@ const localization = {
         loadedBundles.set(code, loaded)
       }
       this.namespaces = [...namespaces]
+      this.localeCodes = installed.map(locale => locale.code).filter(code => LocaleCodeSchema.safeParse(code).success)
       await this.engine.changeLanguage(engineLocale(config.code))
       this.appliedLocale = config.code
       this.appliedRevision = config.revision ?? null

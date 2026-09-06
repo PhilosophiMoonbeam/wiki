@@ -85,7 +85,7 @@ interface MasterConfig extends Record<string, unknown> {
   description: string
   footerOverride: string
   host: string
-  lang: { code: string; rtl: boolean }
+  lang: { code: string; rtl: boolean; revision?: string }
   logoUrl: string
   port: number | string
   security: { securityTrustProxy: boolean }
@@ -520,6 +520,7 @@ export default async function startMaster(wiki: HttpTransportRuntime): Promise<t
       tocPosition: wiki.config.theming.tocPosition || 'left',
       readerLayout: normalizeReaderLayout(wiki.config.theming.reading),
       lang: wiki.config.lang.code,
+      localeRevision: wiki.config.lang.revision || wiki.product.revision,
       rtl: wiki.config.lang.rtl,
       company: wiki.config.company,
       contentLicense: wiki.config.contentLicense,

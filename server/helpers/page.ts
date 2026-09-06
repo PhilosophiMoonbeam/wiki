@@ -37,14 +37,18 @@ interface PageMetadata {
 }
 
 interface WikiContext {
-  config: { lang: { code: string } }
+  config: { lang: { code: string; namespaces?: string[] } }
+  lang?: { localeCodes?: string[] }
   data: { reservedPaths: string[] }
 }
 
 const wiki = WIKI as unknown as WikiContext
 
 const localeSegmentRegex = /^[A-Z]{2}(-[A-Z]{2})?$/i
-const localeFolderRegex = /^([a-z]{2}(?:-[a-z]{2})?\/)?(.*)/i
+const localeSegment = (segment: string): string | undefined => {
+  const known = [...(wiki.lang?.localeCodes ?? []), wiki.config.lang.code, ...(wiki.config.lang.namespaces ?? [])]
+  return known.find(code => code.toLowerCase() === segment.toLowerCase()) ?? (localeSegmentRegex.test(segment) ? segment : undefined)
+}
 // biome-ignore lint/suspicious/noControlCharactersInRegex: these are the exact filesystem control ranges this guard rejects.
 const unsafeCharsRegex = /[\x00-\x1f\x80-\x9f\\"|<>:*?]/
 
@@ -84,8 +88,8 @@ const pageHelper = {
       pathParts.shift()
     }
     const localePart = pathParts[0]
-    if (localePart && localeSegmentRegex.test(localePart)) {
-      pathObj.locale = localePart
+    if (localePart && localeSegment(localePart)) {
+      pathObj.locale = localeSegment(localePart)!
       pathObj.explicitLocale = true
       pathParts.shift()
     }
@@ -146,7 +150,7 @@ const pageHelper = {
     const firstSection = _.head(rawPath.split('/'))
     if (!firstSection || firstSection.length <= 1) {
       return true
-    } else if (localeSegmentRegex.test(firstSection)) {
+    } else if (localeSegment(firstSection)) {
       return true
     } else if (
       _.some(wiki.data.reservedPaths, p => {
@@ -182,15 +186,10 @@ const pageHelper = {
       locale: wiki.config.lang.code,
       path: _.initial(fpath.split('.')).join('')
     }
-    const result = localeFolderRegex.exec(meta.path)
-    const localeFolder = result?.[1]
-    const pagePath = result?.[2]
-    if (localeFolder && pagePath !== undefined) {
-      meta = {
-        locale: localeFolder.replace('/', ''),
-        path: pagePath
-      }
-    }
+    const [first, ...rest] = meta.path.split('/')
+    const locale = first && rest.length ? localeSegment(first) : undefined
+    if (locale) meta = { locale, path: rest.join('/') }
+
     return meta
   }
 }

@@ -99,3 +99,17 @@ TEST CONTENT`
     expect(result).toEqual(expected)
   })
 })
+
+
+describe('installed language routing', () => {
+  it('recognizes installed script codes without treating ordinary three-letter paths as locales', async () => {
+    global.WIKI.lang = { localeCodes: ['en', 'sr-latn'] }
+    const helper = (await vi.importFresh('../../helpers/page.ts', import.meta.url)).default
+    expect(helper.parsePath('/sr-Latn/handbook')).toMatchObject({ locale: 'sr-latn', path: 'handbook', explicitLocale: true })
+    expect(helper.getPagePath('sr-latn/handbook.md')).toEqual({ locale: 'sr-latn', path: 'handbook' })
+    expect(helper.isReservedPath('sr-latn/page')).toBe(true)
+    expect(helper.parsePath('/faq/start')).toMatchObject({ locale: 'en', path: 'faq/start', explicitLocale: false })
+    expect(helper.getPagePath('faq/start.md')).toEqual({ locale: 'en', path: 'faq/start' })
+    expect(helper.isReservedPath('faq')).toBe(false)
+  })
+})

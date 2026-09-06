@@ -21,6 +21,7 @@ export type SiteConfig = {
   readerLayout?: import('../shared/theme-policy.ts').ReaderLayout
   tocPosition: string
   lang: string
+  localeRevision?: string
   rtl: boolean
   company: string
   contentLicense: string

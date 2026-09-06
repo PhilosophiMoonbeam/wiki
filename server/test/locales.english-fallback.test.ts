@@ -53,6 +53,7 @@ describe('bundled English locale fallback', () => {
       models: {
         locales: {
           query: () => ({
+            select: async () => [{ code: 'en' }],
             findOne: vi.fn().mockResolvedValue({
               strings: { admin: { dashboard: { title: 'Installed Dashboard' } } }
             })

@@ -1,3 +1,5 @@
+import { getLocaleAdministrationStore } from './locale-administration.ts'
+import { type PagePrincipal } from '../helpers/page-access.ts'
 import _ from 'lodash'
 
 import errors from './errors.ts'
@@ -27,16 +29,12 @@ interface LocaleConfigInput {
 const getRuntime = () => {
   const wiki = WIKI
   return {
-    cache: wiki.cache as { get(key: string): Promise<Locale[] | undefined>, del(key: string): Promise<unknown> },
+    cache: wiki.cache as { get(key: string): Promise<Locale[] | undefined> },
     localesModel: (wiki.models as { locales: { query(): LocaleQuery } }).locales,
     config: wiki.config as { lang: LocaleConfigInput & { code: string, rtl: boolean } },
     language: wiki.lang as {
       getByNamespace(locale: string, namespace: string): unknown
-      setCurrentLocale(locale: string): Promise<unknown>
-      refreshNamespaces(): Promise<unknown>
-    },
-    configService: wiki.configSvc as { saveToDb(keys: string[]): Promise<unknown> },
-    scheduler: wiki.scheduler as { registerJob(options: Record<string, unknown>, code: string): Promise<{ finished: Promise<unknown> }> }
+    }
   }
 }
 
@@ -44,7 +42,7 @@ const listLocales = async () => {
   const { cache, localesModel } = getRuntime()
   let remoteLocales = await cache.get('locales')
   const localLocales = await localesModel.query().select('code', 'isRTL', 'name', 'nativeName', 'createdAt', 'updatedAt', 'availability')
-  remoteLocales = remoteLocales || localLocales
+  remoteLocales = remoteLocales ? [...remoteLocales, ...localLocales.filter(local => !remoteLocales?.some(remote => remote.code === local.code))] : localLocales
   return remoteLocales.map(locale => {
     const installed = localLocales.find(local => local.code === locale.code)
     return { ...locale, isInstalled: Boolean(installed), installDate: installed ? installed.updatedAt : null }
@@ -71,31 +69,14 @@ const isLocaleConfig = (input: unknown): input is LocaleConfigInput => Boolean(
   Reflect.get(input as object, 'namespaces').every((namespace: unknown) => _.isString(namespace) && namespace.length > 0)
 )
 
-const updateConfig = async (input: unknown): Promise<void> => {
-  if (!isLocaleConfig(input)) {
-    throw new ApplicationError('Invalid locale config payload', { code: 'INVALID_LOCALE_CONFIGURATION' })
-  }
-  const { cache, config, configService, language, localesModel } = getRuntime()
-  config.lang.code = input.locale
-  config.lang.autoUpdate = input.autoUpdate
-  config.lang.namespacing = input.namespacing
-  config.lang.namespaces = _.union(input.namespaces, [input.locale])
-  const locale = await localesModel.query().select('isRTL').where('code', input.locale).first()
-  if (!locale) throw new ApplicationError('Locale does not exist', { code: 'LOCALE_NOT_FOUND', status: 404 })
-  config.lang.rtl = locale.isRTL
-  await configService.saveToDb(['lang'])
-  await language.setCurrentLocale(input.locale)
-  await language.refreshNamespaces()
-  await cache.del('nav:locales')
+const updateConfig = async (input: unknown, requester?: PagePrincipal): Promise<void> => {
+  if (!isLocaleConfig(input)) throw new ApplicationError('Invalid locale config payload', { code: 'INVALID_LOCALE_CONFIGURATION', status: 400 })
+  const store = getLocaleAdministrationStore(), saved = await store.inspect(requester)
+  await store.save(requester, { policy: input, fingerprint: saved.fingerprint, reason: 'Update language settings through the compatibility API' })
 }
-
-const download = async (code: unknown): Promise<void> => {
-  if (!_.isString(code) || code.length < 1) {
-    throw new ApplicationError('locale code is required', { code: 'INVALID_LOCALE_CODE' })
-  }
-  const { scheduler } = getRuntime()
-  const job = await scheduler.registerJob({ name: 'fetch-graph-locale', immediate: true }, code)
-  await job.finished
+const download = async (code: unknown, requester?: PagePrincipal) => {
+  const store = getLocaleAdministrationStore(), saved = await store.inspect(requester)
+  return store.enqueue(requester, { kind: 'install', code, fingerprint: saved.fingerprint, reason: 'Install language package through the compatibility API' })
 }
 
 export default { download, getConfig, getTranslations, listLocales, updateConfig }

@@ -36,6 +36,7 @@ interface WikiApplication {
 }
 
 interface WikiContext {
+  lang?: { refreshNamespaces(): Promise<void> }
   app?: WikiApplication
   auth?: { jwtAudience: string | null; strategyHost?: string | null; activateStrategies(): Promise<void> }
   ROOTPATH: string
@@ -223,7 +224,9 @@ const configService: ConfigService = {
   subscribeToEvents() {
     const wiki = getWiki()
     wiki.events.inbound.on('reloadConfig', async () => {
+      const previousLanguage = JSON.stringify(wiki.config.lang)
       await wiki.configSvc.loadFromDb()
+      if (wiki.lang && previousLanguage !== JSON.stringify(wiki.config.lang)) await wiki.lang.refreshNamespaces()
       await wiki.configSvc.applyFlags()
       wiki.app?.set('trust proxy', wiki.config.security?.securityTrustProxy === true ? 1 : false)
       const audience = isRecord(wiki.config.auth) ? wiki.config.auth.audience : undefined

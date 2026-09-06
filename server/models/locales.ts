@@ -1,3 +1,4 @@
+import { localeNavCacheKey } from '../../shared/locale-policy.ts'
 import { Model } from 'objection'
 
 /* global WIKI */
@@ -32,8 +33,9 @@ this.updatedAt = new Date().toISOString() } static async getNavLocales({ cache =
     return []
   }
 
+  const cacheKey = localeNavCacheKey(wiki.config.lang.revision)
   if (cache) {
-    const navLocalesCached = await wiki.cache.get('nav:locales')
+    const navLocalesCached = await wiki.cache.get(cacheKey)
     if (navLocalesCached) {
       return navLocalesCached
     }
@@ -41,7 +43,7 @@ this.updatedAt = new Date().toISOString() } static async getNavLocales({ cache =
   const navLocales = await wiki.models.locales.query().select('code', 'nativeName AS name').whereIn('code', wiki.config.lang.namespaces).orderBy('code')
   if (navLocales) {
     if (cache) {
-      await wiki.cache.set('nav:locales', navLocales, 300)
+      await wiki.cache.set(cacheKey, navLocales, 300)
     }
     return navLocales
   } else {
@@ -51,7 +53,7 @@ this.updatedAt = new Date().toISOString() } static async getNavLocales({ cache =
 } }
 
 const wiki = WIKI as unknown as {
-  config: { lang: { namespacing: boolean, namespaces: string[] } }
+  config: { lang: { namespacing: boolean, namespaces: string[], revision?: string } }
   cache: {
     get: (key: string) => Promise<Array<{ code: string, name: string }> | null>
     set: (key: string, value: Locale[], ttl: number) => Promise<void>

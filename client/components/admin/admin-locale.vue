@@ -1,411 +1,734 @@
-<template lang='pug'>
-  v-container(fluid)
-    v-row
-      v-col(cols='12')
-        admin-hero(
-          icon='mdi-translate'
-          :title='$t(`admin:locale.title`)'
-          :description='$t(`admin:locale.subtitle`)'
-        )
-          template(v-slot:actions)
-            v-btn(
-              icon
-              variant="outlined"
-              color='grey'
-              href='https://docs.requarks.io/locales'
-              target='_blank'
-              rel='noopener noreferrer'
-              aria-label='Open locale documentation'
-              title='Open locale documentation'
-            )
-              v-icon(aria-hidden='true') mdi-help-circle
-            v-btn(
-              color='success'
-              variant="flat"
-              prepend-icon='mdi-check'
-              @click='save'
-              size="large"
-              :loading='loading'
-              :disabled='!canSave'
-            ) {{$t('common:actions.apply')}}
-        v-form
-          v-row
-            v-col(xl='6' lg='5' cols='12')
-              v-card.wiki-form.animated.fadeInUp
-                v-toolbar(color='primary', density="compact", flat)
-                  v-toolbar-title.text-body-large {{ $t('admin:locale.settings') }}
-                v-card-text
-                  async-state(v-if='!configLoaded && !configError', state='loading', title='Loading locale settings', message='Fetching current locale configuration.')
-                  v-select(
-                    variant="outlined"
-                    :items='installedLocales'
-                    prepend-icon='mdi-web'
-                    v-model='selectedLocale'
-                    item-value='code'
-                    item-title='nativeName'
-                    :label='namespacing ? $t("admin:locale.base.labelWithNS") : $t("admin:locale.base.label")'
-                    persistent-hint
-                    :hint='$t("admin:locale.base.hint")'
-                    :disabled='!configLoaded || !localesLoaded'
-                    :error-messages='configError || localesError'
-                  )
-                    template(v-slot:item='{ props, item }')
-                      v-list-item(v-bind='props', :title='item.name', :subtitle='item.nativeName')
-                        template(v-slot:prepend)
-                          v-avatar(color='primary', variant='tonal', rounded='sm', size='36') {{ item.code.toUpperCase() }}
-                  v-alert.mt-3(v-if='configError || localesError', variant='outlined', color='error', icon='mdi-alert')
-                    span(v-if='configError') Locale configuration could not be loaded.
-                    span(v-else) Installed locales could not be loaded.
-                    v-btn.ml-2(variant='text', size='small', @click='loadBootstrap') Retry
-                  v-divider.mt-3
-                  v-switch(
-                    inset
-                    v-model='autoUpdate'
-                    :label='$t("admin:locale.autoUpdate.label")'
-                    color='primary'
-                    persistent-hint
-                    :hint='namespacing ? $t("admin:locale.autoUpdate.hintWithNS") : $t("admin:locale.autoUpdate.hint")'
-                    :disabled='!configLoaded || !localesLoaded'
-                  )
-
-              v-card.wiki-form.mt-3.animated.fadeInUp.wait-p2s
-                v-toolbar(color='primary', density="compact", flat)
-                  v-toolbar-title.text-body-large {{ $t('admin:locale.namespacing') }}
-                v-card-text
-                  v-switch(
-                    inset
-                    v-model='namespacing'
-                    :label='$t("admin:locale.namespaces.label")'
-                    color='primary'
-                    persistent-hint
-                    :hint='$t("admin:locale.namespaces.hint")'
-                    :disabled='!configLoaded || !localesLoaded'
-                    )
-                  v-alert.mt-3(
-                    v-if='namespacing && configLoaded'
-                    variant="outlined"
-                    color='warning'
-                    icon='mdi-alert'
-                    )
-                    span {{ $t('admin:locale.namespacingPrefixWarning.title', { langCode: selectedLocale }) }}
-                    .text-body-small.text-medium-emphasis {{ $t('admin:locale.namespacingPrefixWarning.subtitle') }}
-                  v-divider.mt-3.mb-4
-                  v-select(
-                    variant="outlined"
-                    :disabled='!namespacing || !configLoaded || !localesLoaded'
-                    :items='installedLocales'
-                    prepend-icon='mdi-web'
-                    multiple
-                    chips
-                    closable-chips
-                    v-model='namespaces'
-                    item-value='code'
-                    item-title='name'
-                    :label='$t("admin:locale.activeNamespaces.label")'
-                    persistent-hint
-                    :hint='$t("admin:locale.activeNamespaces.hint")'
-                    )
-                    template(v-slot:item='{ props, item }')
-                      v-list-item(v-bind='props', :title='item.name', :subtitle='item.nativeName')
-                        template(v-slot:prepend)
-                          v-avatar(color='primary', variant='tonal', rounded='sm', size='36') {{ item.code.toUpperCase() }}
-                        template(v-slot:append)
-                          v-icon(
-                            :icon='namespaces.includes(item.code) ? `mdi-checkbox-marked` : `mdi-checkbox-blank-outline`'
-                            :color='namespaces.includes(item.code) ? `primary` : undefined'
-                            aria-hidden='true'
-                          )
-            v-col(xl='6' lg='7' cols='12')
-              v-card.animated.fadeInUp.wait-p4s
-                v-toolbar(color='teal', density="compact", :elevation='0')
-                  v-toolbar-title.text-body-large {{ $t('admin:locale.downloadTitle') }}
-                v-data-table.admin-responsive-table(
-                  :headers='headers'
-                  :items='locales'
-                  :loading='localesLoading'
-                  :hide-default-header='$vuetify.display.smAndDown'
-                  hide-default-footer
-                  item-value='code'
-                  :items-per-page='-1'
-                )
-                  template(v-slot:item='props')
-                    tr(v-if='$vuetify.display.mdAndUp')
-                      td
-                        v-chip.text-white(label, color='teal', size="small") {{ props.item.code }}
-                      td: strong {{ props.item.name }}
-                      td {{ props.item.nativeName }}
-                      td.text-center
-                        v-icon(v-if='props.item.isRTL', aria-label='Right-to-left locale') mdi-check
-                      td
-                        .d-flex.align-center
-                          v-progress-circular(:model-value='props.item.availability', width='2', size='20', :color='props.item.availability <= 33 ? `error` : (props.item.availability <= 66) ? `warning` : `success`', :aria-label='`${props.item.name} translation availability`', :aria-valuetext='`${props.item.availability}%`')
-                          .text-body-small.mx-2 {{ props.item.availability }}%
-                      td.text-center
-                        v-progress-circular(v-if='props.item.isDownloading', indeterminate, color='primary', size='20', :width='2', :aria-label='`Downloading ${props.item.name}`')
-                        v-btn(v-else-if='props.item.isInstalled && props.item.installDate < props.item.updatedAt', icon, size="small", @click='download(props.item)', :aria-label='`Update ${props.item.name} locale`', :title='`Update ${props.item.name} locale`')
-                          v-icon.text-primary(aria-hidden='true') mdi-cached
-                        v-btn(v-else-if='props.item.isInstalled', icon, size="small", @click='download(props.item)', :aria-label='`Reinstall ${props.item.name} locale`', :title='`Reinstall ${props.item.name} locale`')
-                          v-icon.text-success(aria-hidden='true') mdi-check-bold
-                        v-btn(v-else, icon, size="small", @click='download(props.item)', :aria-label='`Download ${props.item.name} locale`', :title='`Download ${props.item.name} locale`')
-                          v-icon(aria-hidden='true') mdi-cloud-download
-                    tr.admin-mobile-table-row(v-else)
-                      td(:colspan='headers.length')
-                        .admin-mobile-record
-                          .admin-mobile-record-title {{ props.item.nativeName }}
-                          .admin-mobile-record-meta {{ props.item.name }} ({{ props.item.code }})
-                          .d-flex.align-center.mt-2
-                            v-progress-circular(:model-value='props.item.availability', width='2', size='20', :color='props.item.availability <= 33 ? `error` : (props.item.availability <= 66) ? `warning` : `success`', :aria-label='`${props.item.name} translation availability`', :aria-valuetext='`${props.item.availability}%`')
-                            span.ml-2 {{ props.item.availability }}%
-                            v-spacer
-                            v-progress-circular(v-if='props.item.isDownloading', indeterminate, color='primary', size='20', :width='2', :aria-label='`Downloading ${props.item.name}`')
-                            v-btn(v-else-if='props.item.isInstalled && props.item.installDate < props.item.updatedAt', icon, size="small", @click='download(props.item)', :aria-label='`Update ${props.item.name} locale`', :title='`Update ${props.item.name} locale`')
-                              v-icon.text-primary(aria-hidden='true') mdi-cached
-                            v-btn(v-else-if='props.item.isInstalled', icon, size="small", @click='download(props.item)', :aria-label='`Reinstall ${props.item.name} locale`', :title='`Reinstall ${props.item.name} locale`')
-                              v-icon.text-success(aria-hidden='true') mdi-check-bold
-                            v-btn(v-else, icon, size="small", @click='download(props.item)', :aria-label='`Download ${props.item.name} locale`', :title='`Download ${props.item.name} locale`')
-                              v-icon(aria-hidden='true') mdi-cloud-download
-                  template(v-slot:no-data)
-                    async-state(v-if='localesLoading', state='loading', title='Loading locales', message='Fetching available locales.')
-                    async-state(v-else-if='localesError', state='error', title='Locales could not be loaded', :message='localesError', retry-label='Try again', @retry='loadBootstrap')
-                    async-state(v-else, state='empty', title='No locales available', message='No locale packages are available to install.')
-
+<template>
+  <v-container fluid class="locale-workspace">
+    <admin-hero icon="mdi-translate" title="Locale" description="Make your knowledge feel at home in every language.">
+      <template #actions>
+        <v-btn variant="text" prepend-icon="mdi-refresh" :disabled="busy || loading" @click="reload">Reload settings</v-btn>
+        <v-btn color="primary" :disabled="locked || !dirty" @click="review">Review changes</v-btn>
+      </template>
+    </admin-hero>
+    <async-state
+      v-if="loading && !saved"
+      state="loading"
+      title="Loading language workspace"
+      message="Reading installed packages, routing settings and operation history."
+    />
+    <async-state
+      v-else-if="loadError && !saved"
+      state="error"
+      title="Locale could not be loaded"
+      :message="loadError"
+      retry-label="Try again"
+      @retry="load()"
+    />
+    <v-alert v-else-if="loadError" type="error" variant="tonal" class="mb-5">{{ loadError }}</v-alert>
+    <v-alert v-if="stale && !busy" type="warning" variant="tonal" class="mb-5"
+      >The saved language state changed or an operation outcome is unconfirmed. Reload saved settings before another publication.</v-alert
+    >
+    <v-alert v-if="notice" :type="attention ? 'warning' : 'success'" variant="tonal" class="mb-5">{{ notice }}</v-alert>
+    <template v-if="saved && draft">
+      <div class="locale-status">
+        <span><i :class="{ 'is-draft': dirty }" />{{ dirty ? 'Unsaved language draft' : 'Showing saved languages' }}</span
+        ><span>{{ saved.runtime.state === 'applied' ? 'Runtime language current' : 'Runtime activation needs attention' }}</span>
+      </div>
+      <nav class="locale-tabs" aria-label="Locale sections">
+        <button
+          v-for="tab in sections"
+          :key="tab.key"
+          type="button"
+          :aria-current="section === tab.key ? 'page' : undefined"
+          :disabled="busy"
+          @click="selectSection(tab.key)"
+        >
+          {{ tab.title }}
+        </button>
+      </nav>
+      <div class="locale-layout">
+        <section class="locale-editor">
+          <template v-if="section === 'languages'">
+            <div class="locale-heading">
+              <span class="locale-kicker">01 / A multilingual home</span>
+              <h2>Welcome every reader</h2>
+              <p>Choose the language readers meet first. Add interface packages, then decide which languages belong in the workspace.</p>
+            </div>
+            <div class="locale-default">
+              <div>
+                <h3>Default language</h3>
+                <p>Used for unprefixed page addresses and the workspace’s default interface.</p>
+              </div>
+              <v-select
+                v-model="draft.locale"
+                :items="installed"
+                item-title="displayName"
+                item-value="code"
+                label="Default language"
+                variant="outlined"
+                density="comfortable"
+                hide-details
+                :disabled="locked"
+              />
+            </div>
+            <div class="locale-section-head">
+              <div>
+                <h3>Installed languages</h3>
+                <p>
+                  {{
+                    draft.namespacing
+                      ? 'Select the languages offered in the reader’s language menu.'
+                      : 'Multilingual routing is off. Other installed packages remain available for later use.'
+                  }}
+                </p>
+              </div>
+              <v-btn variant="text" append-icon="mdi-arrow-right" @click="selectSection('library')">Find a language</v-btn>
+            </div>
+            <div class="locale-installed">
+              <article
+                v-for="locale in installed"
+                :key="locale.code"
+                class="locale-language"
+                :class="{ 'is-default': locale.code === draft.locale }"
+              >
+                <span class="locale-code" aria-hidden="true">{{ locale.code }}</span>
+                <div class="locale-language-body">
+                  <h4>{{ locale.nativeName }} <span v-if="locale.code === draft.locale" class="locale-badge">Default</span></h4>
+                  <p>{{ locale.name }} · {{ locale.isRTL ? 'Right to left' : 'Left to right' }}</p>
+                  <div class="locale-language-counts">
+                    <span>{{ locale.pages }} public pages</span><span>{{ locale.linkedTranslations }} in translation sets</span
+                    ><span>{{ locale.menuItems }} menu items</span>
+                  </div>
+                </div>
+                <v-checkbox
+                  :model-value="enabled(locale.code)"
+                  :disabled="locked || !draft.namespacing || locale.code === draft.locale"
+                  :aria-label="`Offer ${locale.name} to readers`"
+                  hide-details
+                  density="compact"
+                  @update:model-value="toggleLanguage(locale.code, $event === true)"
+                />
+              </article>
+            </div>
+            <div class="locale-note">
+              <v-icon icon="mdi-information-outline" size="20" />
+              <p>
+                Installing a language translates supported interface labels. Wiki pages are translated separately by their authors;
+                installing a package does not create translated pages.
+              </p>
+            </div>
+            <div class="locale-section-head">
+              <div>
+                <h3>Keep translations connected</h3>
+                <p>
+                  Use page translation sets to link related versions. Each version keeps its own content, publication status and page
+                  permissions.
+                </p>
+              </div>
+              <v-btn variant="text" to="/pages" append-icon="mdi-arrow-right">Manage pages</v-btn>
+            </div>
+          </template>
+          <template v-else-if="section === 'routing'">
+            <div class="locale-heading">
+              <span class="locale-kicker">02 / Language & location</span>
+              <h2>A clear address for every language</h2>
+              <p>Choose how readers move between languages. Routing changes retain existing pages and custom navigation.</p>
+            </div>
+            <div class="locale-setting">
+              <div>
+                <h3>Multilingual workspace</h3>
+                <p>Offer the selected reading languages and use an explicit language prefix in page addresses.</p>
+              </div>
+              <v-switch
+                v-model="draft.namespacing"
+                :disabled="locked"
+                aria-label="Multilingual workspace"
+                hide-details
+                color="primary"
+                inset
+              />
+            </div>
+            <div class="locale-paths">
+              <div>
+                <span>Default home</span><code>{{ localeReadingPath(draft) }}</code>
+              </div>
+              <div v-for="locale in readingLanguages.filter((row) => row.code !== draft?.locale)" :key="locale.code">
+                <span>{{ locale.nativeName }}</span
+                ><code>{{ localeReadingPath(draft, locale.code) }}</code>
+              </div>
+            </div>
+            <v-alert v-if="draft.namespacing" type="info" variant="tonal" class="my-5"
+              >Unprefixed page addresses redirect to {{ draft.locale }}. A language prefix identifies a page’s language; it does not
+              translate the page.</v-alert
+            >
+            <div class="locale-setting">
+              <div>
+                <h3>Automatic interface updates</h3>
+                <p>Let the daily language synchronization refresh the default and enabled language packages. Page content is unchanged.</p>
+                <p v-if="saved.catalog.offline" class="locale-muted">Updates are paused while offline mode is active.</p>
+              </div>
+              <v-switch
+                v-model="draft.autoUpdate"
+                :disabled="locked"
+                aria-label="Automatic interface updates"
+                hide-details
+                color="primary"
+                inset
+              />
+            </div>
+            <div class="locale-related">
+              <v-icon icon="mdi-compass-outline" size="23" />
+              <div>
+                <h3>Give each language its own menu</h3>
+                <p>Curate destinations and audience visibility in Navigation. Disabled languages keep their saved menus.</p>
+              </div>
+              <v-btn variant="text" to="/navigation" append-icon="mdi-arrow-right">Navigation</v-btn>
+            </div>
+          </template>
+          <template v-else-if="section === 'library'">
+            <div class="locale-heading">
+              <span class="locale-kicker">03 / Interface packages</span>
+              <h2>A library of languages</h2>
+              <p>
+                Install a language before offering it to readers. Package operations run durably on the server and remain visible in
+                Activity.
+              </p>
+            </div>
+            <v-alert v-if="saved.catalog.offline" type="info" variant="tonal" class="mb-5"
+              >Offline mode is active. Installed languages and bundled English remain available; remote package operations are
+              paused.</v-alert
+            >
+            <div class="locale-library-toolbar">
+              <v-text-field
+                v-model="search"
+                label="Find a language"
+                prepend-inner-icon="mdi-magnify"
+                variant="outlined"
+                density="compact"
+                hide-details
+                clearable
+              /><v-select
+                v-model="packageFilter"
+                :items="packageFilters"
+                label="Package filter"
+                variant="outlined"
+                density="compact"
+                hide-details
+              /><v-btn variant="text" prepend-icon="mdi-refresh" :disabled="!canOperate" @click="openOperation('catalog')"
+                >Refresh catalog</v-btn
+              >
+            </div>
+            <p class="locale-catalog-source">
+              {{ filteredPackages.length }} languages · {{ saved.catalog.source || 'Source unavailable' }} ·
+              {{ saved.catalog.observedAt ? 'Catalog checked ' + date(saved.catalog.observedAt) : 'Cached catalog; refresh time unknown' }}
+            </p>
+            <p v-if="dirty" class="locale-muted">Save or reset the language draft before starting a package operation.</p>
+            <div v-if="filteredPackages.length" class="locale-package-list">
+              <article v-for="locale in filteredPackages" :key="locale.code" class="locale-package-row">
+                <span class="locale-code" aria-hidden="true">{{ locale.code }}</span>
+                <div class="locale-package-name">
+                  <h3>{{ locale.nativeName }}</h3>
+                  <p>{{ locale.name }} · {{ locale.isRTL ? 'RTL' : 'LTR' }}</p>
+                  <span v-if="locale.isInstalled" class="locale-badge">{{
+                    updateAvailable(locale) ? 'Update available' : 'Installed'
+                  }}</span>
+                </div>
+                <div class="locale-coverage">
+                  <strong>{{ locale.availability }}<small>%</small></strong
+                  ><span>Upstream interface coverage</span>
+                  <div class="locale-coverage-track" aria-hidden="true"><i :style="{ width: locale.availability + '%' }" /></div>
+                </div>
+                <v-btn
+                  :variant="locale.isInstalled ? 'text' : 'tonal'"
+                  :disabled="!canOperate || !locale.availableRemotely"
+                  :aria-label="`${locale.isInstalled ? 'Refresh' : 'Install'} ${locale.name} package`"
+                  @click="openOperation('install', locale)"
+                  >{{ locale.isInstalled ? 'Refresh package' : 'Install' }}</v-btn
+                >
+              </article>
+            </div>
+            <async-state
+              v-else
+              state="empty"
+              title="No matching languages"
+              message="Try another name or package filter. Refresh the catalog to check the configured source."
+            />
+            <div class="locale-note">
+              <v-icon icon="mdi-translate" size="20" />
+              <p>
+                Coverage is reported by the upstream translation catalog. It does not measure translated wiki pages or newer tsEpistle
+                labels. Missing supported strings fall back to bundled English.
+              </p>
+            </div>
+          </template>
+          <template v-else>
+            <div class="locale-heading">
+              <span class="locale-kicker">04 / Changes & operations</span>
+              <h2>A traceable language workspace</h2>
+              <p>Follow server work and review why the workspace changed. Queued operations continue when this page closes.</p>
+            </div>
+            <h3 class="mb-4">Package operations</h3>
+            <div v-if="saved.operations.length" class="locale-operations">
+              <article v-for="operation in saved.operations" :key="operation.id" class="locale-operation">
+                <v-icon :icon="operationIcon(operation.state)" size="22" />
+                <div>
+                  <h4>{{ operation.kind === 'catalog' ? 'Refresh language catalog' : 'Install / refresh ' + operation.code }}</h4>
+                  <p>
+                    {{ date(operation.createdAt) }} · Attempt {{ operation.attempts }}
+                    <span v-if="operation.message">· {{ operation.message }}</span>
+                  </p>
+                </div>
+                <span class="locale-badge">{{ stateName(operation.state) }}</span>
+              </article>
+            </div>
+            <p v-else class="locale-muted">
+              No recorded package operations. Installed packages from before this workspace have no reconstructed operation history.
+            </p>
+            <h3 class="mt-8 mb-4">Administrative changes</h3>
+            <div v-if="saved.history.length" class="locale-history">
+              <article v-for="event in saved.history" :key="event.id">
+                <span class="locale-history-mark" />
+                <div>
+                  <h4>{{ event.reason }}</h4>
+                  <p>{{ event.fields.map(fieldName).join(' · ') }}</p>
+                  <small
+                    >{{ date(event.createdAt) }} · {{ event.actorId ? 'Administrator #' + event.actorId : 'System / API'
+                    }}<span v-if="event.kind !== 'settings'">
+                      · {{ event.appliedAt ? 'Published ' + date(event.appliedAt) : 'Requested' }}</span
+                    ></small
+                  >
+                </div>
+              </article>
+            </div>
+            <p v-else class="locale-muted">No recorded settings changes yet. The latest 50 administrative changes will appear here.</p>
+          </template>
+        </section>
+        <aside class="locale-aside" aria-label="Language workspace overview">
+          <span class="locale-kicker">Reader language menu</span>
+          <div class="locale-specimen">
+            <div>
+              <v-icon icon="mdi-web" size="20" /><strong>{{ languageName(draft.locale) }}</strong>
+            </div>
+            <ul v-if="draft.namespacing">
+              <li v-for="locale in readingLanguages" :key="locale.code" :dir="locale.isRTL ? 'rtl' : 'ltr'">
+                <span>{{ locale.nativeName }}</span
+                ><v-icon v-if="locale.code === draft.locale" icon="mdi-check" size="17" />
+              </li>
+            </ul>
+            <p v-else>One default language. Multilingual routing is off.</p>
+            <small>Illustrative reader menu</small>
+          </div>
+          <dl class="locale-summary">
+            <div>
+              <dt>Installed packages</dt>
+              <dd>{{ installed.length }}</dd>
+            </div>
+            <div>
+              <dt>Reading languages</dt>
+              <dd>{{ readingLanguages.length }}</dd>
+            </div>
+            <div>
+              <dt>Automatic updates</dt>
+              <dd>{{ saved.catalog.offline ? 'Paused offline' : draft.autoUpdate ? 'Daily' : 'Off' }}</dd>
+            </div>
+          </dl>
+          <div v-if="activeOperation" class="locale-running" role="status">
+            <v-progress-circular indeterminate size="20" width="2" />
+            <div>
+              <strong>{{ stateName(activeOperation.state) }}</strong>
+              <p>{{ activeOperation.kind === 'catalog' ? 'Language catalog refresh' : 'Package: ' + activeOperation.code }}</p>
+              <v-btn variant="text" size="small" @click="selectSection('activity')">View operation</v-btn>
+            </div>
+          </div>
+          <div class="locale-publication">
+            <h3>Publication</h3>
+            <p>
+              Language settings take effect for readers on their next page load. An installed package becomes a reading language only when
+              selected here.
+            </p>
+            <v-btn v-if="dirty" variant="outlined" :disabled="busy" @click="reset">Reset draft</v-btn
+            ><v-btn v-if="saved.runtime.state !== 'applied'" variant="tonal" :disabled="locked || dirty" @click="initialize"
+              >Retry runtime activation</v-btn
+            >
+          </div>
+        </aside>
+      </div>
+    </template>
+    <v-dialog v-model="reviewing" max-width="760" :persistent="busy" scrollable>
+      <v-card class="locale-dialog"
+        ><v-card-title><h2>Review language settings</h2></v-card-title
+        ><v-card-text
+          ><p>Confirm the saved and proposed settings before publication.</p>
+          <div v-if="saved && reviewed" class="locale-review">
+            <div v-for="field in changedFields" :key="field">
+              <h3>{{ fieldName(field) }}</h3>
+              <div>
+                <section>
+                  <small>Saved</small>
+                  <p>{{ reviewValue(saved.policy, field) }}</p>
+                </section>
+                <section>
+                  <small>Proposed</small>
+                  <p>{{ reviewValue(reviewed, field) }}</p>
+                </section>
+              </div>
+            </div>
+          </div>
+          <v-textarea
+            v-model="reason"
+            label="Reason for this change"
+            variant="outlined"
+            rows="2"
+            maxlength="1000"
+            counter
+            :disabled="busy"
+          /><v-alert v-if="saveError" type="error" variant="tonal">{{ saveError }}</v-alert></v-card-text
+        ><v-card-actions
+          ><v-btn v-if="stale" variant="text" :disabled="busy" @click="reload">Reload saved settings</v-btn><v-spacer /><v-btn
+            :disabled="busy"
+            @click="reviewing = false"
+            >Back to draft</v-btn
+          ><v-btn color="primary" variant="flat" :disabled="locked || reason.trim().length < 3" :loading="busy" @click="confirm"
+            >Publish languages</v-btn
+          ></v-card-actions
+        ></v-card
+      >
+    </v-dialog>
+    <v-dialog v-model="operationOpen" max-width="600" :persistent="busy" scrollable>
+      <v-card class="locale-dialog"
+        ><v-card-title
+          ><h2>
+            {{
+              operationKind === 'catalog'
+                ? 'Refresh language catalog'
+                : operationLocale?.isInstalled
+                  ? 'Refresh interface package'
+                  : 'Install interface package'
+            }}
+          </h2></v-card-title
+        ><v-card-text
+          ><template v-if="operationKind === 'install' && operationLocale"
+            ><div class="locale-operation-subject">
+              <span class="locale-code">{{ operationLocale.code }}</span>
+              <div>
+                <h3>{{ operationLocale.nativeName }}</h3>
+                <p>{{ operationLocale.name }} · {{ operationLocale.isRTL ? 'Right to left' : 'Left to right' }}</p>
+              </div>
+            </div>
+            <p>
+              The server will fetch the latest package from {{ saved?.catalog.source }}. This replaces supported interface strings for this
+              language. Page content and reading-language selection remain unchanged.
+            </p></template
+          >
+          <p v-else>
+            Check {{ saved?.catalog.source }} for available interface packages and their reported coverage. Refreshing the catalog does not
+            install or update packages.
+          </p>
+          <p>Progress and the result are recorded in Activity. The worker can retry transient failures.</p>
+          <v-textarea
+            v-model="operationReason"
+            label="Reason for this operation"
+            variant="outlined"
+            rows="2"
+            maxlength="1000"
+            counter
+            :disabled="busy"
+          /><v-alert v-if="saveError" type="error" variant="tonal">{{ saveError }}</v-alert></v-card-text
+        ><v-card-actions
+          ><v-btn v-if="stale" :disabled="busy" @click="reload">Reload saved settings</v-btn><v-spacer /><v-btn
+            :disabled="busy"
+            @click="operationOpen = false"
+            >Cancel</v-btn
+          ><v-btn
+            color="primary"
+            variant="flat"
+            :disabled="!canOperate || operationReason.trim().length < 3"
+            :loading="busy"
+            @click="startOperation"
+            >Queue operation</v-btn
+          ></v-card-actions
+        ></v-card
+      >
+    </v-dialog>
+  </v-container>
 </template>
-<script lang='ts'>
-import { markRaw } from 'vue'
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import AsyncState from '@/components/common/async-state.vue'
-
-import { fetchLocales, fetchLocaleConfig, saveLocaleConfig, downloadLocale, type LocaleRow } from '../../helpers/locales-api'
-import { getErrorMessage } from '../../helpers/root-ui-store'
-import { wikiStore } from '@/store/index.ts'
-
-type LocaleTableRow = LocaleRow & {
-  isDownloading: boolean
+import {
+  LocalePolicySchema,
+  localeChangedFields,
+  localeReadingPath,
+  type LocalePackage,
+  type LocalePolicy,
+  type LocaleWorkspace,
+} from '../../../shared/locale-policy.ts'
+import { fetchLocaleWorkspace, queueLocaleOperation, retryLocaleRuntime, saveLocaleWorkspace } from '../../helpers/locale-workspace-api.ts'
+const route = useRoute(),
+  router = useRouter(),
+  sections = [
+    { key: 'languages', title: 'Languages' },
+    { key: 'routing', title: 'Routing' },
+    { key: 'library', title: 'Package library' },
+    { key: 'activity', title: 'Activity' },
+  ]
+const section = computed(() => (sections.some((tab) => tab.key === route.query.section) ? String(route.query.section) : 'languages'))
+const saved = ref<LocaleWorkspace | null>(null),
+  draft = ref<LocalePolicy | null>(null),
+  reviewed = ref<LocalePolicy | null>(null)
+const loading = ref(false),
+  busy = ref(false),
+  stale = ref(false),
+  loadError = ref(''),
+  notice = ref(''),
+  attention = ref(false),
+  saveError = ref('')
+const reviewing = ref(false),
+  reason = ref(''),
+  reviewFingerprint = ref(''),
+  operationOpen = ref(false),
+  operationReason = ref(''),
+  operationKind = ref<'catalog' | 'install'>('catalog'),
+  operationLocale = ref<LocalePackage | null>(null)
+const search = ref(''),
+  packageFilter = ref('all'),
+  packageFilters = [
+    { title: 'All packages', value: 'all' },
+    { title: 'Installed', value: 'installed' },
+    { title: 'Not installed', value: 'available' },
+    { title: 'Updates available', value: 'updates' },
+  ]
+const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+const normalizedDraft = computed(() => (draft.value ? LocalePolicySchema.safeParse(draft.value) : null))
+const dirty = computed(() =>
+  Boolean(
+    saved.value &&
+    draft.value &&
+    localeChangedFields(saved.value.policy, normalizedDraft.value?.success ? normalizedDraft.value.data : draft.value).length,
+  ),
+)
+const locked = computed(() => loading.value || busy.value || stale.value)
+const installed = computed(() =>
+  (saved.value?.locales || [])
+    .filter((locale) => locale.isInstalled)
+    .map((locale) => ({ ...locale, displayName: `${locale.nativeName} (${locale.code})` })),
+)
+const readingLanguages = computed(() =>
+  installed.value.filter(
+    (locale) => locale.code === draft.value?.locale || (draft.value?.namespacing && draft.value.namespaces.includes(locale.code)),
+  ),
+)
+const activeOperation = computed(() => saved.value?.operations.find((operation) => ['pending', 'running'].includes(operation.state)))
+const canOperate = computed(() =>
+  Boolean(saved.value && !locked.value && !dirty.value && !activeOperation.value && !saved.value.catalog.offline),
+)
+const updateAvailable = (locale: LocalePackage) =>
+  locale.isInstalled && locale.updatedAt && locale.installDate && Date.parse(locale.updatedAt) > Date.parse(locale.installDate)
+const filteredPackages = computed(() =>
+  (saved.value?.locales || []).filter(
+    (locale) =>
+      `${locale.name} ${locale.nativeName} ${locale.code}`.toLocaleLowerCase().includes((search.value || '').trim().toLocaleLowerCase()) &&
+      (packageFilter.value === 'all' ||
+        (packageFilter.value === 'installed' && locale.isInstalled) ||
+        (packageFilter.value === 'available' && !locale.isInstalled) ||
+        (packageFilter.value === 'updates' && updateAvailable(locale))),
+  ),
+)
+const changedFields = computed(() => (saved.value && reviewed.value ? localeChangedFields(saved.value.policy, reviewed.value) : []))
+const languageName = (code: string) => saved.value?.locales.find((locale) => locale.code === code)?.nativeName || code
+const enabled = (code: string) => code === draft.value?.locale || Boolean(draft.value?.namespacing && draft.value.namespaces.includes(code))
+function toggleLanguage(code: string, checked: boolean) {
+  if (locked.value || !draft.value || code === draft.value.locale) return
+  draft.value.namespaces = checked
+    ? [...new Set([...draft.value.namespaces, code])]
+    : draft.value.namespaces.filter((value) => value !== code)
 }
-
-const createAbortableFetch = (signal: AbortSignal) => (
-  input: RequestInfo | URL,
-  init?: RequestInit
-) => window.fetch(input, { ...init, signal })
-
-export default {
-  components: { AsyncState },
-  data() {
-    return {
-      loading: false,
-      locales: [] as LocaleTableRow[],
-      selectedLocale: 'en',
-      autoUpdate: false,
-      namespacing: false,
-      namespaces: [] as string[],
-      configLoaded: false,
-      configError: '',
-      localesLoaded: false,
-      localesLoading: false,
-      localesError: '',
-      loadController: null as AbortController | null,
-      saveController: null as AbortController | null,
-      downloadControllers: markRaw(new Map<string, AbortController>()),
-      reloadTimer: null as number | null,
-      isUnmounted: false
+function selectSection(key: string) {
+  void router.replace({ query: { ...route.query, section: key } })
+}
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : 'The request could not be completed.')
+let sequence = 0,
+  disposed = false,
+  poll: ReturnType<typeof setTimeout> | undefined
+function schedulePoll() {
+  clearTimeout(poll)
+  if (!disposed && activeOperation.value)
+    poll = setTimeout(() => {
+      void load(true)
+    }, 3000)
+}
+async function load(background = false) {
+  if (busy.value) return
+  const seq = ++sequence
+  if (!background) loading.value = true
+  try {
+    const result = await fetchLocaleWorkspace()
+    if (disposed || seq !== sequence) return
+    if (background && (dirty.value || reviewing.value || operationOpen.value) && saved.value) {
+      if (result.fingerprint !== saved.value.fingerprint) stale.value = true
+      saved.value = { ...result, policy: saved.value.policy, fingerprint: saved.value.fingerprint }
+    } else {
+      saved.value = result
+      draft.value = copy(result.policy)
+      stale.value = false
     }
-  },
-  computed: {
-    installedLocales() {
-      return this.locales.filter(locale => locale.isInstalled)
-    },
-    canSave() {
-      return !this.loading && this.configLoaded && this.localesLoaded &&
-        this.installedLocales.some(locale => locale.code === this.selectedLocale)
-    },
-    headers() {
-      return [
-        {
-          title: this.$t('admin:locale.code'),
-          align: 'start',
-          key: 'code',
-          value: 'code',
-          width: 90
-        },
-        {
-          title: this.$t('admin:locale.name'),
-          align: 'start',
-          key: 'name',
-          value: 'name'
-        },
-        {
-          title: this.$t('admin:locale.nativeName'),
-          align: 'start',
-          key: 'nativeName',
-          value: 'nativeName'
-        },
-        {
-          title: this.$t('admin:locale.rtl'),
-          align: 'center',
-          key: 'isRTL',
-          value: 'isRTL',
-          sortable: false,
-          width: 10
-        },
-        {
-          title: this.$t('admin:locale.availability'),
-          align: 'center',
-          key: 'availability',
-          value: 'availability',
-          sortable: false,
-          width: 120
-        },
-        {
-          title: this.$t('admin:locale.download'),
-          align: 'center',
-          key: 'isInstalled',
-          value: 'isInstalled',
-          sortable: false,
-          width: 100
-        }
-      ]
+    loadError.value = ''
+  } catch (error) {
+    if (!disposed && seq === sequence) loadError.value = errorMessage(error)
+  } finally {
+    if (!disposed && seq === sequence) {
+      loading.value = false
+      schedulePoll()
     }
-  },
-  methods: {
-    async loadBootstrap() {
-      if (this.localesLoading) return
-      const controller = new AbortController()
-      this.loadController = controller
-      this.localesLoading = true
-      this.configError = ''
-      this.localesError = ''
-      wikiStore.startLoading('admin-locale-refresh')
-      try {
-        const [localesResult, configResult] = await Promise.allSettled([
-          fetchLocales(createAbortableFetch(controller.signal), 'Locales response is invalid'),
-          fetchLocaleConfig(createAbortableFetch(controller.signal), 'Locale config response is invalid')
-        ])
-        if (controller.signal.aborted) return
-
-        if (localesResult.status === 'fulfilled') {
-          this.locales = localesResult.value.map(lc => ({ ...lc, isDownloading: false }))
-          this.localesLoaded = true
-        } else {
-          this.localesLoaded = false
-          this.localesError = getErrorMessage(localesResult.reason)
-          wikiStore.showNotification({
-            style: 'red',
-            message: this.localesError,
-            icon: 'alert'
-          })
-        }
-
-        if (configResult.status === 'fulfilled') {
-          this.selectedLocale = configResult.value.locale
-          this.autoUpdate = configResult.value.autoUpdate
-          this.namespacing = configResult.value.namespacing
-          this.namespaces = configResult.value.namespaces
-          this.configLoaded = true
-        } else {
-          this.configLoaded = false
-          this.configError = getErrorMessage(configResult.reason)
-          wikiStore.showNotification({
-            style: 'red',
-            message: this.configError,
-            icon: 'alert'
-          })
-        }
-      } finally {
-        if (this.loadController === controller) {
-          this.loadController = null
-          if (!this.isUnmounted) this.localesLoading = false
-        }
-        wikiStore.stopLoading('admin-locale-refresh')
-      }
-    },
-    async download(lc: LocaleTableRow) {
-      if (lc.isDownloading) return
-      const controller = new AbortController()
-      this.downloadControllers.set(lc.code, controller)
-      lc.isDownloading = true
-      try {
-        await downloadLocale(createAbortableFetch(controller.signal), lc.code, 'Locale download failed')
-        if (controller.signal.aborted) return
-        lc.isInstalled = true
-        lc.updatedAt = new Date().toISOString()
-        lc.installDate = lc.updatedAt
-        wikiStore.showNotification({
-          message: `Locale ${lc.name} has been installed successfully.`,
-          style: 'success',
-          icon: 'get_app'
-        })
-      } catch (err) {
-        if (!controller.signal.aborted) {
-          wikiStore.showNotification({
-            message: `Error: ${getErrorMessage(err)}`,
-            style: 'error',
-            icon: 'warning'
-          })
-        }
-      } finally {
-        if (this.downloadControllers.get(lc.code) === controller) {
-          this.downloadControllers.delete(lc.code)
-          if (!this.isUnmounted) lc.isDownloading = false
-        }
-      }
-    },
-    async save() {
-      if (!this.canSave || this.loading) return
-      const controller = new AbortController()
-      this.saveController = controller
-      this.loading = true
-      try {
-        await saveLocaleConfig(createAbortableFetch(controller.signal), {
-          locale: this.selectedLocale,
-          autoUpdate: this.autoUpdate,
-          namespacing: this.namespacing,
-          namespaces: this.namespaces
-        }, 'Locale settings update failed')
-        if (controller.signal.aborted) return
-
-        // Change UI language
-        void this.$i18n.changeLanguage(this.selectedLocale)
-        this.$moment.locale(this.selectedLocale)
-
-        // Check for RTL
-        const curLocale = this.locales.find(locale => locale.code === this.selectedLocale)
-        this.$vuetify.locale.rtl[this.selectedLocale] = Boolean(curLocale?.isRTL)
-
-        wikiStore.showNotification({
-          message: 'Locale settings updated successfully.',
-          style: 'success',
-          icon: 'check'
-        })
-
-        this.reloadTimer = window.setTimeout(() => {
-          this.reloadTimer = null
-          window.location.reload()
-        }, 1000)
-      } catch (err) {
-        if (!controller.signal.aborted) {
-          wikiStore.showNotification({
-            message: `Error: ${getErrorMessage(err)}`,
-            style: 'error',
-            icon: 'warning'
-          })
-        }
-      } finally {
-        if (this.saveController === controller) {
-          this.saveController = null
-          if (!this.isUnmounted) this.loading = false
-        }
-      }
-    }
-  },
-  created() {
-    this.loadBootstrap()
-  },
-  beforeUnmount() {
-    this.isUnmounted = true
-    this.loadController?.abort()
-    this.saveController?.abort()
-    this.downloadControllers.forEach(controller => controller.abort())
-    this.downloadControllers.clear()
-    if (this.reloadTimer !== null) window.clearTimeout(this.reloadTimer)
   }
 }
+async function reload() {
+  if (busy.value || (dirty.value && !window.confirm('Discard the language draft and reload saved settings?'))) return
+  reviewing.value = false
+  operationOpen.value = false
+  await load()
+}
+function reset() {
+  if (busy.value || !saved.value) return
+  draft.value = copy(saved.value.policy)
+  saveError.value = ''
+  notice.value = ''
+}
+function review() {
+  if (locked.value || !dirty.value || !saved.value || !draft.value) return
+  const result = LocalePolicySchema.safeParse(draft.value)
+  if (!result.success) {
+    notice.value = result.error.issues.map((issue) => issue.message).join(' ')
+    attention.value = true
+    return
+  }
+  reviewed.value = copy(result.data)
+  reviewFingerprint.value = saved.value.fingerprint
+  reason.value = ''
+  saveError.value = ''
+  reviewing.value = true
+}
+function writeFailure(error: unknown) {
+  const status = error && typeof error === 'object' ? Number(Reflect.get(error, 'status')) : 0
+  stale.value = !status || status >= 500 || [401, 403, 409].includes(status)
+  saveError.value = errorMessage(error) + (stale.value ? ' Reload saved settings before another attempt.' : '')
+}
+async function confirm() {
+  if (locked.value || !saved.value || !reviewed.value || reason.value.trim().length < 3) return
+  busy.value = true
+  saveError.value = ''
+  try {
+    const result = await saveLocaleWorkspace(copy(reviewed.value), reviewFingerprint.value, reason.value.trim())
+    if (disposed) return
+    saved.value = { ...saved.value, policy: copy(reviewed.value), runtime: { ...saved.value.runtime, state: 'needs-attention' } }
+    draft.value = copy(reviewed.value)
+    reviewing.value = false
+    reviewed.value = null
+    attention.value = result.activation !== 'applied'
+    notice.value = attention.value
+      ? 'Languages saved. Runtime activation needs attention.'
+      : 'Languages published. Readers see the settings on their next page load.'
+    stale.value = true
+    busy.value = false
+    await load()
+  } catch (error) {
+    if (!disposed) writeFailure(error)
+  } finally {
+    if (!disposed) busy.value = false
+  }
+}
+function openOperation(kind: 'install' | 'catalog', locale?: LocalePackage) {
+  if (!canOperate.value || !saved.value) return
+  operationKind.value = kind
+  operationLocale.value = locale || null
+  operationReason.value = ''
+  reviewFingerprint.value = saved.value.fingerprint
+  saveError.value = ''
+  operationOpen.value = true
+}
+async function startOperation() {
+  if (!canOperate.value || operationReason.value.trim().length < 3) return
+  busy.value = true
+  saveError.value = ''
+  try {
+    await queueLocaleOperation(operationKind.value, operationLocale.value?.code, reviewFingerprint.value, operationReason.value.trim())
+    if (disposed) return
+    operationOpen.value = false
+    notice.value = 'Language operation queued. Follow its progress in Activity.'
+    attention.value = false
+    stale.value = true
+    busy.value = false
+    selectSection('activity')
+    await load()
+  } catch (error) {
+    if (!disposed) writeFailure(error)
+  } finally {
+    if (!disposed) busy.value = false
+  }
+}
+async function initialize() {
+  if (locked.value || dirty.value || !saved.value) return
+  busy.value = true
+  try {
+    const result = await retryLocaleRuntime(saved.value.fingerprint)
+    if (disposed) return
+    attention.value = result.activation !== 'applied'
+    notice.value = attention.value
+      ? 'Runtime activation needs attention. Review server diagnostics.'
+      : 'Runtime language resources applied.'
+    busy.value = false
+    await load()
+  } catch (error) {
+    notice.value = errorMessage(error)
+    attention.value = true
+  } finally {
+    busy.value = false
+  }
+}
+const fieldName = (field: string) =>
+  ({
+    locale: 'Default language',
+    namespacing: 'Multilingual routing',
+    namespaces: 'Reading languages',
+    autoUpdate: 'Automatic interface updates',
+    catalog: 'Language catalog',
+  })[field] || field.replace('package:', 'Package: ')
+const reviewValue = (policy: LocalePolicy, field: string) =>
+  field === 'locale'
+    ? `${languageName(policy.locale)} (${policy.locale})`
+    : field === 'namespaces'
+      ? policy.namespaces.map(languageName).join(', ') || 'No additional languages'
+      : field === 'namespacing'
+        ? policy.namespacing
+          ? 'Enabled · language-prefixed addresses'
+          : 'Off · one default language'
+        : policy.autoUpdate
+          ? 'Daily updates'
+          : 'Manual updates'
+const date = (value: string) =>
+  Number.isFinite(Date.parse(value))
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+    : 'Date unavailable'
+const stateName = (state: string) =>
+  ({ pending: 'Queued', running: 'Running', succeeded: 'Completed', failed: 'Failed', cancelled: 'Cancelled' })[state] || state
+const operationIcon = (state: string) =>
+  ({
+    pending: 'mdi-clock-outline',
+    running: 'mdi-progress-clock',
+    succeeded: 'mdi-check-circle-outline',
+    failed: 'mdi-alert-circle-outline',
+    cancelled: 'mdi-cancel',
+  })[state] || 'mdi-circle-outline'
+const preventUnload = (event: BeforeUnloadEvent) => {
+  if (dirty.value || busy.value) event.preventDefault()
+}
+onBeforeRouteLeave(() => !(dirty.value || busy.value) || (!busy.value && window.confirm('Discard unsaved language changes?')))
+onMounted(() => {
+  window.addEventListener('beforeunload', preventUnload)
+  void load()
+})
+onBeforeUnmount(() => {
+  disposed = true
+  sequence++
+  clearTimeout(poll)
+  window.removeEventListener('beforeunload', preventUnload)
+})
 </script>
+<style src="./locale-workspace.scss" lang="scss"></style>

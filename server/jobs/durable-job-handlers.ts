@@ -1,3 +1,4 @@
+import { createLocalePackageHandler } from './locale-package.ts'
 import type { ContentExtensionRerenderContext } from '../content-extensions/rerender.ts'
 import { type DurableJobHandler } from '../core/durable-jobs.ts'
 import { decryptWebhookSecret, resolveWebhookUrl, sendSignedWebhook, WebhookDeliveryError } from '../core/webhooks.ts'
@@ -82,6 +83,7 @@ export const createDurableJobHandlers = (
   wiki: PageWatchWikiContext & ContentExtensionRerenderContext
 ): Readonly<Record<string, DurableJobHandler>> =>
   Object.freeze({
+    'locale-package@1': createLocalePackageHandler(),
     'cleanup-durable-jobs@1': cleanupDurableJobs,
     'cleanup-site-logo@1': cleanupSiteLogoRevisions,
     'process-site-logo@1': createSiteLogoProcessHandler(1),

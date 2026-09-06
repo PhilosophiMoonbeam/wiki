@@ -1,174 +1,75 @@
-import { beforeEach, describe, expect, it, vi } from '../bun-test.mts'
-
-const logger = {
-  error: vi.fn(),
-  info: vi.fn()
-}
-const cacheSet = vi.fn()
-const refreshNamespaces = vi.fn()
-const update = vi.fn()
-const where = vi.fn()
-const query = { update, where }
-const wiki = {
-  config: {
-    graphEndpoint: 'https://graph.example.test/graphql',
-    lang: {
-      autoUpdate: true,
-      namespacing: false,
-      namespaces: [],
-      code: 'fr'
-    }
-  },
-  logger,
-  cache: { set: cacheSet },
-  models: { locales: { query: vi.fn(() => query) } },
-  lang: { refreshNamespaces }
-}
-Reflect.set(globalThis, 'WIKI', wiki)
-
-const fetchMock = vi.fn()
-Reflect.set(globalThis, 'fetch', fetchMock)
-
-// The jobs capture WIKI at module load, so the test runtime must install its boundary first.
-const { default: syncGraphLocales } = await import('../../jobs/sync-graph-locales.ts')
-
-const graphResponse = (body: unknown): Response =>
-  new Response(JSON.stringify(body), {
-    status: 200,
-    statusText: 'OK'
-  })
-
-const localeListResponse = {
-  data: {
-    localization: {
-      locales: [
-        {
-          availability: 98,
-          code: 'fr',
-          isRTL: false,
-          name: 'French',
-          nativeName: 'Français'
-        }
+import { beforeEach, afterEach, describe, expect, it, vi } from '../bun-test.mts'
+const fetchCatalog = vi.fn(),
+  fetchStrings = vi.fn(),
+  publish = vi.fn()
+vi.mockModule('../../repositories/locale-packages.ts', import.meta.url, () => ({ fetchLocaleCatalog: fetchCatalog, fetchLocaleStrings: fetchStrings }))
+vi.mockModule('../../operations/locale-synchronization.ts', import.meta.url, () => ({ publishLocaleSynchronization: publish }))
+const originalWiki = globalThis.WIKI
+const fr = { code: 'fr', name: 'French', nativeName: 'Français', isRTL: false, availability: 90 }
+const createWiki = () => ({
+  config: { graphEndpoint: 'https://languages.example.test', offline: false, lang: { code: 'fr', autoUpdate: true, namespacing: false, namespaces: [] } },
+  models: {
+    knex: vi.fn(() => ({
+      select: async () => [
+        { code: 'fr', updatedAt: 'before' },
+        { code: 'ar', updatedAt: 'before' }
       ]
-    }
-  }
-}
-
-const originalCachedLocales = [
-  {
-    availability: 50,
-    code: 'fr',
-    isInstalled: true,
-    isRTL: false,
-    name: 'Old French',
-    nativeName: 'Ancien français'
-  }
-]
-
-let cachedLocales: unknown
-let storedLocale: Record<string, unknown>
-
-beforeEach(() => {
-  vi.clearAllMocks()
-  fetchMock.mockReset()
-  cachedLocales = structuredClone(originalCachedLocales)
-  storedLocale = {
-    availability: 50,
-    code: 'fr',
-    isRTL: false,
-    name: 'Old French',
-    nativeName: 'Ancien français',
-    strings: { greeting: { hello: 'Last known good' } }
-  }
-  cacheSet.mockImplementation((_key: string, value: unknown) => {
-    cachedLocales = value
-  })
-  update.mockImplementation((value: Record<string, unknown>) => {
-    storedLocale = { ...value }
-    return query
-  })
-  where.mockReturnValue(query)
-  refreshNamespaces.mockResolvedValue(undefined)
+    }))
+  },
+  cache: { set: vi.fn() },
+  lang: { refreshNamespaces: vi.fn() },
+  configSvc: { loadFromDb: vi.fn() },
+  events: { outbound: { emit: vi.fn() } },
+  logger: { info: vi.fn(), error: vi.fn() }
 })
-
-describe('sync-graph-locales snapshot replacement', () => {
-  it('rejects HTTP 200 GraphQL errors from a locale strings request before replacing cache or stored strings', async () => {
-    fetchMock.mockResolvedValueOnce(graphResponse(localeListResponse)).mockResolvedValueOnce(
-      graphResponse({
-        data: { localization: null },
-        errors: [{ message: 'strings unavailable' }]
-      })
+let wiki: ReturnType<typeof createWiki>
+beforeEach(() => {
+  wiki = createWiki()
+  globalThis.WIKI = wiki as never
+  fetchCatalog.mockResolvedValue([fr])
+  fetchStrings.mockResolvedValue({ common: { title: 'Bonjour' } })
+  publish.mockResolvedValue({ changed: ['fr'] })
+})
+afterEach(() => {
+  globalThis.WIKI = originalWiki
+})
+const load = async () => (await vi.importFresh('../../jobs/sync-graph-locales.ts', import.meta.url)).default
+describe('automatic language synchronization', () => {
+  it('stages every active package before a guarded publication and activates the committed revision', async () => {
+    await (await load())()
+    expect(fetchStrings).toHaveBeenCalledTimes(1)
+    expect(fetchStrings).toHaveBeenCalledWith(wiki.config.graphEndpoint, 'fr')
+    expect(publish).toHaveBeenCalledWith(
+      wiki.models.knex,
+      expect.objectContaining({ updates: [{ locale: fr, expectedUpdatedAt: 'before', strings: { common: { title: 'Bonjour' } } }] })
     )
-
-    await expect(syncGraphLocales()).rejects.toThrow('Graph request failed: strings unavailable')
-
-    expect(cachedLocales).toEqual(originalCachedLocales)
-    expect(storedLocale.strings).toEqual({ greeting: { hello: 'Last known good' } })
-    expect(cacheSet).not.toHaveBeenCalled()
-    expect(update).not.toHaveBeenCalled()
-    expect(refreshNamespaces).not.toHaveBeenCalled()
+    expect(wiki.configSvc.loadFromDb).toHaveBeenCalled()
+    expect(wiki.lang.refreshNamespaces).toHaveBeenCalled()
+    expect(wiki.events.outbound.emit).toHaveBeenCalledWith('reloadConfig')
   })
-
-  it('rejects a missing localization strings field before replacing cache or stored strings', async () => {
-    fetchMock.mockResolvedValueOnce(graphResponse(localeListResponse)).mockResolvedValueOnce(graphResponse({ data: { localization: {} } }))
-
-    await expect(syncGraphLocales()).rejects.toThrow()
-
-    expect(cachedLocales).toEqual(originalCachedLocales)
-    expect(storedLocale.strings).toEqual({ greeting: { hello: 'Last known good' } })
-    expect(cacheSet).not.toHaveBeenCalled()
-    expect(update).not.toHaveBeenCalled()
+  it('preserves installed state if any package fetch fails', async () => {
+    fetchStrings.mockRejectedValue(new Error('private source details'))
+    await expect((await load())()).rejects.toThrow('could not complete')
+    expect(publish).not.toHaveBeenCalled()
+    expect(wiki.cache.set).not.toHaveBeenCalled()
+    expect(JSON.stringify(wiki.logger.error.mock.calls)).not.toContain('private source')
   })
-
-  it('rejects a missing locale-list field without replacing the locale-list cache', async () => {
-    fetchMock.mockResolvedValue(graphResponse({ data: { localization: {} } }))
-
-    await expect(syncGraphLocales()).rejects.toThrow()
-
-    expect(cachedLocales).toEqual(originalCachedLocales)
-    expect(cacheSet).not.toHaveBeenCalled()
-    expect(update).not.toHaveBeenCalled()
+  it('refreshes only the catalog when updates are disabled and skips all remote work offline', async () => {
+    wiki.config.lang.autoUpdate = false
+    publish.mockResolvedValue({ changed: [] })
+    await (await load())()
+    expect(fetchStrings).not.toHaveBeenCalled()
+    expect(wiki.lang.refreshNamespaces).not.toHaveBeenCalled()
+    fetchCatalog.mockClear()
+    wiki.config.offline = true
+    await (await load())()
+    expect(fetchCatalog).not.toHaveBeenCalled()
   })
-
-  it('replaces cache and stored strings after the complete snapshot is valid', async () => {
-    fetchMock.mockResolvedValueOnce(graphResponse(localeListResponse)).mockResolvedValueOnce(
-      graphResponse({
-        data: {
-          localization: {
-            strings: [
-              { key: 'greeting:hello', value: 'Bonjour' },
-              { key: 'fallback', value: '' }
-            ]
-          }
-        }
-      })
-    )
-
-    await syncGraphLocales()
-
-    expect(cachedLocales).toEqual([
-      {
-        availability: 98,
-        code: 'fr',
-        isInstalled: false,
-        isRTL: false,
-        name: 'French',
-        nativeName: 'Français'
-      }
-    ])
-    expect(storedLocale).toEqual({
-      availability: 98,
-      code: 'fr',
-      isRTL: false,
-      name: 'French',
-      nativeName: 'Français',
-      strings: {
-        fallback: 'fallback',
-        greeting: { hello: 'Bonjour' }
-      }
-    })
-    expect(cacheSet).toHaveBeenCalledOnce()
-    expect(update).toHaveBeenCalledOnce()
-    expect(refreshNamespaces).toHaveBeenCalledOnce()
+  it('retains an installed language absent from the upstream catalog', async () => {
+    fetchCatalog.mockResolvedValue([])
+    publish.mockResolvedValue({ changed: [] })
+    await (await load())()
+    expect(fetchStrings).not.toHaveBeenCalled()
+    expect(publish).toHaveBeenCalledWith(wiki.models.knex, expect.objectContaining({ updates: [] }))
   })
 })
