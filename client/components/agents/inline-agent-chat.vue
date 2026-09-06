@@ -16,12 +16,12 @@
       @click="closePanels"
     />
 
-    <aside
+    <div
       v-if="historyOpen"
       id="agent-history-panel"
       ref="historyPanel"
       class="inline-agent__side inline-agent__side--history"
-      :role="panelMode === 'modal' ? 'dialog' : undefined"
+      :role="panelMode === 'modal' ? 'dialog' : 'complementary'"
       aria-label="Chat history panel"
       :aria-modal="panelMode === 'modal' ? 'true' : undefined"
       :tabindex="panelMode === 'modal' ? -1 : undefined"
@@ -43,7 +43,7 @@
         </div>
       </v-card>
       <AgentHistoryPanel v-else @close="closeHistory" @clear="openClearUnfiledHistory" />
-    </aside>
+    </div>
 
     <v-card class="inline-agent__card" elevation="0">
       <v-toolbar class="inline-agent__toolbar" color="transparent" density="comfortable" tag="header">
@@ -331,18 +331,18 @@
       </template>
     </v-card>
 
-    <aside
+    <div
       v-show="memoryOpen"
       id="agent-memory-panel"
       ref="memoryPanel"
       class="inline-agent__side inline-agent__side--memory"
-      :role="panelMode === 'modal' ? 'dialog' : undefined"
+      :role="panelMode === 'modal' ? 'dialog' : 'complementary'"
       aria-label="Agent memory panel"
       :aria-modal="panelMode === 'modal' ? 'true' : undefined"
       :tabindex="panelMode === 'modal' ? -1 : undefined"
     >
       <AgentMemoryManager :model-value="memoryOpen" :csrf-token="csrfToken" @update:model-value="updateMemoryOpen" @update:busy="memoryMutationBusy = $event" />
-    </aside>
+    </div>
   </section>
 
   <AgentPersonalSkills v-if="skillsEnabled" v-model="skillManagerOpen" :csrf-token="csrfToken" @changed="reloadSkillCatalog" />
