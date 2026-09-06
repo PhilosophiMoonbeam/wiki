@@ -6,8 +6,8 @@ const updatePage = vi.fn(async (input: unknown) => input)
 const requester = { id: 8, permissions: ['write:pages'] }
 beforeEach(async () => {
   vi.resetModules(); unlock.mockClear(); updatePage.mockReset(); updatePage.mockImplementation(async input => input)
-  globalThis.WIKI = { config: { db: { type: 'postgres' } }, models: { pages: { updatePage } } } as unknown as typeof WIKI
-  operations = (await import('../../operations/pages.ts')).default
+  globalThis.WIKI = { auth: { checkAccess: (user: { permissions?: string[] }, permissions: string[]) => permissions.some(permission => user?.permissions?.includes(permission)) }, config: { db: { type: 'postgres' } }, models: { pages: { updatePage } } } as unknown as typeof WIKI
+  operations = (await vi.importFresh('../../operations/pages.ts', import.meta.url)).default
 })
 describe('administration publication changes', () => {
   it('uses the protected editor update with reviewed revision and a narrow payload', async () => {
@@ -32,5 +32,15 @@ describe('administration publication changes', () => {
     updatePage.mockRejectedValueOnce(new Error('Page changed'))
     await expect(operations.setPublication({ requester, id: 5, expectedSourceRevision: '23', isPublished: false })).rejects.toThrow('Page changed')
     expect(updatePage).toHaveBeenCalledTimes(1)
+  })
+  it('limits private ownership transfer to system administrators and retains protection and revision context', async () => {
+    const transferOwnership = vi.fn(async () => ({}))
+    Object.assign(WIKI.models.pages, { transferOwnership })
+    await expect(operations.transferOwnership({ requester, id: 5, ownerId: 9, expectedSourceRevision: '23' })).rejects.toThrow('This page does not exist.')
+    expect(transferOwnership).not.toHaveBeenCalled()
+    const administrator = { id: 1, permissions: ['manage:system'] }
+    await operations.transferOwnership({ requester: administrator, sessionId: 'session', id: 5, ownerId: 9, expectedSourceRevision: '23' })
+    expect(unlock).toHaveBeenCalledWith({ requester: administrator, sessionId: 'session', pageId: 5 })
+    expect(transferOwnership).toHaveBeenCalledWith({ user: administrator, id: 5, ownerId: 9, expectedSourceRevision: '23' })
   })
 })
