@@ -4,7 +4,7 @@
       v-col(cols='12')
         admin-hero(
           title='Page Details'
-          icon='/_assets/svg/icon-view-details.svg'
+          icon='mdi-file-document-edit-outline'
         )
           template(v-slot:extra)
             v-chip.ml-0.mr-2(label, size="small").text-body-small ID {{page.id}}

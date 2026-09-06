@@ -1,7 +1,7 @@
 <template lang='pug'>
   v-container(fluid)
     admin-hero(
-      icon='/_assets/svg/icon-line-chart.svg'
+      icon='mdi-chart-areaspline'
       :title='$t(`admin:analytics.title`)'
       :description='$t(`admin:analytics.subtitle`)'
     )

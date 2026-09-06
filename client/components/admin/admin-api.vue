@@ -1,11 +1,12 @@
 <template lang='pug'>
-  v-container(fluid)
+  v-container.admin-api(fluid)
     v-row
       v-col(cols='12')
         admin-hero(
           :title='$t(`admin:api.title`)'
-          :description='$t(`admin:api.subtitle`)'
-          icon='/_assets/svg/icon-rest-api.svg'
+          description='Connect applications and external agents to your wiki with controlled access.'
+          eyebrow='Intelligence & connections'
+          icon='mdi-api'
         )
           template(v-slot:status)
             .admin-api-status.d-flex.align-center
@@ -41,13 +42,22 @@
             h2.text-body-large.ma-0 API keys
             v-spacer
             v-chip(v-if='loadState === `success`', label, size="small", :color='activeKeyCount ? `success` : `info`') {{ activeKeyCount ? `${activeKeyCount} active` : 'No active keys' }}
+          .admin-filter-bar.d-flex.align-center.flex-wrap(v-if='loadState === `success` && keys.length')
+            v-text-field(v-model='keySearch' label='Find an API key' prepend-inner-icon='mdi-magnify' variant='outlined' density='compact' hide-details clearable)
+            v-select(v-model='keyFilter' label='Key status' :items='keyFilterOptions' variant='outlined' density='compact' hide-details)
+            span.admin-api__filter-count(role='status') {{ filteredKeys.length }} of {{ keys.length }} keys
           v-divider
           v-skeleton-loader(v-if='loadState === `loading`', type='table-tbody')
           v-alert.ma-4(v-else-if='loadState === `error`', type='error', variant="tonal", icon='mdi-alert')
             span Unable to load API keys.
             v-btn.ml-2(variant="text", size="small", @click='refresh') Retry
           template(v-else)
-            v-table(v-if='$vuetify.display.mdAndUp && keys.length > 0')
+            .admin-api__empty(v-if='keys.length && !filteredKeys.length')
+              v-icon(size='28') mdi-key-outline
+              h3 {{ keyFilter === 'active' && !keySearch ? 'No active API keys' : 'No matching API keys' }}
+              p {{ keyFilter === 'active' && !keySearch ? 'Create a key to connect an application, or review previously revoked keys.' : 'Try another name or change the status filter.' }}
+              v-btn(variant='text' color='primary' @click='keySearch = ``; keyFilter = `all`') Show all keys
+            v-table(v-if='$vuetify.display.lgAndUp && filteredKeys.length > 0')
               template(v-slot:default)
                 caption.api-key-caption API keys and their current status
                 thead
@@ -59,10 +69,10 @@
                     th(scope='col') {{$t('admin:api.headerLastUpdated')}}
                     th(scope='col', width='100') {{$t('admin:api.headerRevoke')}}
                 tbody
-                  tr(v-for='key of keys', :key='`key-` + key.id')
+                  tr(v-for='key of filteredKeys', :key='`key-` + key.id')
                     td
-                      strong(:class='key.isRevoked ? `text-red` : ``') {{ key.name }}
-                      em.text-body-small.ml-1.text-red(v-if='key.isRevoked') (revoked)
+                      strong(:class='key.isRevoked ? `text-error` : ``') {{ key.name }}
+                      em.text-body-small.ml-1.text-error(v-if='key.isRevoked') (revoked)
                     td.text-body-small {{ key.keyShort }}
                     td(:style='key.isRevoked ? `text-decoration: line-through;` : ``') {{ $helpers.formatMoment(key.expiration, 'LL') }}
                     td {{ $helpers.formatMoment(key.createdAt, 'calendar') }}
@@ -70,14 +80,14 @@
                     td
                       v-btn(icon, @click='revoke(key)', :disabled='key.isRevoked || adminApiBusy', :aria-label='`Revoke ${key.name}`')
                         v-icon(color='error') mdi-cancel
-            div(v-else-if='keys.length > 0')
-              .admin-mobile-record(v-for='key of keys', :key='`mobile-key-` + key.id')
+            div(v-else-if='filteredKeys.length > 0')
+              .admin-mobile-record(v-for='key of filteredKeys', :key='`mobile-key-` + key.id')
                 .d-flex.align-center
-                  .admin-mobile-record-title(:class='key.isRevoked ? `text-red` : ``') {{ key.name }}
+                  .admin-mobile-record-title(:class='key.isRevoked ? `text-error` : ``') {{ key.name }}
                   v-spacer
                   v-chip(label, size="x-small", :color='key.isRevoked ? `error` : `success`') {{ key.isRevoked ? 'Revoked' : 'Active' }}
                 .admin-mobile-record-meta Key ending {{ key.keyShort }}
-                .text-body-small.text-grey.mt-2 Expires {{ $helpers.formatMoment(key.expiration, 'LL') }}
+                .text-body-small.text-medium-emphasis.mt-2 Expires {{ $helpers.formatMoment(key.expiration, 'LL') }}
                 .text-body-small.text-grey Created {{ $helpers.formatMoment(key.createdAt, 'calendar') }}
                 .text-body-small.text-grey Updated {{ $helpers.formatMoment(key.updatedAt, 'calendar') }}
                 v-btn.mt-2(v-if='!key.isRevoked', variant="outlined", size="small", color='error', @click='revoke(key)', :disabled='adminApiBusy', :aria-label='`Revoke ${key.name}`')
@@ -102,13 +112,19 @@
                 p Send the generated key as an HTTP bearer token:
                 code.api-contract-code Authorization: {{ apiAccessContract.bearerScheme }} &lt;API_KEY&gt;
                 .text-label-small.mt-4 Full-access key example
-                pre.api-contract-example {{ curlExample }}
+                pre.api-contract-example(tabindex='0' role='region' aria-label='GraphQL request example') {{ curlExample }}
                 .text-label-small.mt-4 REST v1 endpoint
                 code.api-contract-code {{ externalRestEndpoint }}
                 .text-label-small.mt-4 OpenAPI 3.1 contract
                 code.api-contract-code {{ openApiEndpoint }}
             v-col(cols='12', lg='5')
               v-card-text
+                .text-label-small MCP · External agents
+                code.api-contract-code {{ mcpEndpoint }}
+                p.mt-4 Connect an MCP client using Streamable HTTP. MCP must be enabled in the deployment and requires a resource-bound API key for this exact endpoint.
+                p Ordinary browser sessions do not authenticate MCP requests. Key permissions and page access rules still apply.
+                v-btn(v-if='canManageAgents' to='/agents' variant='tonal' color='primary' prepend-icon='mdi-robot-outline') Agent runtime settings
+                v-divider.my-4
                 .text-label-small Internal REST transport
                 code.api-contract-code {{ internalRestEndpoint }}
                 p.mt-4 The REST routes under this prefix are application-internal and are not a public integration contract. API keys are rejected; signed-in user sessions are required.
@@ -159,6 +175,8 @@ export default {
       enabled: false,
       isToggleLoading: false,
       keys: [] as AdminApiKey[],
+      keySearch: '',
+      keyFilter: 'active',
       loadState: 'loading' as 'loading' | 'success' | 'error',
       isCreateDialogShown: false,
       isRevokeConfirmDialogShown: false,
@@ -169,6 +187,13 @@ export default {
     }
   },
   computed: {
+    keyFilterOptions() {
+      return [{ title: `Active (${this.activeKeyCount})`, value: 'active' }, { title: `Revoked (${this.keys.length - this.activeKeyCount})`, value: 'revoked' }, { title: `All keys (${this.keys.length})`, value: 'all' }]
+    },
+    filteredKeys(): AdminApiKey[] {
+      const query = (this.keySearch || '').trim().toLocaleLowerCase()
+      return this.keys.filter(key => (!query || key.name.toLocaleLowerCase().includes(query)) && (this.keyFilter === 'all' || (this.keyFilter === 'revoked' ? key.isRevoked : !key.isRevoked)))
+    },
     adminApiBusy(): boolean {
       return this.loadState === 'loading' || this.isToggleLoading || this.revokeLoading
     },
@@ -178,6 +203,8 @@ export default {
     apiAccessContract() {
       return apiAccessContract
     },
+    canManageAgents() { return wikiStore.user.permissions.includes('manage:system') },
+    mcpEndpoint() { return `${window.location.origin}${apiAccessContract.mcpPath}` },
     graphqlEndpoint() {
       return `${window.location.origin}${apiAccessContract.graphqlPath}`
     },
@@ -310,6 +337,15 @@ export default {
 </script>
 
 <style lang='scss'>
+.admin-api .admin-mobile-record {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--wiki-surface-border);
+  &-title { font-size: .9rem; font-weight: 600; overflow-wrap: anywhere; }
+  &-meta { margin-top: .5rem; font-size: .8rem; overflow-wrap: anywhere; color: var(--admin-muted); }
+}
+.admin-api__filter-count { color: var(--admin-muted); font-size: .75rem; padding: .5rem; }
+.admin-api__empty { display: grid; justify-items: center; gap: .6rem; padding: 2rem 1.25rem; text-align: center; color: var(--admin-muted); h3 { font-size: 1rem; color: rgb(var(--v-theme-on-surface)); } p { margin: 0; max-width: 50ch; font-size: .85rem; } }
+
 .api-contract-code {
   display: block;
   overflow-wrap: anywhere;

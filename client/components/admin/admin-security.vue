@@ -5,7 +5,7 @@
         AdminHero(
           :title='$t(`admin:security.title`)'
           :description='$t(`admin:security.subtitle`)'
-          icon='/_assets/svg/icon-private.svg'
+          icon='mdi-shield-lock-outline'
           heading-id='admin-security-heading'
         )
           template(v-slot:actions)

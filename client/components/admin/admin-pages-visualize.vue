@@ -5,7 +5,7 @@
         admin-hero(
           title='Visualize Pages'
           description='Dendrogram representation of your pages'
-          icon='/_assets/svg/icon-venn-diagram.svg'
+          icon='mdi-graph-outline'
         )
           template(v-slot:actions)
             .admin-pages-visualize-controls

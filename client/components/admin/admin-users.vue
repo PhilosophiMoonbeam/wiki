@@ -4,8 +4,9 @@
       v-col(cols='12')
         AdminHero(
           title='Users'
-          description='Manage users'
-          icon='/_assets/svg/icon-customer.svg'
+          description='Manage the people who read, write and care for your shared knowledge.'
+          eyebrow='People & access'
+          icon='mdi-account-outline'
           heading-id='admin-users-heading'
         )
           template(v-slot:actions)

@@ -12,7 +12,7 @@
         AdminHero(
           :title='$t(`admin:users.edit`)'
           :description='user.name'
-          icon='/_assets/svg/icon-male-user.svg'
+          icon='mdi-account-edit-outline'
           heading-id='admin-users-edit-heading'
         )
           template(v-slot:extra)

@@ -5,7 +5,7 @@
         admin-hero(
           :title='$t(`admin:extensions.title`)'
           :description='$t(`admin:extensions.subtitle`)'
-          icon='/_assets/svg/icon-installing-updates.svg'
+          icon='mdi-puzzle-plus-outline'
         )
         .pt-3
           v-row

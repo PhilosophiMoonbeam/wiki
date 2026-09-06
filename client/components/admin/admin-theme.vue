@@ -3,7 +3,7 @@ v-container.admin-theme(fluid)
   AdminHero(
     :title='$t(`admin:theme.title`)'
     :description='$t(`admin:theme.subtitle`)'
-    icon='/_assets/svg/icon-paint-palette.svg'
+    icon='mdi-palette-outline'
     eyebrow='Interface presentation'
     heading-id='admin-theme-title'
   )

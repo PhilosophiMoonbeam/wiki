@@ -5,7 +5,7 @@
         AdminHero(
           :title='$t(`admin:utilities.title`)'
           :description='$t(`admin:utilities.subtitle`)'
-          icon='/_assets/svg/icon-maintenance.svg'
+          icon='mdi-toolbox-outline'
           heading-id='admin-utilities-heading'
         )
 

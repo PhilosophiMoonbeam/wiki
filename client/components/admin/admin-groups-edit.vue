@@ -12,7 +12,7 @@
         AdminHero(
           title='Edit Group'
           :description='group.name'
-          icon='/_assets/svg/icon-social-group.svg'
+          icon='mdi-account-group-outline'
           heading-id='admin-groups-edit-heading'
         )
           template(v-slot:extra)

@@ -5,7 +5,7 @@
         AdminHero(
           title='Groups'
           description='Manage groups and their permissions'
-          icon='/_assets/svg/icon-people.svg'
+          icon='mdi-account-group-outline'
           heading-id='admin-groups-heading'
         )
           template(v-slot:actions)

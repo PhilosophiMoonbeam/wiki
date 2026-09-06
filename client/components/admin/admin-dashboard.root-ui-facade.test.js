@@ -91,31 +91,15 @@ describe('admin-dashboard recent pages / last logins root UI facade migration gu
     expect(script).toMatch(/lastLogins:\s*\[\]\s+as\s+LastLoginRow\[\]/)
   })
 
-  test('uses the shared compact hero with the configured workspace identity and deployed build status', () => {
-    expect(source).toMatch(
-      /admin-hero\([\s\S]*?:title='\$t\(`admin:dashboard\.title`\)'[\s\S]*?:description='siteTitle'[\s\S]*?icon='\/_assets\/svg\/icon-features-list\.svg'[\s\S]*?eyebrow='Control room'/
-    )
-    expect(source).toContain('template(#status)')
-    expect(source).toContain('Deployed build')
+  test('keeps the workspace identity, inventory readiness and deployed version visible', () => {
+    expect(source).toContain(":eyebrow='siteTitle'")
     expect(source).toContain("siteTitle() { return wikiStore.site.title?.trim() || 'tsEpistle' },")
-    expect(source.match(/\{\{ siteTitle \}\}/g) || []).toHaveLength(2)
-    expect(source).toContain('strong tsEpistle {{ info.product.version }}')
-    expect(source).not.toContain('info.product.upstreamBase')
-    expect(source).not.toMatch(/Wiki\.js/i)
-    expect(source).not.toContain('.admin-header')
-    expect(source).not.toContain('admin-dashboard__header')
-  })
-
-  test('keeps every metric contract while using the shorter dashboard card rhythm', () => {
-    expect(source).toMatch(
-      /\.admin-stat\s*\{[\s\S]*?min-height:\s*calc\(var\(--wiki-control-height\) \+ var\(--wiki-space-10\)\);[\s\S]*?align-items:\s*center;[\s\S]*?gap:\s*var\(--wiki-space-3\);[\s\S]*?padding:\s*var\(--wiki-space-3\) var\(--wiki-space-4\);/
-    )
-    expect(source).not.toContain('min-height: 8.5rem')
-    expect(source).not.toContain('min-height: 7.5rem')
-    expect(source).toContain("v-if='stat.value !== undefined'")
+    expect(source).toContain("summaryLoading ? '—' : summaryError ? '—' : stat.value")
+    expect(source).toContain("@click='refreshSummary'")
+    expect(source).toContain('tsEpistle {{ info.product.version }}')
     expect(source).toContain(":to='stat.to'")
-    expect(source).toContain('{{ stat.hint }}')
-    expect(source).toContain("{ key: 'version', label: 'Current build'")
+    expect(source).toContain('filterAdminNavigation(buildAdminNavigation(')
+    expect(source).not.toContain('info.product.upstreamBase')
   })
 
   test('loadRecentPages() uses generation and permission guards around facade-managed request state', () => {

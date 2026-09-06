@@ -85,7 +85,7 @@ describe('admin-search load/refresh/save/rebuild root UI facade migration guard'
     expect(source).toMatch(
       /@click=['"]selectedEngine = eng\.key['"][\s\S]*?:disabled=['"]!eng\.isAvailable \|\| saving['"][\s\S]*?:aria-disabled=['"]!eng\.isAvailable \|\| saving \? `true` : undefined['"][\s\S]*?role=['"]radio['"]/
     )
-    expect(source).toMatch(/v-icon\(start\)\s+mdi-cached/)
+    expect(source).toContain("prepend-icon='mdi-cached'")
     expect(source).toMatch(/v-else-if=['"]eng\.key === selectedEngine['"]\)\s+mdi-radiobox-marked/)
     expect(source).toMatch(/v-icon\(color=['"]grey['"],\s*v-else\)\s+mdi-radiobox-blank/)
     expect(source).toMatch(/@click=['"]save['"][^)]*:disabled=['"]!canSave['"][^)]*:loading=['"]saving['"]/)

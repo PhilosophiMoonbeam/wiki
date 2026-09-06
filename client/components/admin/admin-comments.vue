@@ -1,7 +1,7 @@
 <template lang='pug'>
   v-container(fluid)
     admin-hero(
-      icon='/_assets/svg/icon-chat-bubble.svg'
+      icon='mdi-comment-text-multiple-outline'
       title='Comment providers'
       description='Configure page discussion providers'
       heading-id='admin-comments-heading'

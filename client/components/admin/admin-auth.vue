@@ -1,7 +1,7 @@
 <template lang='pug'>
   v-container(fluid)
     admin-hero(
-      icon='/_assets/svg/icon-unlock.svg'
+      icon='mdi-shield-account-outline'
       :title='$t(`admin:auth.title`)'
       :description='$t(`admin:auth.subtitle`)'
     )

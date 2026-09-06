@@ -5,7 +5,7 @@
         admin-hero(
           title='Pages'
           description='Manage pages'
-          icon='/_assets/svg/icon-file.svg'
+          icon='mdi-file-document-multiple-outline'
         )
           template(v-slot:actions)
             v-btn.animated.fadeInDown.wait-p1s(icon color='grey' variant="outlined" @click='refresh' :loading='loading' :disabled='loading' aria-label='Refresh pages')

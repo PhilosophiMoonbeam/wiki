@@ -14,7 +14,9 @@ describe('ordinary Wiki agent administration integration', () => {
 
   test('registers Agents in the ordinary administration router and sidebar', () => {
     expect(router).toMatch(/path:\s*['"]\/agents['"][^\n]*admin-agents\.vue/)
-    expect(navigation).toMatch(/\{ key: 'agents'[^\n]*to: '\/agents'[^\n]*enabled: this\.agentsEnabled/)
+    const catalog = fs.readFileSync(path.join(process.cwd(), 'client/helpers/admin-navigation.ts'), 'utf8')
+    expect(catalog).toMatch(/key: 'agents',[\s\S]*?to: '\/agents',[\s\S]*?permission: 'manage:system'/)
+    expect(navigation).toContain('buildAdminNavigation')
     expect(navigation).toMatch(/admin:agents\.title/)
     expect(navigation).toMatch(/this\.\$route\.path === '\/agents'[^]*admin:agents\.title/)
   })

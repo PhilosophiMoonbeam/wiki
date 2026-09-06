@@ -5,7 +5,7 @@
         admin-hero(
           :title='$t("admin:tags.title")'
           :description='$t("admin:tags.subtitle")'
-          icon='/_assets/svg/icon-tags.svg'
+          icon='mdi-tag-multiple-outline'
         )
           template(v-slot:actions)
             v-btn.animated.fadeInDown(

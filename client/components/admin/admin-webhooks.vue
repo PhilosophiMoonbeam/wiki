@@ -5,7 +5,7 @@
         admin-hero(
           :title='$t(`admin:webhooks.title`)'
           :description='$t(`admin:webhooks.subtitle`)'
-          icon='/_assets/svg/icon-winter.svg'
+          icon='mdi-webhook'
         )
           template(v-slot:actions)
             .admin-webhook-actions.d-flex.align-center.flex-wrap.ga-2

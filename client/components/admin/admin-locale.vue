@@ -3,7 +3,7 @@
     v-row
       v-col(cols='12')
         admin-hero(
-          icon='/_assets/svg/icon-globe-earth.svg'
+          icon='mdi-translate'
           :title='$t(`admin:locale.title`)'
           :description='$t(`admin:locale.subtitle`)'
         )

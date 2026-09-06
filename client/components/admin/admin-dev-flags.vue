@@ -5,10 +5,10 @@
         admin-hero(
           title='Developer Tools'
           description='Diagnostic flags for temporary developer logging'
-          icon='/_assets/svg/icon-console.svg'
+          icon='mdi-toggle-switch-off-outline'
         )
           template(v-slot:actions)
-            v-btn(color='success', variant="flat", @click='save', size="small", :disabled='!flagsLoaded || loading || saving', :loading='saving')
+            v-btn(color='primary', variant="flat", @click='save', size="small", :disabled='!flagsLoaded || loading || saving', :loading='saving')
               v-icon(start) mdi-check
               span {{$t('common:actions.apply')}}
 

@@ -5,7 +5,7 @@
         admin-hero(
           :title='$t(`admin:storage.title`)'
           :description='$t(`admin:storage.subtitle`)'
-          icon='/_assets/svg/icon-cloud-storage.svg'
+          icon='mdi-database-outline'
         )
           template(v-slot:actions)
             v-tooltip(location='top')
@@ -18,7 +18,7 @@
                 v-btn.mx-3.animated.fadeInDown.wait-p2s(icon, variant="outlined", color='grey', @click='refresh', :loading='targetsLoading', :disabled='targetsLoading || saving || runningAction', v-bind='props', aria-label='Refresh storage targets')
                   v-icon mdi-refresh
               span Refresh storage targets
-            v-btn.animated.fadeInDown(color='success', @click='save', variant="flat", size="large", :loading='saving', :disabled='saving || targetsLoading || runningAction')
+            v-btn.animated.fadeInDown(color='primary', @click='save', variant="flat", size="large", :loading='saving', :disabled='saving || targetsLoading || runningAction')
               v-icon(start) mdi-check
               span {{$t('common:actions.apply')}}
 

@@ -1,11 +1,12 @@
 <template lang='pug'>
-  v-container(fluid)
+  v-container.admin-general(fluid)
     v-row
       v-col(cols='12')
         admin-hero(
-          icon='/_assets/svg/icon-categorize.svg'
+          icon='mdi-tune-variant'
           :title='$t(`admin:general.title`)'
-          :description='$t(`admin:general.subtitle`)'
+          description='Set the identity, publishing defaults and everyday behavior of your workspace.'
+          eyebrow='Workspace'
         )
           template(v-slot:status)
             v-chip(v-if='dirty', color='warning', variant='tonal', size='small') Unsaved changes
@@ -13,24 +14,30 @@
             v-btn(
               type='submit'
               form='general-form'
-              color='success'
+              color='primary'
               variant="flat"
               size="large"
               prepend-icon='mdi-check'
               :loading='saving'
               :disabled='!loaded || initialLoading || saving || !dirty || !formValid'
             ) {{$t('common:actions.apply')}}
+        nav.admin-section-index(aria-label='General settings sections')
+          a(href='#general-identity') Site identity
+          a(href='#general-banner') Announcement
+          a(href='#general-features') Features
+          a(href='#general-urls') Page URLs
+          a(href='#general-editing') Editing
         v-form#general-form(
           @submit.prevent='save'
           v-model='formValid'
           :disabled='initialLoading || !loaded || saving'
         )
           v-row
-            v-col(lg='6' cols='12')
-                v-card.animated.fadeInUp
+            v-col(lg='7' cols='12')
+                v-card#general-identity.animated.fadeInUp
                   v-toolbar(color='primary', density="compact", flat)
                     v-toolbar-title.text-body-large {{ $t('admin:general.siteInfo') }}
-                  .text-label-small.text-grey.pa-4 {{$t('admin:general.general')}}
+                  .text-label-small.text-medium-emphasis.pa-4 {{$t('admin:general.general')}}
                   .px-3.pb-3
                     v-text-field(
                       variant="outlined"
@@ -54,7 +61,7 @@
                       :hint='$t(`admin:general.siteTitleHint`)'
                       persistent-hint
                     )
-                  .text-label-small.text-grey.pa-4 {{$t('admin:general.logo')}}
+                  .text-label-small.text-medium-emphasis.pa-4 {{$t('admin:general.logo')}}
                   .logo-manager.px-4.pb-4
                     .logo-preview-grid
                       .logo-preview-card
@@ -106,6 +113,16 @@
                         )
                           v-icon(start) mdi-refresh
                           | {{ $t('admin:general.logoRetry') }}
+                    input.logo-file-input(
+                      ref='logoFileInput'
+                      type='file'
+                      tabindex='-1'
+                      :aria-label='$t(`admin:general.logoPickerLabel`)'
+                      accept='image/png,image/jpeg,image/webp'
+                      :disabled='logoUploading || logoRetrying'
+                      @change='onLogoFileChange'
+                      @click.stop
+                    )
                     .logo-drop-target(
                       :class='{ "logo-drop-target--active": logoDragActive, "logo-drop-target--disabled": logoUploading || logoRetrying }'
                       role='button'
@@ -120,14 +137,6 @@
                       @dragleave.prevent='onLogoDragLeave'
                       @drop.prevent='onLogoDrop'
                     )
-                      input.logo-file-input(
-                        ref='logoFileInput'
-                        type='file'
-                        accept='image/png,image/jpeg,image/webp'
-                        :disabled='logoUploading || logoRetrying'
-                        @change='onLogoFileChange'
-                        @click.stop
-                      )
                       v-icon.logo-drop-icon(size='34') mdi-image-plus-outline
                       .logo-drop-copy
                         .text-body-large.font-weight-medium {{ $t('admin:general.logoPickerTitle') }}
@@ -139,7 +148,7 @@
                     p.logo-disclosure.text-body-small.text-medium-emphasis
                       v-icon.mr-2(size='18') mdi-earth
                       | {{ $t('admin:general.logoPublicUsage') }}
-                  .text-label-small.text-grey.pa-4 {{$t('admin:general.footerCopyright')}}
+                  .text-label-small.text-medium-emphasis.pa-4 {{$t('admin:general.footerCopyright')}}
                   .px-3.pb-3
                     v-text-field(
                       variant="outlined"
@@ -170,7 +179,7 @@
                       :hint='$t(`admin:general.footerOverrideHint`)'
                       )
                   v-divider
-                  .text-label-small.text-grey.pa-4 SEO
+                  .text-label-small.text-medium-emphasis.pa-4 SEO
                   .px-3.pb-3
                     v-text-field(
                       variant="outlined"
@@ -193,8 +202,8 @@
                       persistent-hint
                       )
 
-                v-card.mt-5.animated.fadeInUp.wait-p4s
-                  v-toolbar(color='warning', density='compact', flat)
+                v-card#general-banner.mt-5.animated.fadeInUp.wait-p4s
+                  v-toolbar(color='primary', density='compact', flat)
                     v-toolbar-title.text-body-large {{ $t('admin:general.siteBanner') }}
                   v-card-text
                     v-switch.mt-0(
@@ -226,46 +235,15 @@
                       persistent-hint
                     )
                     template(v-if='config.banner.isEnabled && (config.banner.title || config.banner.content)')
-                      .text-label-small.text-grey.mb-2 {{ $t('admin:general.siteBannerPreview') }}
+                      .text-label-small.text-medium-emphasis.mb-2 {{ $t('admin:general.siteBannerPreview') }}
                       site-banner(:banner='config.banner')
 
-            v-col(lg='6' cols='12')
-              v-card.animated.fadeInUp.wait-p4s
+            v-col(lg='5' cols='12')
+              v-card#general-features.animated.fadeInUp.wait-p4s
                 v-toolbar(color='indigo', density="compact", flat)
                   v-toolbar-title.text-body-large Features
                 v-card-text
-                  //- v-switch(
-                  //-   inset
-                  //-   label='Asset Image Optimization'
-                  //-   color='indigo'
-                  //-   v-model='config.featureTinyPNG'
-                  //-   persistent-hint
-                  //-   hint='Image optimization tool to reduce filesize and bandwidth costs.'
-                  //-   disabled
-                  //-   )
-                  //- v-text-field.mt-3(
-                  //-   variant='outlined'
-                  //-   label='TinyPNG API Key'
-                  //-   :counter='255'
-                  //-   v-model='config.description'
-                  //-   prepend-icon='mdi-subdirectory-arrow-right'
-                  //-   hint='Get your API key at https://tinypng.com/developers'
-                  //-   persistent-hint
-                  //-   disabled
-                  //-   )
 
-                  //- v-divider.mt-3
-                  //- v-switch(
-                  //-   inset
-                  //-   label='Page Ratings'
-                  //-   color='indigo'
-                  //-   v-model='config.featurePageRatings'
-                  //-   persistent-hint
-                  //-   hint='Allow users to rate pages.'
-                  //-   disabled
-                  //-   )
-
-                  //- v-divider.mt-3
                   v-switch.mt-0(
                     inset
                     label='Comments'
@@ -275,18 +253,7 @@
                     hint='Allow users to leave comments on pages.'
                     )
 
-                  //- v-divider.mt-3
-                  //- v-switch(
-                  //-   inset
-                  //-   label='Personal Wikis'
-                  //-   color='indigo'
-                  //-   v-model='config.featurePersonalWikis'
-                  //-   persistent-hint
-                  //-   hint='Allow users to have their own personal wiki.'
-                  //-   disabled
-                  //-   )
-
-              v-card.mt-5.animated.fadeInUp.wait-p6s
+              v-card#general-urls.mt-5.animated.fadeInUp.wait-p6s
                 v-toolbar(color='primary', density="compact", flat)
                   v-toolbar-title.text-body-large URL Handling
                 v-card-text
@@ -299,7 +266,7 @@
                     persistent-hint
                     )
 
-              v-card.mt-5.animated.fadeInUp.wait-p7s
+              v-card#general-editing.mt-5.animated.fadeInUp.wait-p7s
                 v-toolbar(color='primary', density="compact", flat)
                   v-toolbar-title.text-body-large {{$t('admin:general.editShortcuts')}}
                 v-card-text
@@ -312,7 +279,7 @@
                     :hint='$t(`admin:general.editFabHint`)'
                     )
                 v-divider
-                .text-label-small.text-grey.pa-4 {{$t('admin:general.editMenuBar')}}
+                .text-label-small.text-medium-emphasis.pa-4 {{$t('admin:general.editMenuBar')}}
                 .px-3.pb-3
                   v-switch.mt-0.ml-1(
                     inset
@@ -342,7 +309,7 @@
                     )
                 template(v-if='config.editMenuBar && config.editMenuExternalBtn')
                   v-divider
-                  .text-label-small.text-grey.pa-4 External Edit Button
+                  .text-label-small.text-medium-emphasis.pa-4 External Edit Button
                   .px-3.pb-3
                     v-text-field(
                       variant="outlined"
@@ -369,17 +336,11 @@
                       persistent-hint
                       )
 
-        .d-flex.flex-wrap.justify-end.ga-2.mt-5.sticky-action-row
-          v-btn(
-            type='submit'
-            form='general-form'
-            color='success'
-            variant='flat'
-            size='large'
-            prepend-icon='mdi-check'
-            :loading='saving'
-            :disabled='!loaded || initialLoading || saving || !dirty || !formValid'
-          ) {{$t('common:actions.apply')}}
+        .admin-save-dock(role='region' aria-label='Save general settings')
+          .admin-save-dock__copy(role='status' aria-live='polite')
+            v-icon(size='18' :color='dirty ? `warning` : `primary`') {{ dirty ? 'mdi-circle-edit-outline' : 'mdi-check-circle-outline' }}
+            span {{ initialLoading ? 'Loading settings…' : !loaded ? 'Settings unavailable' : saving ? 'Saving settings…' : dirty ? 'You have unsaved changes' : 'All changes saved' }}
+          v-btn(type='submit' form='general-form' color='primary' variant='flat' prepend-icon='mdi-check' :loading='saving' :disabled='!loaded || initialLoading || saving || !dirty || !formValid') Save settings
 </template>
 
 <script lang='ts'>
@@ -409,7 +370,6 @@ const logoErrorMessageKeys: Record<SiteLogoErrorCode, string> = {
   ARTIFACT_TOO_LARGE: 'admin:general.logoErrorArtifactTooLarge',
   MANAGED_LOGO_CONFLICT: 'admin:general.logoErrorConflict'
 }
-
 
 export default {
   i18nOptions: { namespaces: 'editor' },

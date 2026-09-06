@@ -3,7 +3,7 @@
     v-row
       v-col(cols='12')
         admin-hero(
-          icon='/_assets/svg/icon-triangle-arrow.svg'
+          icon='mdi-navigation-variant-outline'
           :title='$t(`admin:navigation.title`)'
           :description='$t(`admin:navigation.subtitle`)'
         )

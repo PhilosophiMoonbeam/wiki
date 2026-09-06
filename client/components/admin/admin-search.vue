@@ -1,11 +1,12 @@
 <template lang='pug'>
-  v-container(fluid)
+  v-container.admin-search(fluid)
     v-row
       v-col(cols='12')
         admin-hero(
           :title='$t(`admin:search.title`)'
-          :description='$t(`admin:search.subtitle`)'
-          icon='/_assets/svg/icon-search.svg'
+          description='Help people and agents find the right knowledge. Configure an engine, then maintain its index.'
+          eyebrow='Intelligence & connections'
+          icon='mdi-text-search-variant'
         )
           template(v-slot:actions)
             v-tooltip(location='top')
@@ -18,20 +19,14 @@
                 v-btn.animated.fadeInDown.wait-p2s(icon, variant="outlined", color='grey', @click='refresh', v-bind='props', aria-label='Refresh search engines', :loading='enginesLoading', :disabled='saving || rebuilding')
                   v-icon mdi-refresh
               span Refresh search engines
-            .admin-action-group.ml-3
-              .text-body-small.text-medium-emphasis Index maintenance
-              v-btn.animated.fadeInDown.wait-p1s(color='primary', variant="outlined", @click='rebuild', :loading='rebuilding', :disabled='saving || enginesLoading')
-                v-icon(start) mdi-cached
-                span {{$t('admin:search.rebuildIndex')}}
-              .text-body-small.text-medium-emphasis Rebuilds the search index immediately.
-            v-btn.animated.fadeInDown(color='success', @click='save', variant="flat", size="large", :disabled='!canSave', :loading='saving')
+            v-btn.animated.fadeInDown(color='primary', @click='save', variant="flat", size="large", :disabled='!canSave', :loading='saving')
               v-icon(start) mdi-check
               span {{$t('common:actions.apply')}}
 
       v-col(lg='3', cols='12')
         v-card.animated.fadeInUp
           v-toolbar(flat, color='primary', density="compact")
-            .text-body-large Active search engine (saved when Apply is selected)
+            .text-body-large Search engines
           v-list.py-0(lines="two", density="compact", :role='enginesLoaded && engines.length ? `radiogroup` : undefined', aria-label='Active search engine', :aria-busy='enginesLoading')
             v-list-item(v-if='enginesLoading')
               v-progress-circular(indeterminate, size='20', width='2', color='primary', aria-label='Loading search engines')
@@ -68,7 +63,7 @@
         v-card.animated.fadeInUp.wait-p2s
           v-toolbar(color='primary', density="compact", flat)
             .text-body-large {{engine.title || 'Search engine configuration'}}
-            .text-body-small.text-medium-emphasis(v-if='engine.key') Pending changes are saved when Apply is selected.
+            .text-body-small.text-medium-emphasis(v-if='engine.key') Select an engine, configure it, then apply your changes.
           div.v-card-info(v-if='engine.key')
             div
               div {{engine.description}}
@@ -134,6 +129,13 @@
                   :class='cfg.value.hint ? "mb-2" : ""'
                   :disabled='saving'
                   )
+        v-card.admin-maintenance.mt-5
+          v-card-text
+            .admin-maintenance__copy
+              h2 Search index
+              p Rebuild the index after changing engines or when search results no longer reflect your content. This can take time on a large wiki.
+            v-btn(color='primary' variant='outlined' prepend-icon='mdi-cached' @click='rebuild' :loading='rebuilding' :disabled='saving || enginesLoading') {{ $t('admin:search.rebuildIndex') }}
+
 </template>
 
 <script lang='ts'>
@@ -335,23 +337,10 @@ export default {
 
 <style lang='scss' scoped>
 
-.admin-action-group {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  flex-wrap: wrap;
-}
-
 .provider-url {
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 959px) {
-  .admin-action-group {
-    flex: 1 0 100%;
-    margin-left: 0 !important;
-  }
-}
 .enginelogo {
   width: 250px;
   height: 85px;

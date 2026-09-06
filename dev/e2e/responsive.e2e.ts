@@ -686,6 +686,17 @@ test.describe('responsive UI quality matrix', () => {
       await expect(drawer).not.toHaveClass(/v-navigation-drawer--temporary/)
       await expect(drawer).toHaveClass(/v-navigation-drawer--active/)
     }
+
+    await page.getByRole('link', { name: 'All administration settings', exact: true }).click()
+    await expect(page.locator('#dashboard-settings-title')).toBeInViewport()
+    const settingsSearch = page.locator('.dashboard-directory__search input')
+    await settingsSearch.fill('MCP')
+    await expect(page.locator('.dashboard-directory__link')).toHaveCount(2)
+    await settingsSearch.fill('no-matching-setting')
+    await expect(page.getByText('No matching settings', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Clear search', exact: true }).click()
+    await expect(page.locator('.dashboard-directory__link')).toHaveCount(27)
+
   })
 
   test('keeps Agent Chat readable and operable', async ({ page }) => {

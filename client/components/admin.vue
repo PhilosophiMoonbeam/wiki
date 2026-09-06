@@ -6,8 +6,7 @@
         .admin-context
           v-icon(size='16') mdi-shield-crown-outline
           span.admin-context__root Administration
-          v-icon.admin-context__separator(size='14') mdi-chevron-right
-          strong.admin-context__current {{ currentRouteLabel }}
+
         v-spacer
       template(v-slot:mobileBrand)
         v-btn.admin-nav-toggle(
@@ -26,15 +25,15 @@
       location='start'
       :permanent='$vuetify.display.mdAndUp'
       :temporary='$vuetify.display.smAndDown'
-      :width='$vuetify.display.smAndDown ? 336 : 304'
+      :width='$vuetify.display.smAndDown ? 304 : 264'
     )
       .admin-sidebar__inner
         .admin-sidebar__brand
           .admin-sidebar__brand-icon
             v-icon(size='24') mdi-view-dashboard-variant-outline
           div
-            .admin-sidebar__eyebrow Control center
-            .admin-sidebar__title Administration
+            .admin-sidebar__eyebrow Administration
+            .admin-sidebar__title Control center
           v-spacer
           v-btn(
             v-if='$vuetify.display.smAndDown'
@@ -70,7 +69,7 @@
               v-list-item-title {{ $t('admin:dashboard.title') }}
               template(v-slot:append)
                 v-icon(size='18') {{ $vuetify.locale.isRtl ? 'mdi-arrow-left' : 'mdi-arrow-right' }}
-            .admin-nav__label Settings
+            .admin-nav__label Workspace controls
             template(v-if='filteredNavGroups.length')
               .admin-nav__group(
                 v-for='group in filteredNavGroups'
@@ -106,7 +105,12 @@
             .admin-nav__empty(v-else)
               v-icon(size='28') mdi-magnify-close
               .text-body-medium No settings found
-              .text-body-small.text-medium-emphasis Try a different search
+              .text-body-small.text-medium-emphasis Try a topic such as search, members or MCP.
+              v-btn.mt-2(variant='text' size='small' @click='navSearch = ``') Clear search
+        .admin-sidebar__footer
+          a.admin-sidebar__return(href='/')
+            v-icon(size='18') mdi-arrow-top-left
+            span Back to wiki
 
     v-main.admin-main(ref='adminMain' tabindex='-1')
       .admin-route-bar
@@ -116,12 +120,12 @@
           span.admin-route-bar__group(v-if='currentRouteGroup') {{ currentRouteGroup.label }}
           v-icon(v-if='currentRouteGroup' size='14') {{ $vuetify.locale.isRtl ? 'mdi-chevron-left' : 'mdi-chevron-right' }}
           strong(aria-current='page') {{ currentRouteLabel }}
-        .admin-route-bar__section(v-if='currentRouteGroup')
-          v-icon(size='16') {{ currentRouteGroup.icon }}
-          span {{ currentRouteGroup.label }}
+        router-link.admin-route-bar__index(to='/dashboard#settings' aria-label='All administration settings')
+          v-icon(size='16') mdi-view-grid-outline
+          span All settings
       router-view(v-slot='{ Component }')
-        transition(name='admin-router' mode='out-in')
-          component(:is='Component')
+        transition(name='admin-router' mode='out-in' @after-enter='focusRouteHeading')
+          component(:is='Component' @vue:mounted='focusRouteHeading')
 
     nav-footer
     notify
@@ -129,54 +133,61 @@
 </template>
 
 <script lang='ts'>
-import { defineComponent, ref, watch } from 'vue'
+import { defineComponent, provide, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { wikiStore } from '@/store/index.ts'
 
+import { adminSummaryKey } from '../helpers/admin-summary'
 import { fetchSystemSummary } from '../helpers/system-api'
 import { getErrorMessage, loadingStart, loadingStop, showNotification } from '../helpers/root-ui-store'
 
-type AdminNavItem = {
-  key: string
-  label: string
-  icon: string
-  to?: string
-  href?: string
-  permission?: string | string[]
-  count?: number
-  enabled?: boolean
-}
-
-type AdminNavGroup = {
-  key: string
-  label: string
-  icon: string
-  items: AdminNavItem[]
-}
+import { buildAdminNavigation, filterAdminNavigation, type AdminNavGroup, type AdminNavItem } from '../helpers/admin-navigation'
 
 export default defineComponent({
   i18nOptions: { namespaces: 'admin' },
   setup() {
+    const summaryLoading = ref(false)
+    const summaryError = ref('')
+    async function loadInfo() {
+      if (summaryLoading.value) return
+      summaryLoading.value = true
+      summaryError.value = ''
+      loadingStart(wikiStore, 'admin-stats-refresh')
+      try {
+        wikiStore.admin.info = await fetchSystemSummary(window.fetch.bind(window), 'System summary response is invalid')
+      } catch (err) {
+        summaryError.value = getErrorMessage(err)
+        showNotification(wikiStore, {
+          style: 'error',
+          message: getErrorMessage(err),
+          icon: 'alert'
+        })
+      } finally {
+        summaryLoading.value = false
+        loadingStop(wikiStore, 'admin-stats-refresh')
+      }
+    }
+    provide(adminSummaryKey, { loading: summaryLoading, error: summaryError, refresh: loadInfo })
     const { mdAndUp } = useDisplay()
     const adminDrawerShown = ref(mdAndUp.value)
-    const navSearch = ref('')
-    const openedSections = ref<string[]>([])
+    const navSearch = ref<string | null>('')
+    const openedSections = ref<string[]>(['knowledge', 'intelligence'])
     const sectionsBeforeSearch = ref<string[] | null>(null)
 
     watch(mdAndUp, isDesktop => {
       adminDrawerShown.value = isDesktop
     })
     watch(navSearch, query => {
-      if (query.trim()) {
+      if ((query || '').trim()) {
         if (sectionsBeforeSearch.value === null) {
           sectionsBeforeSearch.value = [...openedSections.value]
         }
-        openedSections.value = ['content', 'people', 'experience', 'operations']
+        openedSections.value = ['knowledge', 'people', 'intelligence', 'workspace', 'operations']
       } else if (sectionsBeforeSearch.value !== null) {
         openedSections.value = sectionsBeforeSearch.value
         sectionsBeforeSearch.value = null
       }
-    })
+    }, { flush: 'sync' })
 
     const scrollStyle = {
       scrollPanel: {
@@ -184,7 +195,7 @@ export default defineComponent({
       }
     }
 
-    return { adminDrawerShown, navSearch, openedSections, scrollStyle }
+    return { adminDrawerShown, navSearch, openedSections, scrollStyle, loadInfo }
   },
   computed: {
     info: {
@@ -192,86 +203,11 @@ export default defineComponent({
       set(value: typeof wikiStore.admin.info) { wikiStore.admin.info = value }
     },
     permissions(): string[] { return wikiStore.user.permissions },
-    agentsEnabled(): boolean { return siteConfig.agentsEnabled },
     navGroups(): AdminNavGroup[] {
-      const groups: AdminNavGroup[] = [
-        {
-          key: 'content',
-          label: 'Content & appearance',
-          icon: 'mdi-shape-outline',
-          items: [
-            { key: 'general', label: this.$t('admin:general.title'), icon: 'mdi-tune-variant', to: '/general', permission: 'manage:system' },
-            { key: 'locale', label: this.$t('admin:locale.title'), icon: 'mdi-translate', to: '/locale', permission: 'manage:system' },
-            { key: 'navigation', label: this.$t('admin:navigation.title'), icon: 'mdi-navigation-variant-outline', to: '/navigation', permission: ['manage:system', 'manage:navigation'] },
-            { key: 'pages', label: this.$t('admin:pages.title'), icon: 'mdi-file-document-multiple-outline', to: '/pages', permission: ['manage:system', 'write:pages', 'manage:pages', 'delete:pages'], count: this.info.pagesTotal },
-            { key: 'tags', label: this.$t('admin:tags.title'), icon: 'mdi-tag-multiple-outline', to: '/tags', permission: 'manage:system', count: this.info.tagsTotal },
-            { key: 'theme', label: this.$t('admin:theme.title'), icon: 'mdi-palette-outline', to: '/theme', permission: ['manage:system', 'manage:theme'] }
-          ]
-        },
-        {
-          key: 'people',
-          label: 'People & access',
-          icon: 'mdi-account-multiple-outline',
-          items: [
-            { key: 'users', label: this.$t('admin:users.title'), icon: 'mdi-account-outline', to: '/users', permission: ['manage:system', 'manage:groups', 'write:groups', 'manage:users', 'write:users'], count: this.info.usersTotal },
-            { key: 'groups', label: this.$t('admin:groups.title'), icon: 'mdi-account-group-outline', to: '/groups', permission: ['manage:system', 'manage:groups', 'write:groups'], count: this.info.groupsTotal },
-            { key: 'auth', label: this.$t('admin:auth.title'), icon: 'mdi-shield-account-outline', to: '/auth', permission: 'manage:system' }
-          ]
-        },
-        {
-          key: 'experience',
-          label: 'Features & integrations',
-          icon: 'mdi-puzzle-outline',
-          items: [
-            { key: 'analytics', label: this.$t('admin:analytics.title'), icon: 'mdi-chart-areaspline', to: '/analytics', permission: 'manage:system' },
-            { key: 'comments', label: this.$t('admin:comments.title'), icon: 'mdi-comment-text-multiple-outline', to: '/comments', permission: 'manage:system' },
-            { key: 'rendering', label: this.$t('admin:rendering.title'), icon: 'mdi-text-box-edit-outline', to: '/rendering', permission: 'manage:system' },
-            { key: 'editor', label: 'Editors', icon: 'mdi-pencil-ruler', to: '/editor', permission: 'manage:system' },
-            { key: 'search', label: this.$t('admin:search.title'), icon: 'mdi-text-search-variant', to: '/search', permission: 'manage:system' },
-            { key: 'storage', label: this.$t('admin:storage.title'), icon: 'mdi-database-outline', to: '/storage', permission: 'manage:system' },
-            { key: 'extensions', label: this.$t('admin:extensions.title'), icon: 'mdi-puzzle-plus-outline', to: '/extensions', permission: 'manage:system' },
-            { key: 'agents', label: this.$t('admin:agents.title'), icon: 'mdi-robot-outline', to: '/agents', permission: 'manage:system', enabled: this.agentsEnabled }
-          ]
-        },
-        {
-          key: 'operations',
-          label: 'System & operations',
-          icon: 'mdi-server-outline',
-          items: [
-            { key: 'system', label: this.$t('admin:system.title'), icon: 'mdi-monitor-dashboard', to: '/system', permission: 'manage:system' },
-            { key: 'security', label: this.$t('admin:security.title'), icon: 'mdi-shield-lock-outline', to: '/security', permission: 'manage:system' },
-            { key: 'ssl', label: this.$t('admin:ssl.title'), icon: 'mdi-certificate-outline', to: '/ssl', permission: 'manage:system' },
-            { key: 'mail', label: this.$t('admin:mail.title'), icon: 'mdi-email-outline', to: '/mail', permission: 'manage:system' },
-            { key: 'logging', label: 'Logging', icon: 'mdi-text-box-search-outline', to: '/logging', permission: 'manage:system' },
-            { key: 'api', label: this.$t('admin:api.title'), icon: 'mdi-api', to: '/api', permission: ['manage:system', 'manage:api'] },
-            { key: 'webhooks', label: 'Webhooks', icon: 'mdi-webhook', to: '/webhooks', permission: 'manage:system' },
-            { key: 'utilities', label: this.$t('admin:utilities.title'), icon: 'mdi-toolbox-outline', to: '/utilities', permission: 'manage:system' },
-            { key: 'dev-flags', label: this.$t('admin:dev.flags.title'), icon: 'mdi-toggle-switch-off-outline', to: '/dev-flags', permission: ['manage:system', 'manage:api'] },
-            { key: 'graphql', label: 'GraphQL explorer', icon: 'mdi-graphql', href: '/graphql', permission: ['manage:system', 'manage:api'] }
-          ]
-        }
-      ]
-
-      return groups
-        .map(group => ({
-          ...group,
-          items: group.items.filter(item => item.enabled !== false && (!item.permission || this.hasPermission(item.permission)))
-        }))
-        .filter(group => group.items.length > 0)
+      return buildAdminNavigation(key => this.$t(key), this.permissions, this.info)
     },
     filteredNavGroups(): AdminNavGroup[] {
-      const query = this.navSearch.trim().toLocaleLowerCase()
-      if (!query) {
-        return this.navGroups
-      }
-      return this.navGroups
-        .map(group => ({
-          ...group,
-          items: group.label.toLocaleLowerCase().includes(query)
-            ? group.items
-            : group.items.filter(item => item.label.toLocaleLowerCase().includes(query))
-        }))
-        .filter(group => group.items.length > 0)
+      return filterAdminNavigation(this.navGroups, this.navSearch || '')
     },
     currentRouteGroup(): AdminNavGroup | undefined {
       const currentPath = this.$route.path
@@ -302,8 +238,20 @@ export default defineComponent({
     this.syncOpenedSection()
   },
   watch: {
+    '$route.hash' () {
+      if (this.$route.hash === '#settings') this.focusRouteHeading()
+    },
     '$route.path' () {
+      window.scrollTo({ top: 0, behavior: 'instant' })
+      this.navSearch = ''
       this.syncOpenedSection()
+      if (this.$vuetify.display.smAndDown) {
+        this.adminDrawerShown = false
+      }
+    }
+  },
+  methods: {
+    focusRouteHeading() {
       this.$nextTick(() => {
         const main = ((this.$refs.adminMain as { $el?: HTMLElement })?.$el || this.$refs.adminMain) as HTMLElement | undefined
         const heading = main?.querySelector('h1') as HTMLElement | null
@@ -311,13 +259,9 @@ export default defineComponent({
           heading.setAttribute('tabindex', '-1')
           heading.focus({ preventScroll: true })
         }
+        if (this.$route.hash === '#settings') main?.querySelector('#settings')?.scrollIntoView({ block: 'start' })
       })
-      if (this.$vuetify.display.smAndDown) {
-        this.adminDrawerShown = false
-      }
-    }
-  },
-  methods: {
+    },
     isSectionOpen(key: string) {
       return this.openedSections.includes(key)
     },
@@ -327,7 +271,7 @@ export default defineComponent({
         : [...this.openedSections, key]
     },
     syncOpenedSection() {
-      if (this.navSearch.trim()) {
+      if ((this.navSearch || '').trim()) {
         return
       }
       const currentPath = this.$route.path
@@ -336,32 +280,94 @@ export default defineComponent({
       )
       if (currentGroup) {
         this.openedSections = [currentGroup.key]
+      } else if (currentPath === '/dashboard') {
+        this.openedSections = ['knowledge', 'intelligence']
       }
     },
-    async loadInfo() {
-      loadingStart(wikiStore, 'admin-stats-refresh')
-      try {
-        this.info = await fetchSystemSummary(window.fetch.bind(window), 'System summary response is invalid')
-      } catch (err) {
-        showNotification(wikiStore, {
-          style: 'error',
-          message: getErrorMessage(err),
-          icon: 'alert'
-        })
-      } finally {
-        loadingStop(wikiStore, 'admin-stats-refresh')
-      }
-    },
-    hasPermission(prm: string | string[]) {
-      return Array.isArray(prm)
-        ? prm.some(permission => this.permissions.includes(permission))
-        : this.permissions.includes(prm)
-    }
+
   }
 })
 </script>
 
 <style lang='scss'>
+.admin {
+  --admin-radius: .65rem;
+  --admin-muted: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 72%, transparent);
+  --wiki-content-max: 92rem;
+  .animated { animation: none !important; }
+  .admin-main a:focus-visible, .admin-sidebar a:focus-visible, .admin-nav__section:focus-visible {
+    outline: 2px solid var(--wiki-focus-color);
+    outline-offset: 3px;
+  }
+  .admin-nav .v-list-item-title { font-size: .8rem; }
+  .admin-nav__item .v-list-item__spacer, .admin-nav__dashboard .v-list-item__spacer { width: .75rem; }
+  .admin-nav__item .v-list-item__prepend > .v-icon { margin-inline-end: 0; }
+  .admin-nav__dashboard .v-list-item__prepend > .v-icon { font-size: 1.2rem; }
+  .admin-sidebar__search .v-field { box-shadow: none; font-size: .82rem; }
+  .admin-sidebar__brand-icon { width: 2.25rem; height: 2.25rem; background: transparent; border: 0; }
+  .admin-sidebar__title { font-size: 1.1rem; font-weight: 570; }
+  .admin-sidebar__eyebrow { font-size: .6rem; }
+  .admin-nav__section { padding-inline: .5rem; gap: .5rem; }
+  .admin-nav__section-icon { font-size: 1rem !important; }
+  .admin-nav__label { font-size: .6rem; margin-top: .5rem; }
+  .admin-nav__group + .admin-nav__group { margin-top: .45rem; }
+  .admin-context { border: 0; background: transparent; letter-spacing: .09em; font-size: .65rem; }
+  .admin-route-bar__index, .admin-sidebar__return { display: flex; align-items: center; gap: .5rem; color: var(--admin-muted); font-size: .78rem; text-decoration: none; &:hover { color: var(--wiki-accent-ink); } }
+  .admin-sidebar__return { padding: .65rem .5rem; }
+  .admin-sidebar__footer { background: transparent; }
+  .admin-main > .admin-route-bar { min-height: 3rem; border-bottom: 0; padding-block: .75rem 0; }
+  .admin-main > .v-container { padding-top: 1.5rem; }
+  .admin-main .v-toolbar__content { flex-wrap: wrap; height: auto !important; min-height: 3rem; gap: .3rem; padding-block: .65rem; }
+  .admin-main .v-toolbar__content > .text-body-large { padding-inline: 1rem; font-size: .9rem !important; font-weight: 600; }
+  .admin-main .v-toolbar__content > .text-body-small { padding-inline: 1rem; }
+  .admin-main .v-card-title { white-space: normal; }
+  .admin-main .v-list-item-subtitle { -webkit-line-clamp: 3; }
+  .admin-main .v-card-info { gap: 1rem; padding: 1.25rem; }
+  .admin-main .v-card-info:has(> .admin-providerlogo) { display: flex; align-items: center; }
+  .admin-main .admin-providerlogo { width: 4rem; flex-shrink: 0; float: none; margin: 0; }
+  .admin-search .v-list-item-title { white-space: normal; line-height: 1.45; }
+  .admin-filter-bar { padding: .75rem !important; background: transparent; }
+}
+@media (max-width: 599px) {
+  .admin .admin-route-bar__index span { display: none; }
+  .admin .admin-route-bar__index { min-width: 2.75rem; min-height: 2.75rem; justify-content: center; }
+  .admin .admin-main .v-card-info { flex-wrap: wrap; }
+}
+
+.admin-section-index {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-block: -.25rem 1.5rem;
+  a { display: inline-flex; min-height: 2.5rem; align-items: center; padding: .5rem .85rem; border: 1px solid var(--wiki-surface-border); border-radius: .4rem; color: var(--admin-muted); text-decoration: none; font-size: .78rem; &:hover { background: var(--wiki-surface-raised); color: var(--wiki-accent-ink); } }
+}
+.admin-general [id^='general-'] { scroll-margin-top: 6rem; }
+.admin-save-dock {
+  position: sticky;
+  bottom: calc(var(--wiki-footer-height) + .75rem);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .75rem;
+  margin-top: 1.5rem;
+  padding: .8rem 1rem;
+  border: 1px solid var(--wiki-surface-border-strong);
+  border-radius: var(--admin-radius);
+  background: var(--wiki-surface-raised);
+  box-shadow: 0 .25rem 1.5rem #0002;
+  &__copy { display: flex; align-items: center; gap: .5rem; font-size: .8rem; color: var(--admin-muted); }
+}
+.admin-maintenance > .v-card-text {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  .admin-maintenance__copy { flex: 1 1 24rem; h2 { font-size: 1rem; margin-bottom: .5rem; } p { margin: 0; font-size: .82rem; color: var(--admin-muted); line-height: 1.6; } }
+}
+
 .admin-nav-toggle {
   min-width: 44px !important;
   min-height: 44px !important;
@@ -405,8 +411,7 @@ export default defineComponent({
 
 .admin-sidebar {
   border-inline-end: 1px solid var(--wiki-surface-border);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--wiki-ambient-accent) 6%, var(--wiki-surface-raised)) 0, rgb(var(--v-theme-surface)) 12rem);
+  background: var(--wiki-surface-raised);
 
   &__inner {
     display: flex;
@@ -419,7 +424,7 @@ export default defineComponent({
     display: flex;
     align-items: center;
     gap: var(--wiki-space-3);
-    padding: var(--wiki-space-5) var(--wiki-space-4) var(--wiki-space-3);
+    padding: 1.5rem 1rem 1rem;
   }
 
   &__brand-icon {
@@ -432,7 +437,7 @@ export default defineComponent({
     border-radius: var(--wiki-control-radius);
     background: color-mix(in srgb, var(--wiki-ambient-accent) 11%, var(--wiki-surface-raised));
     color: var(--wiki-accent-ink);
-    box-shadow: var(--wiki-shadow-sm), var(--wiki-shadow-inset);
+    box-shadow: none;
   }
 
   &__eyebrow {
@@ -489,8 +494,8 @@ export default defineComponent({
   background: transparent;
 
   &__dashboard {
-    min-height: var(--wiki-control-height);
-    margin-bottom: var(--wiki-space-4);
+    min-height: 2.75rem;
+    margin-bottom: 1rem;
     border: 1px solid color-mix(in srgb, var(--wiki-ambient-accent) 18%, transparent);
     background: color-mix(in srgb, var(--wiki-ambient-accent) 8%, transparent);
     font-weight: 680;
@@ -519,6 +524,7 @@ export default defineComponent({
     color: rgb(var(--v-theme-on-surface));
     cursor: pointer;
     font: inherit;
+    font-size: .75rem;
     font-weight: 650;
     text-align: start;
     transition:
@@ -541,22 +547,21 @@ export default defineComponent({
   }
 
   &__items {
-    margin-inline-start: var(--wiki-space-6);
-    padding-inline-start: var(--wiki-space-1);
-    border-inline-start: 1px solid var(--wiki-surface-border);
+    margin-inline-start: .25rem;
+    padding-inline-start: 0;
   }
 
   &__item {
-    min-height: var(--wiki-control-height);
-    margin: var(--wiki-space-1) 0;
+    min-height: 2.5rem;
+    margin: .125rem 0;
     padding-inline-start: var(--wiki-space-3) !important;
     color: rgb(var(--v-theme-on-surface));
-    opacity: .72;
+    opacity: 1;
 
     .v-list-item__prepend > .v-icon {
       margin-inline-end: var(--wiki-space-3);
       font-size: 1.1875rem;
-      opacity: .72;
+      opacity: 1;
     }
   }
 
@@ -594,9 +599,7 @@ export default defineComponent({
 
 .admin-main {
   min-width: 0;
-  background:
-    radial-gradient(circle at 88% -8%, color-mix(in srgb, var(--wiki-ambient-accent) 10%, transparent), transparent 34rem),
-    var(--wiki-surface-sunken);
+  background: var(--wiki-surface-sunken);
 
   h1[tabindex='-1']:focus {
     outline: none;
@@ -625,14 +628,14 @@ export default defineComponent({
 
     .v-card:not(.v-card--flat, .v-card--variant-flat) {
       border: 1px solid var(--wiki-surface-border);
-      border-radius: var(--wiki-panel-radius);
+      border-radius: var(--admin-radius);
       background: var(--wiki-surface-raised);
-      box-shadow: var(--wiki-shadow-sm), var(--wiki-shadow-inset);
+      box-shadow: none;
     }
 
     .v-card > .v-toolbar:not(.bg-error):not(.bg-warning) {
       border-bottom: 1px solid var(--wiki-surface-border);
-      background: color-mix(in srgb, var(--wiki-ambient-accent) 5%, var(--wiki-surface-raised)) !important;
+      background: transparent !important;
       color: rgb(var(--v-theme-on-surface)) !important;
 
       .v-toolbar-title,
@@ -746,7 +749,7 @@ export default defineComponent({
     gap: var(--wiki-space-2);
     padding: var(--wiki-space-1) var(--wiki-space-3);
     border: 1px solid var(--wiki-surface-border);
-    border-radius: var(--wiki-radius-pill);
+    border-radius: var(--admin-radius);
     background: var(--wiki-surface-raised);
     color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 68%, transparent);
     font-size: var(--wiki-label-size);

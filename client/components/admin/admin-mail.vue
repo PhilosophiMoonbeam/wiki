@@ -5,7 +5,7 @@
         AdminHero(
           :title='$t(`admin:mail.title`)'
           :description='$t(`admin:mail.subtitle`)'
-          icon='/_assets/svg/icon-new-post.svg'
+          icon='mdi-email-outline'
           heading-id='admin-mail-heading'
         )
           template(v-slot:status)

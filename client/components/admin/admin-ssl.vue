@@ -5,7 +5,7 @@
         AdminHero(
           :title='$t(`admin:ssl.title`)'
           :description='$t(`admin:ssl.subtitle`)'
-          icon='/_assets/svg/icon-validation.svg'
+          icon='mdi-certificate-outline'
           heading-id='admin-ssl-heading'
         )
           template(v-slot:actions)

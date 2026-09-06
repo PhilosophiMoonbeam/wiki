@@ -1,7 +1,7 @@
 <template lang='pug'>
   v-container.admin-editor(fluid)
     admin-hero(
-      icon='/_assets/svg/icon-web-design.svg'
+      icon='mdi-pencil-ruler'
       title='Editors'
       description='Choose which editors authors can use when creating pages'
     )

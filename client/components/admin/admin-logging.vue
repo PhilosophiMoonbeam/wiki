@@ -5,7 +5,7 @@
         admin-hero(
           title='Logging'
           description='Configure system loggers and inspect the live trail'
-          icon='/_assets/svg/icon-registry-editor.svg'
+          icon='mdi-text-box-search-outline'
         )
           template(v-slot:actions)
             .admin-logging-actions
@@ -15,7 +15,7 @@
               v-btn(variant="tonal", color='primary', @click='toggleConsole', size="small")
                 v-icon(start) mdi-console
                 span Live Trail
-              v-btn(color='success', @click='save', variant="flat", size="small", :disabled='!loggersLoaded || loading', :loading='saving')
+              v-btn(color='primary', @click='save', variant="flat", size="small", :disabled='!loggersLoaded || loading', :loading='saving')
                 v-icon(start) mdi-check
                 span {{$t('common:actions.apply')}}
         v-card.mt-3

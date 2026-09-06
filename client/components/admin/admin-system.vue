@@ -5,7 +5,7 @@
         AdminHero(
           :title='$t(`admin:system.title`)'
           :description='$t(`admin:system.subtitle`)'
-          icon='/_assets/svg/icon-tune.svg'
+          icon='mdi-monitor-dashboard'
           heading-id='admin-system-heading'
         )
           template(v-slot:actions)

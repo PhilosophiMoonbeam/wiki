@@ -1,7 +1,7 @@
 <template lang='pug'>
   v-container(fluid)
     admin-hero(
-      icon='/_assets/svg/icon-process.svg'
+      icon='mdi-text-box-edit-outline'
       :title='$t(`admin:rendering.title`)'
       :description='$t(`admin:rendering.subtitle`)'
     )
