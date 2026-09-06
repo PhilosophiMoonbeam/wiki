@@ -29,7 +29,6 @@
           v-model="search"
           class="skill-inventory-toolbar__search"
           label="Search approved skills"
-          placeholder="Name, page path, revision, or group"
           prepend-inner-icon="mdi-magnify"
           clearable
           hide-details
@@ -142,16 +141,21 @@
       <v-card-text class="skill-dialog__body">
         <v-form id="skill-create-form" @submit.prevent="createSkill">
           <section class="skill-form-section">
-            <div class="skill-form-section__heading"><span><v-icon size="19">mdi-identifier</v-icon></span><div><h3>Skill identity</h3><p>Use a stable, command-friendly name.</p></div></div>
-            <v-text-field v-model="create.name" :rules="createNameRules" label="Skill name" hint="Lowercase letters, numbers, and single hyphens" persistent-hint required autofocus />
+            <div class="skill-form-section__heading"><span><v-icon size="19">mdi-file-search-outline</v-icon></span><div><h3>Choose a source page</h3><p>Search unmapped Markdown pages directly inside the skill namespace.</p></div></div>
+            <v-autocomplete v-model="selectedSource" v-model:search="sourceQuery" :items="sourcePages" item-title="title" item-value="id" return-object no-filter clearable label="Root page" :loading="sourcesLoading" :error-messages="sourcesError" :hint="sourceNamespace ? `Create source pages inside ${sourceNamespace}/` : 'Select a page to fill its name and source references.'" persistent-hint @update:model-value="selectSource">
+              <template #item="{ props: itemProps, item }"><v-list-item v-bind="itemProps" :title="item.title" :subtitle="`${item.locale}/${item.path}`" /></template>
+              <template #no-data><v-list-item :title="sourcesLoading ? 'Finding source pages…' : 'No unmapped sources found'" subtitle="Create a Markdown page in the skill namespace, or search by its title or path." /></template>
+            </v-autocomplete>
+            <p v-if="sourcesHaveMore" class="skill-source-note">Showing the first 20 matches. Refine your search to find another page.</p>
+            <v-btn v-if="sourcesError" variant="text" size="small" @click="loadSources">Retry source search</v-btn>
+            <v-text-field v-model="create.name" class="mt-5" :rules="createNameRules" label="Skill name" hint="Must match the final part of the root page path. Use lowercase letters, numbers, and single hyphens." persistent-hint required />
           </section>
           <section class="skill-form-section">
-            <div class="skill-form-section__heading"><span><v-icon size="19">mdi-file-tree-outline</v-icon></span><div><h3>Knowledge source</h3><p>The root page and optional asset folder bundled into the skill.</p></div></div>
-            <div class="skill-form-grid">
+            <details class="skill-source-references"><summary>Source references & optional assets</summary><p>Source references are filled from your selection. An asset folder can include additional resources in the bundle.</p><div class="skill-form-grid">
               <v-text-field v-model.number="create.rootPageId" label="Root page ID" type="number" min="1" :rules="createRootPageRules" required />
               <v-text-field v-model="create.assetFolderId" label="Asset folder ID (optional)" type="number" min="1" :rules="createAssetFolderRules" />
               <v-text-field v-model="create.rootPath" class="skill-form-grid__wide" label="Root page path" placeholder="handbook/research" hint="The path must identify the selected root page tree." persistent-hint required />
-            </div>
+            </div></details>
           </section>
           <section class="skill-form-section">
             <div class="skill-form-section__heading"><span><v-icon size="19">mdi-account-multiple-outline</v-icon></span><div><h3>Audience policy</h3><p>Skills complement—never replace—each user’s Wiki permissions.</p></div></div>
@@ -207,12 +211,53 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { z } from 'zod'
 import { sameOriginJsonFetch } from '../../helpers/json-transport.ts'
 const { csrfToken, embedded = false } = defineProps<{ csrfToken: string; embedded?: boolean }>()
 const { smAndDown } = useDisplay()
+const SourceSchema = z.object({ id: z.number().int().positive(), title: z.string(), path: z.string(), locale: z.string() })
+const SourcesSchema = z.object({ namespace: z.string(), pages: z.array(SourceSchema), hasMore: z.boolean() })
+type SkillSource = z.infer<typeof SourceSchema>
+const sourcePages = shallowRef<SkillSource[]>([])
+const selectedSource = shallowRef<SkillSource | null>(null)
+const sourceQuery = ref('')
+const sourceNamespace = ref('')
+const sourcesLoading = ref(false)
+const sourcesError = ref('')
+const sourcesHaveMore = ref(false)
+let sourceController: AbortController | null = null
+let sourceTimer: ReturnType<typeof setTimeout> | undefined
+const selectSource = (source: SkillSource | null) => {
+  create.rootPageId = source?.id ?? 0
+  create.rootPath = source?.path ?? ''
+  create.name = source?.path.split('/').at(-1) ?? ''
+}
+const loadSources = async () => {
+  sourceController?.abort()
+  const controller = new AbortController()
+  sourceController = controller
+  sourcesLoading.value = true
+  sourcesError.value = ''
+  try {
+    const query = sourceQuery.value === selectedSource.value?.title ? '' : sourceQuery.value || ''
+    const result = SourcesSchema.parse(await request(`/_api/agents/admin/skills/sources?${new URLSearchParams({ query })}`, {}, controller.signal))
+    if (controller.signal.aborted) return
+    sourcePages.value = result.pages
+    sourceNamespace.value = result.namespace
+    sourcesHaveMore.value = result.hasMore
+  } catch (value) {
+    if (!controller.signal.aborted) sourcesError.value = value instanceof Error ? value.message : 'Source pages could not be loaded.'
+  } finally {
+    if (sourceController === controller) sourcesLoading.value = false
+  }
+}
+watch(sourceQuery, () => {
+  clearTimeout(sourceTimer)
+  sourceController?.abort()
+  if (createOpen.value) sourceTimer = setTimeout(() => void loadSources(), 250)
+})
 
 const SkillSchema = z.object({
   id: z.uuid(),
@@ -310,7 +355,7 @@ const createAssetFolderValid = computed(() => create.assetFolderId === '' || (Nu
 const createNameRules = [(): true | string => createNameValid.value || 'Use lowercase letters, numbers, and single hyphens.']
 const createRootPageRules = [(): true | string => createRootPageValid.value || 'Enter a positive whole number.']
 const createAssetFolderRules = [(): true | string => createAssetFolderValid.value || 'Enter a positive whole number or leave this blank.']
-const createValid = computed(() => createNameValid.value && createRootPageValid.value && createAssetFolderValid.value && Boolean(create.rootPath.trim()) && (create.exposureMode !== 'groups' || create.groupIds.length > 0))
+const createValid = computed(() => createNameValid.value && createRootPageValid.value && createAssetFolderValid.value && create.rootPath.trim().split('/').at(-1) === create.name.trim() && (create.exposureMode !== 'groups' || create.groupIds.length > 0))
 
 const request = async (url: string, init: RequestInit = {}, signal?: AbortSignal): Promise<unknown> => {
   const response = await sameOriginJsonFetch(window.fetch.bind(window), url, {
@@ -362,6 +407,9 @@ const openCreate = (): void => {
   createError.value = ''
   Object.assign(create, { name: '', rootPageId: 0, rootPath: '', assetFolderId: '', exposureMode: 'all_agent_users', groupIds: [] })
   createOpen.value = true
+  selectedSource.value = null
+  sourceQuery.value = ''
+  void loadSources()
 }
 const createSkill = async (): Promise<void> => {
   if (!createValid.value || actionBusyId.value) return
@@ -457,8 +505,13 @@ const setEnabled = async (skillId: string, enabled: boolean): Promise<void> => {
   finally { actionBusyId.value = '' }
 }
 
+watch(createOpen, open => {
+  if (!open) { clearTimeout(sourceTimer); sourceController?.abort() }
+})
 onMounted(reload)
 onBeforeUnmount(() => {
+  clearTimeout(sourceTimer)
+  sourceController?.abort()
   disposed = true
   reloadGeneration++
   previewController?.abort()
@@ -512,7 +565,7 @@ onBeforeUnmount(() => {
   border: 1px solid color-mix(in srgb, var(--wiki-accent-warm) 20%, var(--wiki-surface-border));
   border-radius: var(--wiki-control-radius);
   background: color-mix(in srgb, var(--wiki-accent-warm) 9%, var(--wiki-surface-raised));
-  color: var(--wiki-accent-warm);
+  color: var(--wiki-accent-ink);
   box-shadow: var(--wiki-shadow-inset);
 }
 
@@ -522,7 +575,7 @@ onBeforeUnmount(() => {
 }
 
 .skill-eyebrow {
-  color: var(--wiki-accent-warm);
+  color: var(--wiki-accent-ink);
   font-size: var(--wiki-label-size);
   font-weight: var(--wiki-label-weight);
   letter-spacing: .11em;
@@ -770,7 +823,7 @@ onBeforeUnmount(() => {
   padding: var(--wiki-space-2) var(--wiki-space-4);
   border: 0;
   background: transparent;
-  color: var(--wiki-accent-warm);
+  color: var(--wiki-accent-ink);
   cursor: pointer;
   font: inherit;
   font-size: .72rem;
@@ -1013,7 +1066,7 @@ onBeforeUnmount(() => {
 }
 
 .source-heading span {
-  color: var(--wiki-accent-warm);
+  color: var(--wiki-accent-ink);
   font-size: var(--wiki-label-size);
   font-weight: var(--wiki-label-weight);
   letter-spacing: .08em;
@@ -1184,4 +1237,7 @@ code {
     transform: none;
   }
 }
+.skill-source-note, .skill-source-references p { font-size: .8rem; line-height: 1.6; margin-block: .75rem; }
+.skill-source-references summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
+.skill-source-references summary:focus-visible { outline: 2px solid var(--wiki-accent-ink); outline-offset: 3px; }
 </style>

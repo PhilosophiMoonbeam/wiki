@@ -34,10 +34,9 @@ describe('ordinary Wiki agent administration integration', () => {
     expect(page).toMatch(/AdminHero\([^]*template\(#status\)/)
     expect(page).not.toMatch(/admin-agents__disabled-(?:mark|copy)/)
     expect(agentAdmin).toContain('<AdminHero')
-    expect(agentAdmin).toContain('<template #extra>')
     expect(agentAdmin).toContain('<template #status>')
     expect(agentAdmin).toContain('<template #actions>')
-    expect(agentAdmin).toMatch(/description="Review runtime safeguards, provider access, and browser boundaries for every Agent run\."/)
+    expect(agentAdmin).toMatch(/description="Connect models, curate expertise, and shape how agents work with your knowledge\."/)
     expect(agentAdmin).not.toContain('<header class="agent-hero">')
     expect(agentAdmin).not.toContain('agent-docket')
     expect(agentAdmin).not.toMatch(/min-height:\s*calc\(var\(--wiki-space-12\) \* 5\)/)
@@ -48,11 +47,12 @@ describe('ordinary Wiki agent administration integration', () => {
     expect(theme).not.toContain('.admin-header')
   })
 
-  test('keeps navigation limited to operational administration sections', () => {
+  test('includes setup, connections and memory alongside operational administration', () => {
     expect(agentAdmin).toMatch(/value="runtime"[^]*value="profiles"[^]*value="skills"[^]*value="browser"/)
     expect(agentAdmin).toMatch(/role="tab"[^]*:tabindex="tab === section\.value \? 0 : -1"/)
-    expect(agentAdmin).not.toMatch(/value="knowledge"/)
-    expect(agentAdmin).not.toMatch(/Authoritative pages, agent-ready projections/)
+    expect(agentAdmin).toContain('value="overview"')
+    expect(agentAdmin).toContain('value="tools"')
+    expect(agentAdmin).toContain('value="memory"')
   })
 
   test('derives Agent-only protocol behavior and group-scoped capability access', () => {

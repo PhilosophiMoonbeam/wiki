@@ -14,6 +14,7 @@ import { SkillRegistry } from '../agents/skills/registry.ts'
 import { SkillRuntime, type SkillPrincipal } from '../agents/skills/runtime.ts'
 import { requestAgentRunCancellation } from '../agents/coordinator.ts'
 import { ACTION_CATALOG } from '../agents/actions/catalog.ts'
+import { buildAgentAdminTools } from '../agents/admin-tools.ts'
 import { decideProposal } from '../agents/proposals/execution.ts'
 import { BrowserTargetRegistry } from '../agents/browser/registry.ts'
 import { getMcpProposalForApproval, type ProposalRecord } from '../agents/proposals/repository.ts'
@@ -845,6 +846,21 @@ export default function createAgentsHostController(wiki: AgentHostWiki): express
   router.get('/_api/agents/admin/runtime', (_req, res) => {
     const config = wiki.config.agents
     return res.json({
+      tools: buildAgentAdminTools({
+        'agents.enabled': config.enabled,
+        'agents.provider.enabled': config.provider.enabled,
+        'agents.orchestration.enabled': config.orchestration?.enabled ?? false,
+        'agents.skills.enabled': config.skills.enabled,
+        'agents.browser.enabled': config.browser?.enabled ?? false,
+        'agents.proposals.enabled': config.proposals.enabled,
+        'agents.writes.enabled': config.writes.enabled,
+        'agents.writes.create.enabled': config.writes.create.enabled,
+        'agents.writes.patch.enabled': config.writes.patch.enabled,
+        'agents.writes.move.enabled': config.writes.move.enabled,
+        'agents.writes.restore.enabled': config.writes.restore.enabled,
+        'agents.writes.delete.enabled': config.writes.delete.enabled,
+        'agents.mcp.enabled': config.mcp?.enabled ?? false
+      }),
       runtime: {
         enabled: config.enabled,
         providerEnabled: config.provider.enabled,
@@ -919,6 +935,25 @@ export default function createAgentsHostController(wiki: AgentHostWiki): express
           actorId: req.authContext?.kind === 'user' ? req.authContext.userId : 0
         })
       })
+    })
+  )
+  router.get(
+    '/_api/agents/admin/skills/sources',
+    asyncRoute(async (req, res) => {
+      const query = z.string().trim().max(255).default('').parse(req.query.query)
+      const namespace = wiki.config.agents.skills.namespace
+      const escapeLike = (value: string) => value.replace(/[\\%_]/g, character => `\\${character}`)
+      const prefix = `${escapeLike(namespace)}/`
+      const pages = await wiki.models.knex('pages')
+        .select('id', 'path', 'title', 'localeCode as locale')
+        .where({ contentType: 'markdown' })
+        .whereRaw("?? LIKE ? ESCAPE '\\'", ['path', `${prefix}%`])
+        .whereRaw("?? NOT LIKE ? ESCAPE '\\'", ['path', `${prefix}%/%`])
+        .where(builder => builder.whereRaw("LOWER(??) LIKE ? ESCAPE '\\'", ['path', `%${escapeLike(query.toLowerCase())}%`])
+          .orWhereRaw("LOWER(??) LIKE ? ESCAPE '\\'", ['title', `%${escapeLike(query.toLowerCase())}%`]))
+        .whereNotExists(wiki.models.knex('agentSkills').select('id').whereRaw('?? = ??', ['rootPageId', 'pages.id']).whereNull('deletedAt'))
+        .orderBy('path').orderBy('id').limit(21)
+      return res.json({ namespace, pages: pages.slice(0, 20), hasMore: pages.length > 20 })
     })
   )
   router.get(

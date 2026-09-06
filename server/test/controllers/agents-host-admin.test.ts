@@ -26,6 +26,8 @@ describe('agents-host skill administration', () => {
     await db.schema.createTable('pages', table => {
       table.integer('id').primary()
       table.string('path').notNullable()
+      table.string('title').notNullable().defaultTo('Skill source')
+      table.string('localeCode').notNullable().defaultTo('en')
       table.text('content').notNullable()
       table.string('contentType').notNullable()
       table.bigInteger('sourceRevision').notNullable()
@@ -126,6 +128,38 @@ describe('agents-host skill administration', () => {
     const response = await fetch(`${baseUrl}/_api/agents/admin/skills`, { headers: { cookie } })
     expect(response.status).toBe(403)
     admin = true
+  })
+
+  it('restricts tool policy to system administrators and returns real deployment blockers', async () => {
+    admin = false
+    expect((await fetch(`${baseUrl}/_api/agents/admin/runtime`, { headers: { cookie } })).status).toBe(403)
+    admin = true
+    const response = await fetch(`${baseUrl}/_api/agents/admin/runtime`, { headers: { cookie } })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    const read = body.tools.find((tool: { name: string }) => tool.name === 'pages.get')
+    expect(read.toolName).toBe('wiki_get_page')
+    expect(read.agentBlockers).toContain('agents.provider.enabled')
+    expect(read.mcpBlockers).toContain('agents.mcp.enabled')
+  })
+
+  it('finds unmapped skill roots without exposing unrelated or nested pages', async () => {
+    const base = { content: '# Source', contentType: 'markdown', sourceRevision: 1, updatedAt: '2026-08-17T00:00:00.000Z' }
+    await db('pages').insert([
+      { ...base, id: 43, path: 'private/release-notes' },
+      { ...base, id: 44, path: 'system/agent-skills/release-notes/nested' }
+    ])
+    admin = false
+    expect((await fetch(`${baseUrl}/_api/agents/admin/skills/sources`, { headers: { cookie } })).status).toBe(403)
+    admin = true
+    const response = await fetch(`${baseUrl}/_api/agents/admin/skills/sources?query=release`, { headers: { cookie } })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.namespace).toBe('system/agent-skills')
+    expect(body.pages.map((page: { id: number }) => page.id)).toEqual([42])
+    const literal = await fetch(`${baseUrl}/_api/agents/admin/skills/sources?query=%25`, { headers: { cookie } })
+    expect((await literal.json()).pages).toEqual([])
+    await db('pages').whereIn('id', [43, 44]).delete()
   })
 
   it('requires exact origin and session-bound CSRF for mutations', async () => {

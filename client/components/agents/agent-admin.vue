@@ -2,27 +2,11 @@
   <section class="agent-control" aria-labelledby="admin-title">
     <AdminHero
       :title="embedded ? 'Agents' : 'Agent administration'"
-      description="Review runtime safeguards, provider access, and browser boundaries for every Agent run."
+      description="Connect models, curate expertise, and shape how agents work with your knowledge."
       icon="mdi-robot-outline"
-      eyebrow="Operations ledger · AI–01"
+      eyebrow="Intelligence & connections"
       heading-id="admin-title"
     >
-      <template #extra>
-        <dl class="agent-hero__facts" aria-label="Current administration summary">
-          <div>
-            <dt>Runtime</dt>
-            <dd>{{ dataLoaded ? runtime?.enabled ? 'Active' : 'Paused' : error ? 'Unavailable' : 'Loading' }}</dd>
-          </div>
-          <div>
-            <dt>Inference routes</dt>
-            <dd>{{ dataLoaded ? `${enabledProviderCount}/${profiles.length} enabled` : '—' }}</dd>
-          </div>
-          <div>
-            <dt>Network targets</dt>
-            <dd>{{ dataLoaded ? `${enabledBrowserCount} allowed` : '—' }}</dd>
-          </div>
-        </dl>
-      </template>
       <template #status>
         <div class="agent-hero__status" aria-label="Control center status" role="status" aria-live="polite">
           <v-chip
@@ -33,8 +17,6 @@
           >
             {{ loadFailed ? dataLoaded ? 'Refresh failed · showing last loaded status' : 'Deployment state unavailable' : !dataLoaded ? 'Reading deployment state' : runtime?.enabled ? 'Agent runtime active' : 'Agent runtime paused' }}
           </v-chip>
-          <v-chip size="small" variant="outlined" prepend-icon="mdi-shield-check-outline">Policy governed</v-chip>
-          <span class="agent-hero__live"><span aria-hidden="true" />Deployment view</span>
         </div>
       </template>
       <template #actions>
@@ -53,35 +35,8 @@
     </v-alert>
 
 
-    <section v-if="dataLoaded" class="agent-snapshot" aria-label="Agent platform status">
-      <article class="agent-snapshot__item">
-        <span class="agent-snapshot__index" aria-hidden="true">01</span>
-        <span class="agent-snapshot__icon"><v-icon size="21">mdi-server-network-outline</v-icon></span>
-        <span><small>Runtime policy</small><strong>{{ enabledCapabilityCount }} of {{ capabilityRows.length }} capabilities</strong></span>
-      </article>
-      <article class="agent-snapshot__item">
-        <span class="agent-snapshot__index" aria-hidden="true">02</span>
-        <span class="agent-snapshot__icon"><v-icon size="21">mdi-brain</v-icon></span>
-        <span><small>Provider profiles</small><strong>{{ enabledProviderCount }} enabled · {{ profiles.length }} total</strong></span>
-      </article>
-      <article class="agent-snapshot__item">
-        <span class="agent-snapshot__index" aria-hidden="true">03</span>
-        <span class="agent-snapshot__icon"><v-icon size="21">mdi-web-check</v-icon></span>
-        <span><small>Browser boundary</small><strong>{{ enabledBrowserCount }} approved target{{ enabledBrowserCount === 1 ? '' : 's' }}</strong></span>
-      </article>
-      <article class="agent-snapshot__item">
-        <span class="agent-snapshot__index" aria-hidden="true">04</span>
-        <span class="agent-snapshot__icon"><v-icon size="21">mdi-archive-clock-outline</v-icon></span>
-        <span><small>Audit retention</small><strong>{{ runtime?.retention.auditDays }} days</strong></span>
-      </article>
-    </section>
-    <section v-else-if="loading" class="agent-snapshot agent-snapshot--loading" aria-label="Loading agent platform status" aria-busy="true">
-      <v-skeleton-loader v-for="index in 4" :key="index" type="list-item-avatar-two-line" />
-    </section>
-
     <div class="agent-workspace">
-      <nav class="agent-sections" aria-label="Agent administration sections" role="tablist" :aria-orientation="width > 960 ? 'vertical' : 'horizontal'">
-        <div class="agent-sections__label"><span>Control index</span><small>4 sections</small></div>
+      <nav class="agent-sections" aria-label="Agent administration sections" role="tablist" aria-orientation="horizontal">
         <button
           v-for="(section, index) in sectionItems"
           :id="`agent-tab-${section.value}`"
@@ -96,24 +51,86 @@
           @click="tab = section.value"
           @keydown.left="selectHorizontalSection(index, -1, $event)"
           @keydown.right="selectHorizontalSection(index, 1, $event)"
-          @keydown.up="selectVerticalSection(index, -1, $event)"
-          @keydown.down="selectVerticalSection(index, 1, $event)"
           @keydown.home.prevent="selectSection(0, $event)"
           @keydown.end.prevent="selectSection(sectionItems.length - 1, $event)"
         >
-          <span class="agent-section__ordinal" aria-hidden="true">0{{ index + 1 }}</span>
           <span class="agent-section__icon"><v-icon size="20">{{ section.icon }}</v-icon></span>
           <span class="agent-section__copy"><strong>{{ section.title }}</strong><small>{{ section.description }}</small></span>
           <v-chip v-if="section.badge" class="agent-section__badge" size="x-small" variant="tonal">{{ section.badge }}</v-chip>
-          <v-icon class="agent-section__arrow" size="18">mdi-chevron-right</v-icon>
         </button>
-        <div class="agent-sections__note">
-          <v-icon size="18">mdi-shield-lock-outline</v-icon>
-          <span><strong>Governed control plane</strong>Changes respect deployment kill switches, user permissions, and retained audit evidence.</span>
-        </div>
       </nav>
 
       <v-window v-model="tab" class="agent-content">
+        <v-window-item id="agent-panel-overview" value="overview" role="tabpanel" aria-labelledby="agent-tab-overview">
+          <section class="agent-overview">
+            <div class="agent-overview__intro">
+              <div class="agent-panel__eyebrow">Your knowledge, in conversation</div>
+              <h2>Models, expertise & access.</h2>
+              <p>Review conversation setup, then extend the Agent with approved skills and connected tools.</p>
+            </div>
+            <v-skeleton-loader v-if="!dataLoaded && loading" type="article, list-item-three-line" />
+            <div v-else-if="dataLoaded" class="agent-overview__grid">
+              <section class="agent-setup" aria-labelledby="agent-setup-title">
+                <h3 id="agent-setup-title">Conversation setup</h3>
+                <p class="agent-overview__caption">Configuration checks from the last refresh. Provider availability can change between runs.</p>
+                <button class="agent-setup__step" type="button" @click="tab = 'runtime'">
+                  <v-icon :color="runtime?.enabled && runtime?.providerEnabled ? 'success' : 'warning'">{{ runtime?.enabled && runtime?.providerEnabled ? 'mdi-check-circle-outline' : 'mdi-pause-circle-outline' }}</v-icon>
+                  <span><strong>Enable the runtime</strong><small>{{ runtime?.enabled && runtime?.providerEnabled ? 'Agent and provider inference are enabled' : 'Enable Agent and provider inference in deployment configuration' }}</small></span><v-icon size="18">mdi-arrow-right</v-icon>
+                </button>
+                <button class="agent-setup__step" type="button" @click="tab = 'profiles'">
+                  <v-icon :color="readyProviders.length ? 'success' : 'warning'">{{ readyProviders.length ? 'mdi-check-circle-outline' : 'mdi-plus-circle-outline' }}</v-icon>
+                  <span><strong>Connect a model</strong><small>{{ readyProviders.length ? `${readyProviders.length} enabled profiles with credentials and a passed verification` : 'Add a provider and verify its connection' }}</small></span><v-icon size="18">mdi-arrow-right</v-icon>
+                </button>
+                <button class="agent-setup__step" type="button" @click="tab = 'profiles'">
+                  <v-icon :color="defaultProvider ? 'success' : 'warning'">{{ defaultProvider ? 'mdi-check-circle-outline' : 'mdi-star-outline' }}</v-icon>
+                  <span><strong>Choose a workspace default</strong><small>{{ defaultProvider ? `${defaultProvider.displayName} · ${defaultProvider.model}` : 'Set a verified provider available to everyone as the fallback' }}</small></span><v-icon size="18">mdi-arrow-right</v-icon>
+                </button>
+              </section>
+              <aside class="agent-default">
+                <div class="agent-panel__eyebrow">Workspace default</div>
+                <h3>{{ defaultProvider?.displayName || 'No default selected' }}</h3>
+                <code v-if="defaultProvider">{{ defaultProvider.model }}</code>
+                <p>{{ defaultProvider ? 'Used when a conversation has no explicit provider selection. Each run still checks access, quotas and deployment policy.' : 'A shared default gives new conversations a predictable starting point. Group-scoped profiles can serve more specific audiences.' }}</p>
+                <v-btn variant="tonal" color="primary" append-icon="mdi-arrow-right" @click="tab = 'profiles'">Manage providers</v-btn>
+              </aside>
+              <section class="agent-pathways" aria-label="Extend your agent">
+                <button type="button" @click="tab = 'skills'"><v-icon>mdi-book-open-variant-outline</v-icon><span><strong>Curate expertise</strong><small>Map wiki pages to approved skills and review changes before release.</small></span><v-icon size="18">mdi-arrow-right</v-icon></button>
+                <button type="button" @click="tab = 'tools'"><v-icon>mdi-connection</v-icon><span><strong>Connect another agent</strong><small>Explore tools, their permissions and the MCP connection details.</small></span><v-icon size="18">mdi-arrow-right</v-icon></button>
+                <button type="button" @click="tab = 'memory'"><v-icon>mdi-brain</v-icon><span><strong>Understand what persists</strong><small>Knowledge sources, personal memory and conversation retention.</small></span><v-icon size="18">mdi-arrow-right</v-icon></button>
+              </section>
+            </div>
+          </section>
+        </v-window-item>
+
+        <v-window-item id="agent-panel-tools" value="tools" role="tabpanel" aria-labelledby="agent-tab-tools">
+          <AgentAdminTools :tools="toolInventory" :loaded="dataLoaded" :loading="loading" :mcp-enabled="Boolean(runtime?.enabled && runtime?.mcpEnabled)" />
+        </v-window-item>
+
+        <v-window-item id="agent-panel-memory" value="memory" role="tabpanel" aria-labelledby="agent-tab-memory">
+          <section class="agent-panel">
+            <div class="agent-panel__header"><div><div class="agent-panel__eyebrow">Continuity & sources</div><h2>Knowledge & memory</h2><p>Understand what the Agent knows, who can access it, and how long it stays.</p></div></div>
+            <div class="agent-panel__body">
+              <div class="agent-memory-sources">
+                <article><v-icon>mdi-book-open-page-variant-outline</v-icon><h3>Wiki knowledge</h3><p>Pages are the shared source of truth. Search and page reads respect the current user's permissions and page rules.</p><a href="/a/search">Configure retrieval <v-icon size="16">mdi-arrow-right</v-icon></a></article>
+                <article><v-icon>mdi-file-certificate-outline</v-icon><h3>Approved expertise</h3><p>Organization skills package page instructions into reviewed revisions. Source changes require a new review before they replace the approved version.</p><button type="button" @click="tab = 'skills'">Manage skills <v-icon size="16">mdi-arrow-right</v-icon></button></article>
+                <article><v-icon>mdi-account-lock-outline</v-icon><h3>Personal memory</h3><p>Preferences and project notes belong to each user. Users review, edit and clear them in the Agent's Memory panel. MCP does not expose personal memory.</p><p>Updates are recalled in the next conversation; the current conversation keeps its starting snapshot.</p></article>
+              </div>
+              <section class="runtime-section">
+                <div class="section-heading"><div><h3>Conversation retention</h3><p>History is separate from personal memory. Deleting a conversation does not erase its owner's memory.</p></div></div>
+                <dl v-if="runtime" class="agent-retention">
+                  <div><dt>Temporary conversations</dt><dd>{{ runtime.retention.temporarySessionHours }} hours</dd></div>
+                  <div><dt>Unfiled saved conversations</dt><dd>{{ runtime.retention.savedSessionDays }} days without activity</dd></div>
+                  <div><dt>Conversations in folders</dt><dd>Kept until removed from the folder or deleted</dd></div>
+                  <div><dt>MCP proposal content</dt><dd>{{ runtime.retention.mcpContentDays }} days</dd></div>
+                  <div><dt>Audit evidence</dt><dd>{{ runtime.retention.auditDays }} days</dd></div>
+                </dl>
+                <v-alert v-else type="info" variant="tonal">Retention configuration is unavailable. Refresh the deployment status to try again.</v-alert>
+                <p class="agent-overview__caption">Expiry is enforced by maintenance. Active runs delay deletion until they finish. Retention settings are controlled by deployment configuration.</p>
+              </section>
+            </div>
+          </section>
+        </v-window-item>
+
         <v-window-item id="agent-panel-runtime" value="runtime" role="tabpanel" aria-labelledby="agent-tab-runtime">
           <section class="agent-panel">
             <div class="agent-panel__header">
@@ -195,8 +212,13 @@
               <v-alert v-if="runtime?.providerEnabled === false" type="info" variant="tonal" class="mb-4">Provider administration is unavailable while provider inference is disabled in deployment configuration. Enable <code>agents.provider.enabled</code>, configure the provider runtime keys, and restart Wiki before adding profiles.</v-alert>
               <v-alert v-if="profiles.some(profile => !profile.secretConfigured)" type="warning" variant="tonal" class="mb-4">A provider credential is unavailable. Edit the profile and enter its API key to verify and enable it.</v-alert>
               <v-alert v-if="profiles.some(profile => profile.status === 'enabled' && profile.conformed && profile.exposureMode === 'all_agent_users') && !profiles.some(profile => profile.isGlobalDefault)" type="warning" variant="tonal" class="mb-4">No global default provider is set. Open an enabled provider's actions menu and choose <strong>Set global default</strong> before starting a conversation.</v-alert>
-              <div v-if="profiles.length" class="provider-grid">
-                <article v-for="profile in profiles" :key="profile.id" class="provider-card">
+              <div v-if="profiles.length" class="provider-inventory-toolbar" role="search" aria-label="Find provider profiles">
+                <v-text-field v-model="providerQuery" label="Find a provider" prepend-inner-icon="mdi-magnify" clearable hide-details />
+                <v-select v-model="providerState" :items="providerStates" label="Provider state" hide-details />
+              </div>
+              <p v-if="profiles.length" class="provider-inventory-count" role="status">{{ filteredProfiles.length }} of {{ profiles.length }} providers</p>
+              <div v-if="filteredProfiles.length" class="provider-grid">
+                <article v-for="profile in filteredProfiles" :key="profile.id" class="provider-card">
                   <div class="provider-card__top">
                     <span class="provider-card__mark"><v-icon size="23">mdi-creation-outline</v-icon></span>
                     <div class="provider-card__identity">
@@ -207,6 +229,7 @@
                       <template #activator="{ props: menuProps }"><v-btn v-bind="menuProps" icon="mdi-dots-horizontal" variant="text" density="comfortable" :aria-label="`Actions for ${profile.displayName}`" :disabled="Boolean(actionBusyKey)" /></template>
                       <v-list density="comfortable">
                         <v-list-item prepend-icon="mdi-pencil-outline" title="Edit settings" subtitle="Updates this profile" :disabled="Boolean(actionBusyKey)" @click="openProfile(profile)" />
+                        <v-list-item prepend-icon="mdi-history" title="Connection history" subtitle="Review previous verification results" @click="openConnectionHistory(profile)" />
                         <v-list-item prepend-icon="mdi-connection" :title="profile.status === 'disabled' ? 'Test and enable' : 'Test connection'" :subtitle="connectionActionSubtitle(profile)" :disabled="!profile.secretConfigured || Boolean(actionBusyKey)" @click="testConnection(profile)" />
                         <v-list-item prepend-icon="mdi-account-multiple-outline" title="Edit access grants" subtitle="Changes profile visibility" :disabled="Boolean(actionBusyKey)" @click="openGrants(profile)" />
                         <v-list-item v-if="profile.status === 'disabled'" prepend-icon="mdi-play-circle-outline" title="Enable provider" :subtitle="enableProfileSubtitle(profile)" :disabled="!profile.conformed || !profile.secretConfigured || Boolean(actionBusyKey)" @click="confirmEnableProfile(profile)" />
@@ -237,6 +260,10 @@
                   <button type="button" class="provider-card__edit" :disabled="Boolean(actionBusyKey)" @click="openProfile(profile)">Open configuration <v-icon size="17">mdi-arrow-right</v-icon></button>
                 </article>
               </div>
+              <div v-else-if="profiles.length" class="agent-empty">
+                <h3>No providers match</h3><p>Try another model, name or provider state.</p>
+                <v-btn variant="tonal" @click="providerQuery = ''; providerState = 'all'">Clear filters</v-btn>
+              </div>
               <div v-else-if="dataLoaded" class="agent-empty">
                 <span class="agent-empty__icon"><v-icon size="34">mdi-brain</v-icon></span>
                 <h3>Connect the first provider</h3>
@@ -248,6 +275,7 @@
         </v-window-item>
 
         <v-window-item id="agent-panel-skills" value="skills" role="tabpanel" aria-labelledby="agent-tab-skills">
+          <v-alert v-if="runtime && !runtime.skillsEnabled" type="info" variant="tonal" class="mb-4">Skills are disabled in deployment configuration. Library changes can be prepared here; approved skills become available after the feature is enabled.</v-alert>
           <SkillAdmin :csrf-token="csrfToken" embedded />
         </v-window-item>
 
@@ -271,12 +299,20 @@
                 <v-icon size="19">mdi-shield-key-outline</v-icon>
                 <span><strong>Exact destinations only.</strong> Each HTTPS URL is canonicalized, hashed into policy evidence, and can be paused without removing the record.</span>
               </aside>
-              <div v-if="browserTargets.length" class="target-list">
-                <article v-for="target in browserTargets" :key="target.id" class="target-row">
+              <div v-if="browserTargets.length" class="provider-inventory-toolbar" role="search" aria-label="Find browser destinations">
+                <v-text-field v-model="browserQuery" label="Find a destination" prepend-inner-icon="mdi-magnify" clearable hide-details />
+                <v-select v-model="browserState" label="Destination state" :items="[{ title: 'All destinations', value: 'all' }, { title: 'Allowed', value: 'allowed' }, { title: 'Paused', value: 'paused' }]" hide-details />
+              </div>
+              <p v-if="browserTargets.length" class="provider-inventory-count" role="status">{{ filteredBrowserTargets.length }} of {{ browserTargets.length }} destinations</p>
+              <div v-if="filteredBrowserTargets.length" class="target-list">
+                <article v-for="target in filteredBrowserTargets" :key="target.id" class="target-row">
                   <span class="target-row__icon"><v-icon size="20">mdi-lock-outline</v-icon></span>
                   <div class="target-row__copy"><strong :title="target.canonicalUrl">{{ target.canonicalUrl }}</strong><small :title="`Policy ${target.policySha256}`">Policy {{ target.policySha256.slice(0, 16) }}…</small></div>
                   <div class="target-row__state"><span>{{ target.enabled ? 'Allowed' : 'Paused' }}</span><v-switch :model-value="target.enabled" color="primary" hide-details inset :loading="actionBusyKey === `browser:${target.id}`" :disabled="Boolean(actionBusyKey)" :aria-label="`${target.enabled ? 'Pause' : 'Allow'} browser target ${target.canonicalUrl}`" @update:model-value="value => setBrowserEnabled(target, Boolean(value))" /></div>
                 </article>
+              </div>
+              <div v-else-if="browserTargets.length" class="agent-empty">
+                <h3>No destinations match</h3><v-btn variant="tonal" @click="browserQuery = ''; browserState = 'all'">Clear filters</v-btn>
               </div>
               <div v-else-if="dataLoaded" class="agent-empty">
                 <span class="agent-empty__icon agent-empty__icon--teal"><v-icon size="34">mdi-web-off</v-icon></span>
@@ -288,6 +324,25 @@
         </v-window-item>
       </v-window>
     </div>
+
+    <v-dialog v-model="connectionHistoryDialog" max-width="46rem" scrollable aria-labelledby="connection-history-title">
+      <v-card class="compact-dialog">
+        <div class="compact-dialog__header"><span><v-icon>mdi-history</v-icon></span><div><h2 id="connection-history-title">Connection history</h2><p>{{ connectionHistoryProfile?.displayName }} · latest 20 checks</p></div></div>
+        <v-card-text>
+          <v-progress-linear v-if="connectionHistoryLoading" indeterminate aria-label="Loading connection history" />
+          <v-alert v-else-if="connectionHistoryError" type="error" variant="tonal">{{ connectionHistoryError }}<template #append><v-btn variant="text" @click="loadConnectionHistory">Retry</v-btn></template></v-alert>
+          <p v-else-if="!connectionHistory.length">No connection checks have been recorded. Use Test connection on the provider to run a verification.</p>
+          <div v-else class="connection-history">
+            <details v-for="check in connectionHistory" :key="check.id">
+              <summary><v-icon :color="check.status === 'passed' ? 'success' : 'error'" size="20">{{ check.status === 'passed' ? 'mdi-check-circle-outline' : 'mdi-alert-circle-outline' }}</v-icon><strong>{{ check.status === 'passed' ? 'Passed' : 'Failed' }}</strong><time :datetime="check.completedAt">{{ formatConnectionCheckDate(check.completedAt) }}</time></summary>
+              <p v-if="check.message">{{ check.message }}</p>
+              <ul><li v-for="probe in check.checks" :key="probe.name"><strong>{{ probe.passed ? 'Passed' : 'Failed' }} · {{ probe.name }}</strong><p v-if="probe.detail">{{ probe.detail }}</p></li></ul>
+            </details>
+          </div>
+        </v-card-text>
+        <v-card-actions><v-spacer /><v-btn @click="connectionHistoryDialog = false">Close</v-btn></v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <v-dialog :model-value="profileDialog" max-width="76rem" scrollable :fullscreen="smAndDown" :persistent="saving" aria-labelledby="provider-profile-title" @update:model-value="onProfileDialogModelValue">
       <v-card class="profile-editor" :aria-busy="saving">
@@ -415,7 +470,7 @@
           <v-btn variant="text" :disabled="saving" @click="requestProfileClose">Cancel</v-btn>
           <v-btn variant="text" :disabled="saving || !profileDirty" prepend-icon="mdi-restore" @click="resetProfileDraft">Reset</v-btn>
           <v-btn v-if="profileStepIndex > 0" variant="outlined" prepend-icon="mdi-arrow-left" :disabled="saving" @click="previousProfileStep">Back</v-btn>
-          <v-btn v-if="profileStepIndex < profileSteps.length - 1" variant="tonal" color="primary" append-icon="mdi-arrow-right" :disabled="saving || !profileStepValid" form="provider-profile-form" type="submit">Continue</v-btn>
+          <v-btn v-if="!editingProfile && profileStepIndex < profileSteps.length - 1" variant="tonal" color="primary" append-icon="mdi-arrow-right" :disabled="saving || !profileStepValid" form="provider-profile-form" type="submit">Continue</v-btn>
           <v-btn v-else color="primary" prepend-icon="mdi-check-decagram-outline" :loading="saving" :disabled="saving || !profileDraftValid || !profileDirty" form="provider-profile-form" type="submit">Save and verify</v-btn>
         </div>
       </v-card>
@@ -481,7 +536,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import {
   agentProviderReasoningEfforts,
@@ -503,6 +558,8 @@ import {
 } from '../../helpers/agent-provider-protocols.ts'
 import { sameOriginJsonFetch } from '../../helpers/json-transport.ts'
 import SkillAdmin from './skill-admin.vue'
+import AgentAdminTools from './agent-admin-tools.vue'
+import type { AgentAdminTool } from '../../../shared/agents/admin.ts'
 
 interface RuntimePolicy {
   enabled: boolean
@@ -536,17 +593,30 @@ interface RuntimePolicy {
     maxToolCalls: number
     maxDurationMilliseconds: number
   }
-  retention: { temporarySessionHours: number; mcpContentDays: number; auditDays: number; maintenanceBatchSize: number }
+  retention: { savedSessionDays: number; temporarySessionHours: number; mcpContentDays: number; auditDays: number; maintenanceBatchSize: number }
 }
 interface ConnectionCheck { status: 'passed' | 'failed'; errorCode: string | null; message: string | null; completedAt: string }
+interface ConnectionHistoryCheck extends ConnectionCheck { id: string; checks: { name: string; passed: boolean; detail?: string }[] }
 interface Profile { id: string; displayName: string; status: 'enabled' | 'disabled'; isGlobalDefault: boolean; exposureMode: 'all_agent_users' | 'groups'; groupIds: number[]; conformed: boolean; connectionCheck: ConnectionCheck | null; transportKind: AgentProviderTransport; model: string; utilityModel: string | null; baseUrl: string; destinationHost: string; authMode: AgentProviderAuthMode; secretConfigured: boolean; adapterConfig: { timeoutMs: number; maxRetries: number; additionalHeaders: Record<string, string>; agentReasoningEffort?: AgentReasoningEffort; utilityReasoningEffort?: AgentReasoningEffort }; capabilities: { streaming: boolean; toolCalling: AgentProviderToolCalling; parallelToolCalls: boolean; structuredOutput: AgentProviderStructuredOutput; usage: AgentProviderUsageMode; cancellation: boolean; maxContextTokens: number; maxOutputTokens: number }; policies: { allowedModes: string[]; dailyTokens: number; dailyCostMicros: number; reservationTokens: number; reservationCostMicros: number; reservationMilliseconds: number; promptVersion: number; maxAttempts: number } }
 interface BrowserTarget { id: string; canonicalUrl: string; enabled: boolean; policySha256: string }
 interface GroupOption { id: number; name: string; isSystem: boolean }
 interface ProfileDraft { displayName: string; transportKind: AgentProviderTransport; model: string; utilityModel: string; agentReasoningEffort: AgentReasoningEffort | null; utilityReasoningEffort: AgentReasoningEffort | null; baseUrl: string; authMode: AgentProviderAuthMode; secretValue: string; exposureMode: 'all_agent_users' | 'groups'; groupIds: number[]; maxContextTokens: number; maxOutputTokens: number; dailyTokens: number; dailyCostMicros: number; reservationTokens: number; reservationCostMicros: number; reservationMilliseconds: number; timeoutMs: number; maxRetries: number; maxAttempts: number; promptVersion: number; additionalHeaders: Record<string, string>; structuredOutput: AgentProviderStructuredOutput; usage: AgentProviderUsageMode; streaming: boolean; toolCalling: AgentProviderToolCalling; parallelToolCalls: boolean; cancellation: boolean }
 
 const { csrfToken, embedded = false } = defineProps<{ csrfToken: string; embedded?: boolean }>()
-const { smAndDown, width } = useDisplay()
-const tab = ref('runtime')
+const { smAndDown } = useDisplay()
+const tab = ref('overview')
+const toolInventory = shallowRef<AgentAdminTool[]>([])
+const providerQuery = ref<string | null>('')
+const providerState = ref('all')
+const providerStates = [{ title: 'All providers', value: 'all' }, { title: 'Enabled', value: 'enabled' }, { title: 'Disabled', value: 'disabled' }, { title: 'Needs attention', value: 'attention' }]
+const readyProviders = computed(() => profiles.value.filter(profile => profile.status === 'enabled' && profile.secretConfigured && profile.conformed))
+const defaultProvider = computed(() => readyProviders.value.find(profile => profile.isGlobalDefault && profile.exposureMode === 'all_agent_users'))
+const filteredProfiles = computed(() => {
+  const terms = (providerQuery.value || '').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
+  return profiles.value.filter(profile =>
+    (providerState.value === 'all' || (providerState.value === 'attention' ? !profile.conformed || !profile.secretConfigured : profile.status === providerState.value)) &&
+    terms.every(term => `${profile.displayName} ${profile.model} ${profile.utilityModel || ''} ${profile.destinationHost} ${agentProviderProtocolOption(profile.transportKind).title} ${groupNames(profile.groupIds)}`.toLocaleLowerCase().includes(term)))
+})
 type ProfileStep = 'identity' | 'models' | 'connection' | 'access' | 'limits'
 const profileStep = ref<ProfileStep>('identity')
 const loading = ref(false)
@@ -565,6 +635,17 @@ const runtime = shallowRef<RuntimePolicy | null>(null)
 const profiles = shallowRef<Profile[]>([])
 const groups = shallowRef<GroupOption[]>([])
 const browserTargets = shallowRef<BrowserTarget[]>([])
+const browserQuery = ref<string | null>('')
+const browserState = ref('all')
+const filteredBrowserTargets = computed(() => browserTargets.value.filter(target =>
+  (browserState.value === 'all' || target.enabled === (browserState.value === 'allowed')) &&
+  target.canonicalUrl.toLocaleLowerCase().includes((browserQuery.value || '').trim().toLocaleLowerCase())))
+const connectionHistoryDialog = ref(false)
+const connectionHistoryProfile = shallowRef<Profile | null>(null)
+const connectionHistory = shallowRef<ConnectionHistoryCheck[]>([])
+const connectionHistoryLoading = ref(false)
+const connectionHistoryError = ref('')
+let connectionHistoryController: AbortController | null = null
 const profileDialog = ref(false)
 const grantsDialog = ref(false)
 const browserDialog = ref(false)
@@ -678,17 +759,15 @@ const capabilityRows = computed(() => runtime.value ? [
   { label: 'Approved skills', enabled: runtime.value.skillsEnabled },
   { label: 'Isolated browser', enabled: runtime.value.browserEnabled },
   { label: 'Proposals', enabled: runtime.value.proposalsEnabled },
-  { label: 'All writes', enabled: runtime.value.writes.enabled },
-  { label: 'Create', enabled: runtime.value.writes.create },
-  { label: 'Patch', enabled: runtime.value.writes.patch },
-  { label: 'Move', enabled: runtime.value.writes.move },
-  { label: 'Restore', enabled: runtime.value.writes.restore },
-  { label: 'Delete', enabled: runtime.value.writes.delete },
+  { label: 'All writes', enabled: runtime.value.proposalsEnabled && runtime.value.writes.enabled },
+  { label: 'Create', enabled: runtime.value.proposalsEnabled && runtime.value.writes.enabled && runtime.value.writes.create },
+  { label: 'Patch', enabled: runtime.value.proposalsEnabled && runtime.value.writes.enabled && runtime.value.writes.patch },
+  { label: 'Move', enabled: runtime.value.proposalsEnabled && runtime.value.writes.enabled && runtime.value.writes.move },
+  { label: 'Restore', enabled: runtime.value.proposalsEnabled && runtime.value.writes.enabled && runtime.value.writes.restore },
+  { label: 'Delete', enabled: runtime.value.proposalsEnabled && runtime.value.writes.enabled && runtime.value.writes.delete },
   { label: 'MCP', enabled: runtime.value.mcpEnabled }
-] : [])
+].map(item => ({ ...item, enabled: runtime.value!.enabled && item.enabled })) : [])
 const enabledCapabilityCount = computed(() => capabilityRows.value.filter(item => item.enabled).length)
-const enabledProviderCount = computed(() => profiles.value.filter(profile => profile.status === 'enabled').length)
-const enabledBrowserCount = computed(() => browserTargets.value.filter(target => target.enabled).length)
 const actionBusyMessage = computed(() => {
   if (actionBusyKey.value.startsWith('test:')) return 'Testing the provider connection and refreshing its status…'
   if (actionBusyKey.value.startsWith('default:')) return 'Updating the workspace default provider…'
@@ -700,10 +779,13 @@ const actionBusyMessage = computed(() => {
   return 'Applying the administration change…'
 })
 const sectionItems = computed(() => [
-  { value: 'runtime', title: 'Runtime', description: 'Policy and safeguards', icon: 'mdi-tune-variant', badge: loadFailed.value ? dataLoaded.value ? 'Stale' : 'Unavailable' : dataLoaded.value ? runtime.value?.enabled ? 'Active' : 'Paused' : loading.value ? 'Loading' : '' },
+  { value: 'overview', title: 'Overview', description: 'Setup and readiness', icon: 'mdi-view-dashboard-outline', badge: '' },
   { value: 'profiles', title: 'Providers', description: 'Models and access', icon: 'mdi-brain', badge: profiles.value.length ? String(profiles.value.length) : '' },
   { value: 'skills', title: 'Skills', description: 'Approved expertise', icon: 'mdi-book-open-variant-outline', badge: '' },
-  { value: 'browser', title: 'Browser access', description: 'Network boundaries', icon: 'mdi-web-check', badge: browserTargets.value.length ? String(browserTargets.value.length) : '' }
+  { value: 'browser', title: 'Browser access', description: 'Network boundaries', icon: 'mdi-web-check', badge: browserTargets.value.length ? String(browserTargets.value.length) : '' },
+  { value: 'tools', title: 'Tools & MCP', description: 'Capability directory', icon: 'mdi-connection', badge: '' },
+  { value: 'memory', title: 'Knowledge & memory', description: 'Sources and retention', icon: 'mdi-book-open-page-variant-outline', badge: '' },
+  { value: 'runtime', title: 'Runtime', description: 'Policy and safeguards', icon: 'mdi-tune-variant', badge: loadFailed.value ? dataLoaded.value ? 'Stale' : 'Unavailable' : dataLoaded.value ? runtime.value?.enabled ? 'Active' : 'Paused' : loading.value ? 'Loading' : '' }
 ])
 const selectSection = (requestedIndex: number, event: KeyboardEvent): void => {
   const sections = sectionItems.value
@@ -714,16 +796,10 @@ const selectSection = (requestedIndex: number, event: KeyboardEvent): void => {
   queueMicrotask(() => navigation?.querySelectorAll<HTMLButtonElement>('.agent-section')[index]?.focus())
 }
 const selectHorizontalSection = (currentIndex: number, direction: -1 | 1, event: KeyboardEvent): void => {
-  if (width.value > 960) return
   event.preventDefault()
   const target = event.currentTarget as HTMLElement | null
   const rtlMultiplier = target && getComputedStyle(target).direction === 'rtl' ? -1 : 1
   selectSection(currentIndex + direction * rtlMultiplier, event)
-}
-const selectVerticalSection = (currentIndex: number, direction: -1 | 1, event: KeyboardEvent): void => {
-  if (width.value <= 960) return
-  event.preventDefault()
-  selectSection(currentIndex + direction, event)
 }
 const profileSteps = computed<Array<{ value: ProfileStep; title: string; description: string }>>(() => [
   { value: 'identity', title: 'Setup', description: 'Name and protocol' },
@@ -805,7 +881,7 @@ const resetProfileDraft = (): void => {
   if (saving.value || !profileBaseline.value) return
   Object.assign(profileDraft, JSON.parse(profileBaseline.value) as ProfileDraft)
   profileStep.value = 'identity'
-  maxProfileStepIndex.value = 0
+  maxProfileStepIndex.value = editingProfile.value ? profileSteps.value.length - 1 : 0
   profileError.value = ''
 }
 const requestProfileClose = (): void => {
@@ -847,13 +923,14 @@ const load = async (): Promise<void> => {
   error.value = ''
   try {
     const [runtimeResult, profileResult, browserResult, groupResult] = await Promise.all([
-      request<{ runtime: RuntimePolicy }>('/_api/agents/admin/runtime', { signal: controller.signal }),
+      request<{ runtime: RuntimePolicy; tools?: AgentAdminTool[] }>('/_api/agents/admin/runtime', { signal: controller.signal }),
       request<{ profiles: Profile[] }>('/_api/agents/admin/profiles', { signal: controller.signal }),
       request<{ targets: BrowserTarget[] }>('/_api/agents/admin/browser-targets', { signal: controller.signal }),
       request<GroupOption[]>('/_api/groups', { signal: controller.signal })
     ])
     if (generation !== loadGeneration) return
     runtime.value = runtimeResult.runtime
+    toolInventory.value = runtimeResult.tools ?? []
     profiles.value = profileResult.profiles
     browserTargets.value = browserResult.targets
     groups.value = groupResult
@@ -871,8 +948,8 @@ const load = async (): Promise<void> => {
 }
 const openProfile = (profile?: Profile) => {
   profileError.value = ''
-  maxProfileStepIndex.value = 0
   editingProfile.value = profile ?? null
+  maxProfileStepIndex.value = profile ? profileSteps.value.length - 1 : 0
   profileStep.value = 'identity'
   Object.assign(profileDraft, defaults(), profile ? {
     ...agentProviderProtocolDefaults(profile.transportKind),
@@ -932,6 +1009,7 @@ const saveProfile = async (): Promise<void> => {
   }
 }
 const submitProfileStep = (): void => {
+  if (editingProfile.value) { void saveProfile(); return }
   if (profileStepIndex.value < profileSteps.value.length - 1) {
     nextProfileStep()
     return
@@ -956,6 +1034,30 @@ const testConnection = (profile: Profile) => run(async () => {
   await load()
   if (result.connectionCheck.status === 'failed') throw new Error(result.connectionCheck.message ?? result.connectionCheck.errorCode ?? 'Provider connection check failed.')
 }, `test:${profile.id}`)
+const loadConnectionHistory = async () => {
+  const profile = connectionHistoryProfile.value
+  if (!profile) return
+  connectionHistoryController?.abort()
+  const controller = new AbortController()
+  connectionHistoryController = controller
+  connectionHistoryLoading.value = true
+  connectionHistoryError.value = ''
+  try {
+    const result = await request<{ connectionChecks: ConnectionHistoryCheck[] }>(`/_api/agents/admin/profiles/${encodeURIComponent(profile.id)}/connection-checks`, { signal: controller.signal })
+    if (!controller.signal.aborted) connectionHistory.value = result.connectionChecks
+  } catch (value) {
+    if (!controller.signal.aborted) connectionHistoryError.value = value instanceof Error ? value.message : 'Could not load connection history.'
+  } finally {
+    if (connectionHistoryController === controller) connectionHistoryLoading.value = false
+  }
+}
+const openConnectionHistory = (profile: Profile) => {
+  connectionHistoryProfile.value = profile
+  connectionHistory.value = []
+  connectionHistoryDialog.value = true
+  void loadConnectionHistory()
+}
+watch(connectionHistoryDialog, open => { if (!open) connectionHistoryController?.abort() })
 const groupNames = (groupIds: readonly number[]): string => groupIds.length ? groupIds.map(id => groups.value.find(group => group.id === id)?.name ?? `Group ${id}`).join(', ') : 'no selected groups'
 const openGrants = (profile: Profile) => { grantsError.value = ''; grantProfile.value = profile; grantDraft.exposureMode = profile.exposureMode; grantDraft.groupIds = [...profile.groupIds]; grantsDialog.value = true }
 const saveGrants = () => {
@@ -1016,42 +1118,32 @@ const allowConfirmedBrowserTarget = (): void => {
 }
 onBeforeUnmount(() => {
   disposed = true
+  connectionHistoryController?.abort()
   loadGeneration += 1
   loadController?.abort()
   loadController = null
 })
-onMounted(() => void load())
+const restoreSection = () => {
+  const requested = window.location.hash.slice(1)
+  tab.value = sectionItems.value.some(section => section.value === requested) ? requested : 'overview'
+}
+watch(tab, value => {
+  const url = new URL(window.location.href)
+  url.hash = value === 'overview' ? '' : value
+  window.history.replaceState(window.history.state, '', url)
+})
+onMounted(() => {
+  restoreSection()
+  window.addEventListener('hashchange', restoreSection)
+  void load()
+})
+onBeforeUnmount(() => window.removeEventListener('hashchange', restoreSection))
 </script>
 
 <style scoped>
 .agent-control {
   color: rgb(var(--v-theme-on-surface));
   font-family: var(--wiki-font-body);
-}
-
-.agent-hero__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--wiki-space-2) var(--wiki-space-4);
-  margin: 0;
-}
-
-.agent-hero__facts > div {
-  display: flex;
-  align-items: baseline;
-  gap: var(--wiki-space-2);
-}
-
-.agent-hero__facts dt {
-  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 62%, transparent);
-  font-size: var(--wiki-label-size);
-}
-
-.agent-hero__facts dd {
-  margin: 0;
-  font-family: var(--wiki-font-mono);
-  font-size: var(--wiki-label-size);
-  font-weight: 680;
 }
 
 .agent-panel__eyebrow {
@@ -1067,25 +1159,6 @@ onMounted(() => void load())
   flex-wrap: wrap;
   align-items: center;
   gap: var(--wiki-space-2);
-}
-
-.agent-hero__live {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--wiki-space-2);
-  margin-inline-start: var(--wiki-space-1);
-  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 64%, transparent);
-  font-size: var(--wiki-label-size);
-  font-weight: var(--wiki-label-weight);
-  letter-spacing: .04em;
-}
-
-.agent-hero__live > span {
-  width: var(--wiki-space-2);
-  height: var(--wiki-space-2);
-  border-radius: var(--wiki-radius-pill);
-  background: rgb(var(--v-theme-success));
-  box-shadow: 0 0 0 var(--wiki-space-1) color-mix(in srgb, rgb(var(--v-theme-success)) 12%, transparent);
 }
 
 .agent-global-error {
@@ -1104,39 +1177,6 @@ onMounted(() => void load())
   gap: var(--wiki-space-1);
 }
 
-.agent-snapshot {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--wiki-space-3);
-  margin-block-end: var(--wiki-space-4);
-}
-
-.agent-snapshot__item {
-  position: relative;
-  display: grid;
-  min-width: 0;
-  min-height: calc(var(--wiki-control-height) + var(--wiki-space-8));
-  align-items: center;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--wiki-space-3);
-  padding: var(--wiki-space-3) var(--wiki-space-4);
-  overflow: hidden;
-  border: 1px solid var(--wiki-surface-border);
-  border-radius: var(--wiki-panel-radius);
-  background: var(--wiki-surface-raised);
-  box-shadow: var(--wiki-shadow-xs), var(--wiki-shadow-inset);
-}
-
-.agent-snapshot__index {
-  position: absolute;
-  inset-block-start: var(--wiki-space-2);
-  inset-inline-end: var(--wiki-space-3);
-  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 24%, transparent);
-  font-family: var(--wiki-font-mono);
-  font-size: var(--wiki-label-size);
-}
-
-.agent-snapshot__icon,
 .agent-panel__icon,
 .provider-card__mark,
 .target-row__icon,
@@ -1156,17 +1196,6 @@ onMounted(() => void load())
   box-shadow: var(--wiki-shadow-inset);
 }
 
-.agent-snapshot__icon {
-  width: var(--wiki-control-height);
-  height: var(--wiki-control-height);
-}
-
-.agent-snapshot__item > span:last-child {
-  display: grid;
-  min-width: 0;
-}
-
-.agent-snapshot__item small,
 .provider-card__models span,
 .provider-card__meta small,
 .selection-preview small {
@@ -1175,23 +1204,6 @@ onMounted(() => void load())
   font-weight: var(--wiki-label-weight);
   letter-spacing: .06em;
   text-transform: uppercase;
-}
-
-.agent-snapshot__item strong {
-  overflow: hidden;
-  color: rgb(var(--v-theme-on-surface));
-  font-size: .82rem;
-  font-weight: 680;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-snapshot--loading > :deep(.v-skeleton-loader) {
-  min-height: calc(var(--wiki-control-height) + var(--wiki-space-8));
-  border: 1px solid var(--wiki-surface-border);
-  border-radius: var(--wiki-panel-radius);
-  background: var(--wiki-surface-raised);
-  box-shadow: var(--wiki-shadow-xs);
 }
 
 .agent-workspace {
@@ -1211,24 +1223,6 @@ onMounted(() => void load())
   border-radius: var(--wiki-panel-radius);
   background: var(--wiki-surface-raised);
   box-shadow: var(--wiki-shadow-sm), var(--wiki-shadow-inset);
-}
-
-.agent-sections__label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--wiki-space-2);
-  padding: var(--wiki-space-1) var(--wiki-space-2) var(--wiki-space-2);
-  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 56%, transparent);
-  font-size: var(--wiki-label-size);
-  font-weight: var(--wiki-label-weight);
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
-
-.agent-sections__label small {
-  font: inherit;
-  letter-spacing: .04em;
 }
 
 .agent-section {
@@ -1287,12 +1281,6 @@ onMounted(() => void load())
   opacity: 1;
 }
 
-.agent-section__ordinal {
-  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 36%, transparent);
-  font-family: var(--wiki-font-mono);
-  font-size: var(--wiki-label-size);
-}
-
 .agent-section__icon {
   display: grid;
   width: var(--wiki-control-height);
@@ -1341,32 +1329,6 @@ onMounted(() => void load())
 
 :dir(rtl) .agent-section__arrow {
   transform: rotate(180deg);
-}
-
-.agent-sections__note {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--wiki-space-2);
-  margin-block-start: var(--wiki-space-2);
-  padding: var(--wiki-space-3) var(--wiki-space-2) var(--wiki-space-1);
-  border-block-start: 1px solid var(--wiki-surface-border);
-  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 62%, transparent);
-  font-size: var(--wiki-label-size);
-  line-height: 1.5;
-}
-
-.agent-sections__note .v-icon {
-  flex: 0 0 auto;
-  color: var(--wiki-accent-ink);
-}
-
-.agent-sections__note span {
-  display: grid;
-  gap: var(--wiki-space-1);
-}
-
-.agent-sections__note strong {
-  color: rgb(var(--v-theme-on-surface));
 }
 
 .agent-content {
@@ -2470,9 +2432,6 @@ code {
 }
 
 @media (max-width: 1180px) {
-  .agent-snapshot {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 
   .agent-workspace {
     grid-template-columns: 15rem minmax(0, 1fr);
@@ -2499,11 +2458,6 @@ code {
     overflow-x: auto;
     padding: var(--wiki-space-2);
     scrollbar-width: thin;
-  }
-
-  .agent-sections__label,
-  .agent-sections__note {
-    display: none;
   }
 
   .agent-section {
@@ -2534,28 +2488,14 @@ code {
 }
 
 @media (max-width: 760px) {
-  .agent-hero__facts {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--wiki-space-2);
-  }
 
-  .agent-hero__facts > div {
-    display: grid;
-    gap: 0;
-  }
 
-  .agent-hero__status > :deep(.v-chip:nth-of-type(2)),
-  .agent-hero__live {
+  .agent-hero__status > :deep(.v-chip:nth-of-type(2)){
     display: none;
   }
 
   .agent-hero__refresh {
     width: 100%;
-  }
-
-  .agent-snapshot {
-    display: none;
   }
 
   .agent-panel__header {
@@ -2675,9 +2615,6 @@ code {
 }
 
 @media (max-width: 480px) {
-  .agent-hero__facts {
-    grid-template-columns: minmax(0, 1fr);
-  }
 
   .agent-panel__body,
   .agent-panel__header {
@@ -2713,7 +2650,7 @@ code {
 }
 
 @media (forced-colors: active) {
-  .agent-snapshot__item,
+
   .agent-sections,
   .agent-panel,
   .provider-card,
@@ -2740,7 +2677,6 @@ code {
     outline-offset: 2px;
   }
 
-  .agent-hero__live > span,
   .connection-state__dot {
     background: Highlight;
   }
@@ -2755,4 +2691,50 @@ code {
     animation-duration: .01ms !important;
   }
 }
+/* The subsection workspace uses the full content width; configuration is the focus. */
+.agent-workspace { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+.agent-sections { position: static; display: flex; gap: .25rem; min-width: 0; overflow-x: auto; padding: 0 0 .5rem; border: 0; border-bottom: 1px solid var(--wiki-surface-border); border-radius: 0; box-shadow: none; background: transparent; scrollbar-width: thin; }
+.agent-section { scroll-margin-block-start: 6rem; display: flex; flex: 0 0 auto; width: auto; min-width: 0; min-height: 2.75rem; gap: .45rem; padding: .65rem .75rem; }
+.agent-section__icon { width: auto; height: auto; background: transparent; border: 0; box-shadow: none; }
+.agent-section__copy small, .agent-section__badge { display: none; }
+.agent-section__copy strong { font-size: .8rem; }
+.agent-overview__intro { max-width: 43rem; padding-block: .25rem 1.75rem; }
+.agent-overview__intro h2 { font: 500 clamp(1.6rem, 2.4vw, 2rem)/1.2 var(--wiki-font-display); margin-block: .65rem 1rem; }
+.agent-overview__intro p { max-width: 60ch; font-size: .95rem; line-height: 1.7; }
+.agent-overview__grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1.5rem; }
+.agent-setup, .agent-default { padding: clamp(1rem, 2vw, 1.75rem); border: 1px solid var(--wiki-surface-border); border-radius: var(--wiki-panel-radius); background: var(--wiki-surface-raised); }
+.agent-setup h3, .agent-default h3 { font: 500 1.4rem var(--wiki-font-display); }
+.agent-overview__caption { font-size: .8rem; line-height: 1.6; margin-block: .65rem 1rem; }
+.agent-setup__step { appearance: none; background: transparent; color: inherit; border: 0; cursor: pointer; display: flex; width: 100%; align-items: center; gap: .8rem; padding: 1rem 0; border-top: 1px solid var(--wiki-surface-border); text-align: start; }
+.agent-setup__step > span { display: grid; flex: 1; gap: .35rem; min-width: 0; }
+.agent-setup__step strong { font-size: .9rem; }
+.agent-setup__step small { font-size: .8rem; line-height: 1.5; overflow-wrap: anywhere; }
+.agent-setup__step:focus-visible, .agent-pathways button:focus-visible, .agent-memory-sources button:focus-visible { outline: 2px solid var(--wiki-accent-ink); outline-offset: 3px; }
+.agent-default { background: color-mix(in srgb, var(--wiki-accent-warm) 5%, var(--wiki-surface-raised)); }
+.agent-default h3 { margin-block: 1.5rem .5rem; overflow-wrap: anywhere; }
+.agent-default code { font-family: var(--wiki-font-mono); font-size: .85rem; overflow-wrap: anywhere; }
+.agent-default p { font-size: .85rem; line-height: 1.7; margin-block: 1rem 1.5rem; }
+.agent-pathways { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-block: 1px solid var(--wiki-surface-border); }
+.agent-pathways button { appearance: none; background: transparent; color: inherit; border: 0; cursor: pointer; display: flex; align-items: start; gap: .75rem; padding: 1.5rem 1rem; text-align: start; }
+.agent-pathways button > span { display: grid; gap: .5rem; flex: 1; }
+.agent-pathways strong { font-size: .9rem; }
+.agent-pathways small { font-size: .8rem; line-height: 1.6; }
+.agent-memory-sources { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+.agent-memory-sources h3 { font: 500 1.2rem var(--wiki-font-display); margin-block: .75rem; }
+.agent-memory-sources p { font-size: .85rem; line-height: 1.7; margin-block: .75rem; }
+.agent-memory-sources button { appearance: none; border: 0; background: transparent; cursor: pointer; }
+.agent-memory-sources a, .agent-memory-sources button { color: var(--wiki-accent-ink); font-size: .85rem; text-decoration: underline; }
+.agent-retention { display: grid; margin-bottom: 1.5rem; }
+.agent-retention > div { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding-block: .8rem; border-bottom: 1px solid var(--wiki-surface-border); font-size: .85rem; }
+.agent-retention dd { margin: 0; font-weight: 600; }
+.provider-inventory-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(12rem, .4fr); gap: 1rem; margin-block: 1.5rem 1rem; }
+.provider-inventory-count { font-size: .8rem; margin-bottom: 1rem; }
+@media (max-width: 1100px) { .agent-memory-sources, .agent-pathways { grid-template-columns: 1fr; } .agent-pathways button + button { border-top: 1px solid var(--wiki-surface-border); } }
+@media (max-width: 760px) { .agent-overview__grid, .provider-inventory-toolbar { grid-template-columns: 1fr; } .agent-retention > div { grid-template-columns: 1fr; gap: .35rem; } }
+.connection-history details { padding-block: 1rem; border-bottom: 1px solid var(--wiki-surface-border); }
+.connection-history summary { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; cursor: pointer; font-size: .85rem; }
+.connection-history summary:focus-visible { outline: 2px solid var(--wiki-accent-ink); outline-offset: 3px; }
+.connection-history time { margin-inline-start: auto; }
+.connection-history p, .connection-history ul { margin-block: .75rem; font-size: .85rem; line-height: 1.6; overflow-wrap: anywhere; }
+.connection-history ul { padding-inline-start: 1.25rem; }
 </style>
