@@ -144,6 +144,28 @@ describe('common page routing', () => {
     }))
   })
 
+  it('suppresses external discussion embeds for private and password-protected pages', async () => {
+    global.WIKI.config.features.featurePageComments = true
+    const renderForPage = vi.fn().mockReturnValue({ head: '<script>external()</script>', body: '', main: '<div>external comments</div>' })
+    global.WIKI.data.commentProvider = { codeTemplate: true, main: '', renderForPage }
+    const { admin, view } = await handlers(), user = { id: 1, permissions: ['manage:system', 'read:pages'] }
+    const privateRes = response(); await admin(request(user), privateRes)
+    expect(privateRes.render).toHaveBeenCalledWith('page', expect.objectContaining({ commentsEnabled: false, comments: expect.objectContaining({ head: '', body: '', main: '' }) }))
+    expect(renderForPage).not.toHaveBeenCalled()
+    const publicPage = { ...privatePage, visibility: 'public', ownerId: null }
+    global.WIKI.models.pages.getPageFromDb.mockResolvedValue(publicPage)
+    global.WIKI.models.pages.getPage.mockResolvedValue(publicPage)
+    const publicRequest = { ...request(user), path: '/en/secret/notes', originalUrl: '/en/secret/notes', sessionID: 'test-session' }
+    global.WIKI.models.knex.mockImplementation(() => ({ where: vi.fn().mockReturnValue({ first: vi.fn().mockResolvedValue({ pageId: 7, version: 1 }) }) }))
+    const protectedRes = response(); await view(publicRequest, protectedRes, vi.fn())
+    expect(protectedRes.render).toHaveBeenCalledWith('page', expect.objectContaining({ commentsEnabled: false }))
+    expect(renderForPage).not.toHaveBeenCalled()
+    global.WIKI.models.knex.mockImplementation(() => ({ where: vi.fn().mockReturnValue({ first: vi.fn().mockResolvedValue(undefined) }) }))
+    const publicRes = response(); await view(publicRequest, publicRes, vi.fn())
+    expect(publicRes.render).toHaveBeenCalledWith('page', expect.objectContaining({ commentsEnabled: true, spaNavigation: false, comments: expect.objectContaining({ head: '<script>external()</script>' }) }))
+    expect(renderForPage).toHaveBeenCalledWith(7, 'http://wiki.example/i/7')
+  })
+
   it('marks page HTML without marking same-origin HTML assets', async () => {
     const { view } = await handlers()
     const publicPage = {

@@ -1,3 +1,4 @@
+import { patchSiteFeatures } from './discussion-settings.ts'
 import type { Knex } from 'knex'
 import _ from 'lodash'
 import { siteBannerOrDefault, validateSiteBanner } from '../../shared/site-banner.ts'
@@ -19,7 +20,6 @@ const saveKeys = [
   'pageExtensions',
   'auth',
   'editShortcuts',
-  'features',
   'security',
   'uploads'
 ]
@@ -92,6 +92,8 @@ const updateConfig = async (input: unknown): Promise<void> => {
     throw new ApplicationError('Site configuration payload must be an object.', { code: 'INVALID_SITE_CONFIGURATION' })
   }
   const args = input as Record<string, unknown>
+  const featurePatch = Object.fromEntries(['featurePageRatings', 'featurePageComments', 'featurePersonalWikis'].filter(key => Object.hasOwn(args, key)).map(key => [key, args[key]]))
+  if (Object.values(featurePatch).some(value => typeof value !== 'boolean')) throw new ApplicationError('Feature availability must use boolean values.', { status: 400 })
   await rejectManagedLogoWrite(args)
   const requestedHost = Object.hasOwn(args, 'host') ? _.trim(args.host as string).replace(/\/$/, '') : null
   const currentHostProtocol = URL.canParse(config.host) ? new URL(config.host).protocol : null
@@ -156,11 +158,7 @@ const updateConfig = async (input: unknown): Promise<void> => {
     editMenuExternalIcon: _.get(args, 'editMenuExternalIcon', config.editShortcuts.editMenuExternalIcon),
     editMenuExternalUrl: _.get(args, 'editMenuExternalUrl', config.editShortcuts.editMenuExternalUrl)
   }
-  config.features = {
-    featurePageRatings: _.get(args, 'featurePageRatings', config.features.featurePageRatings),
-    featurePageComments: _.get(args, 'featurePageComments', config.features.featurePageComments),
-    featurePersonalWikis: _.get(args, 'featurePersonalWikis', config.features.featurePersonalWikis)
-  }
+
   config.security = {
     securityOpenRedirect: _.get(args, 'securityOpenRedirect', config.security.securityOpenRedirect),
     securityIframe: _.get(args, 'securityIframe', config.security.securityIframe),
@@ -180,6 +178,7 @@ const updateConfig = async (input: unknown): Promise<void> => {
   }
 
   if (await configService.saveToDb(saveKeys) === false) throw new ApplicationError('Site configuration could not be persisted. Reload before retrying.', { status: 500 })
+  if (Object.keys(featurePatch).length) await patchSiteFeatures(featurePatch)
   const app = WIKI.app as { set(setting: string, value: number | false): void }
   app.set('trust proxy', config.security.securityTrustProxy ? 1 : false)
 }

@@ -1,258 +1,54 @@
 import fs from 'node:fs'
-import path from 'node:path'
-
-const extractBlock = (source, startIndex, openingBraceIndex) => {
-  const bodyStart = openingBraceIndex === undefined ? source.indexOf('{', startIndex) : openingBraceIndex
-
-  if (bodyStart === -1) {
-    return null
-  }
-
-  let depth = 0
-
-  for (let idx = bodyStart; idx < source.length; idx++) {
-    if (source[idx] === '{') {
-      depth++
-    } else if (source[idx] === '}') {
-      depth--
-
-      if (depth === 0) {
-        return source.slice(startIndex, idx + 1)
-      }
-    }
-  }
-
-  return null
+import { DISCUSSION_SECRET_MASK, discussionIssues, discussionProviderTitle, discussionSettings } from '../../../shared/discussion-policy.ts'
+const source = fs.readFileSync('client/components/admin/admin-comments.vue', 'utf8'), script = source.match(/<script lang="ts">([\s\S]*?)<\/script>/)[1]
+const compiled = new Bun.Transpiler({ loader: 'ts' }).transformSync(script.replace(/^import .+$/gm, '').replace('export default', 'const component ='))
+const provider = { key: 'default', title: 'Default', isEnabled: true, isAvailable: true, external: false, description: '', website: '', config: { akismet: '********', minDelay: 30 }, props: { akismet: { type: 'string', sensitive: true }, minDelay: { type: 'number' } } }
+const snapshot = { providers: [provider], enabled: true, fingerprint: 'first', counts: { visible: 2, hidden: 1, closedPages: 0 }, runtime: { provider: 'default', antiSpam: { state: 'verified' } } }
+function arrange(overrides = {}) {
+  const transport = { fetchDiscussionWorkspace: vi.fn().mockResolvedValue(structuredClone(snapshot)), saveDiscussionWorkspace: vi.fn(), fetchDiscussionInventory: vi.fn().mockResolvedValue({ items: [], total: 0 }), inspectDiscussion: vi.fn(), moderateDiscussion: vi.fn(), fetchClosedDiscussions: vi.fn().mockResolvedValue({ items: [], total: 0 }), fetchPageDiscussionPolicy: vi.fn(), savePageDiscussionPolicy: vi.fn(), fetchPageList: vi.fn().mockResolvedValue([]), ...overrides }
+  const dependencies = { AsyncState: {}, DISCUSSION_SECRET_MASK, discussionIssues, discussionProviderTitle, discussionSettings, getErrorMessage: error => error.message, ...transport }
+  const component = new Function(...Object.keys(dependencies), compiled + ';return component')(...Object.values(dependencies))
+  const state = { ...component.data(), $route: { query: {}, hash: '' }, $router: { replace: vi.fn() } }
+  for (const [key, method] of Object.entries(component.methods)) state[key] = method.bind(state)
+  for (const [key, getter] of Object.entries(component.computed)) Object.defineProperty(state, key, { get: () => getter.call(state) })
+  return { state, component, transport }
 }
-
-const extractMethod = (script, name) => {
-  const methodStart = script.search(new RegExp(`async\\s+${name}\\s*\\(`))
-
-  if (methodStart === -1) {
-    return null
-  }
-
-  const paramsStart = script.indexOf('(', methodStart)
-  let paramsDepth = 0
-  let bodyStart = -1
-
-  for (let idx = paramsStart; idx < script.length; idx++) {
-    if (script[idx] === '(') {
-      paramsDepth++
-    } else if (script[idx] === ')') {
-      paramsDepth--
-
-      if (paramsDepth === 0) {
-        bodyStart = script.indexOf('{', idx)
-        break
-      }
-    }
-  }
-
-  if (bodyStart === -1) {
-    return null
-  }
-
-  return extractBlock(script, methodStart, bodyStart)
-}
-
-const executeMethodBody = (method, context, dependencies) => {
-  const paramsEnd = method.indexOf(')')
-  const bodyStart = method.indexOf('{', paramsEnd)
-  const body = method.slice(bodyStart + 1, -1)
-  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
-
-  return new AsyncFunction(...Object.keys(dependencies), body).call(context, ...Object.values(dependencies))
-}
-
-describe('admin-comments root UI facade migration guard', () => {
-  const componentPath = path.join(process.cwd(), 'client/components/admin/admin-comments.vue')
-  const source = fs.readFileSync(componentPath, 'utf8')
-  const scriptMatch = source.match(/<script(?:\s+lang=["']ts["'])?>\s*([\s\S]*?)\s*<\/script>/)
-  const script = scriptMatch && scriptMatch[1]
-  const computedStart = script && script.search(/\bcomputed\s*:/)
-  const computedBlock = computedStart !== -1 ? extractBlock(script, computedStart) : null
-  const loadProviders = script && extractMethod(script, 'loadProviders')
-  const refresh = script && extractMethod(script, 'refresh')
-  const save = script && extractMethod(script, 'save')
-  const beforeUnmountStart = script ? script.search(/\bbeforeUnmount\s*\(/) : -1
-  const beforeUnmount = beforeUnmountStart >= 0 ? extractBlock(script, beforeUnmountStart) : null
-  const directRootUiCommit =
-    /\$store\.commit\(\s*(?:`loading(?:Start|Stop)`|['"]loading(?:Start|Stop)['"]|`showNotification`|['"]showNotification['"]|`pushGraphError`|['"]pushGraphError['"])\s*,/
-
-  test('admin-comments.vue keeps computed provider selection and accessible radio interactions', () => {
-    expect(script).not.toBeNull()
-    expect(computedBlock).not.toBeNull()
-
-    expect(source).toContain("<script lang='ts'>")
-    expect(script).toContain("import { wikiStore } from '@/store/index.ts'")
-    expect(script).toMatch(
-      /import\s+\{(?=[^}]*\bloadingStart\b)(?=[^}]*\bloadingStop\b)(?=[^}]*\bshowNotification\b)(?=[^}]*\bpushGraphError\b)[^}]*\}\s+from\s+['"]\.\.\/\.\.\/helpers\/root-ui-store['"]/
-    )
-    expect(script).toMatch(
-      /import\s+\{(?=[^}]*\bfetchCommentProviders\b)(?=[^}]*\bsaveCommentProviders\b)(?=[^}]*\btype\s+CommentProvider\b)[^}]*\}\s+from\s+['"]\.\.\/\.\.\/helpers\/comments-api['"]/
-    )
-    expect(script).not.toMatch(/graphql-tag|\bgql\b/)
-    expect(source).toMatch(/async-state\s*\(\s*v-if=['"]loading['"][^)]*state=['"]loading['"][^)]*title=['"]Loading comment providers['"][^)]*\)/)
-    expect(source).toMatch(/async-state\s*\(\s*v-else-if=['"]errorMessage['"][^)]*state=['"]error['"][^)]*@retry=['"]loadProviders['"][^)]*\)/)
-    expect(source).toMatch(
-      /async-state\s*\(\s*v-else-if=['"]providers\.length < 1['"][^)]*state=['"]empty['"][^)]*title=['"]No comment providers available['"][^)]*\)/
-    )
-    expect(computedBlock).toMatch(
-      /provider\s*\(\s*\)\s*:\s*Partial<CommentProvider>\s*\{\s*return\s+this\.providers\.find\s*\(\s*provider\s*=>\s*provider\.key\s*===\s*this\.selectedProvider\s*\)\s*\|\|\s*\{\s*\}\s*\}/
-    )
-    expect(computedBlock).toMatch(
-      /canSave\s*\(\s*\)\s*:\s*boolean\s*\{[\s\S]*?!this\.loading[\s\S]*?!this\.refreshing[\s\S]*?!this\.saving[\s\S]*?provider\.key\s*===\s*this\.selectedProvider\)\?\.isAvailable/
-    )
-    expect(script).not.toMatch(/\bwatch\s*:/)
-    expect(source).toMatch(/v-list\.py-0\([^)]*role=['"]radiogroup['"][^)]*aria-label=['"]Comment provider['"][^)]*tabindex=['"]-1['"]/)
-    expect(source).toMatch(
-      /v-list-item\([\s\S]*?role=['"]radio['"][\s\S]*?:aria-checked=['"]provider\.key === selectedProvider['"][\s\S]*?:aria-disabled=['"]!provider\.isAvailable['"][\s\S]*?:tabindex=['"]provider\.isAvailable && provider\.key === selectedProvider \? 0 : -1['"][\s\S]*?:disabled=['"]!provider\.isAvailable['"]/
-    )
-    expect(source).toMatch(/@keydown\.enter\.prevent=['"]selectProvider\(provider\)['"]/)
-    expect(source).toMatch(/@keydown\.space\.prevent=['"]selectProvider\(provider\)['"]/)
-    expect(source).toMatch(/@keydown\.right\.stop\.prevent=['"]selectAdjacentProvider\(provider, 1, \$event\)['"]/)
-    expect(source).toMatch(/@keydown\.down\.stop\.prevent=['"]selectAdjacentProvider\(provider, 1, \$event\)['"]/)
-    expect(source).toMatch(/@keydown\.left\.stop\.prevent=['"]selectAdjacentProvider\(provider, -1, \$event\)['"]/)
-    expect(source).toMatch(/@keydown\.up\.stop\.prevent=['"]selectAdjacentProvider\(provider, -1, \$event\)['"]/)
-    expect(script).toMatch(
-      /selectProvider\s*\(\s*provider\s*:\s*CommentProvider\s*\)\s*\{\s*if\s*\(\s*provider\.isAvailable\s*\)\s*\{\s*this\.selectedProvider\s*=\s*provider\.key/
-    )
-    expect(script).toMatch(
-      /selectAdjacentProvider\s*\(\s*provider\s*:\s*CommentProvider\s*,\s*direction:\s*1\s*\|\s*-1\s*,\s*event:\s*KeyboardEvent\s*\)\s*\{[\s\S]*?this\.providers\.filter\s*\(\s*item\s*=>\s*item\.isAvailable\s*\)[\s\S]*?findIndex\s*\(\s*item\s*=>\s*item\.key\s*===\s*provider\.key\s*\)[\s\S]*?\(currentIndex \+ direction \+ availableProviders\.length\) % availableProviders\.length[\s\S]*?this\.selectedProvider\s*=\s*nextProvider\.key[\s\S]*?this\.\$nextTick/
-    )
-    expect(script).toContain('group?.querySelectorAll<HTMLElement>(\'[role="radio"][aria-disabled="false"]\')[nextIndex]?.focus()')
+describe('discussion workspace drafts and action recovery', () => {
+  it('isolates draft settings and keeps the saved secret masked until explicitly replaced', async () => {
+    const { state } = arrange(); await state.reload(); state.current.config.minDelay = 60
+    expect(state.saved.providers[0].config.minDelay).toBe(30); expect(state.dirty).toBe(true); expect(state.current.config.akismet).toBe('********')
+    state.current.config.akismet = ''; expect(state.savedSecret('default', 'akismet')).toBe(true); state.resetPolicy(); expect(state.dirty).toBe(false)
   })
-
-  test('loadProviders uses abortable REST fetches and only lets the current generation settle state', () => {
-    expect(loadProviders).not.toBeNull()
-
-    expect(loadProviders).toMatch(
-      /this\.loadController\?\.abort\s*\(\s*\)[\s\S]*?const\s+controller\s*=\s*new\s+AbortController\s*\(\s*\)[\s\S]*?this\.loadController\s*=\s*controller/
-    )
-    expect(loadProviders).toMatch(
-      /this\.loading\s*=\s*true[\s\S]*?this\.errorMessage\s*=\s*['"]{2}[\s\S]*?this\.refreshing\s*=\s*notifyError[\s\S]*?loadingStart\s*\(\s*wikiStore\s*,\s*['"]admin-comments-refresh['"]\s*\)/
-    )
-    expect(loadProviders).toMatch(
-      /const\s+providers\s*=\s*await\s+fetchCommentProviders\s*\(\s*createAbortableFetch\s*\(\s*controller\.signal\s*\)\s*,\s*['"]Comment providers response is invalid['"]\s*\)/
-    )
-    expect(loadProviders).toMatch(
-      /if\s*\(\s*controller\.signal\.aborted\s*\)\s*\{\s*return\s+false\s*\}[\s\S]*?providers\.find\s*\(\s*provider\s*=>\s*provider\.isEnabled\s*&&\s*provider\.isAvailable\s*\)\s*\|\|[\s\S]*?providers\.find\s*\(\s*provider\s*=>\s*provider\.isAvailable\s*\)[\s\S]*?this\.providers\s*=\s*providers[\s\S]*?this\.selectedProvider\s*=\s*selected\?\.key\s*\|\|\s*['"]{2}/
-    )
-    expect(loadProviders).toMatch(
-      /catch\s*\(\s*err\s*\)\s*\{\s*if\s*\(\s*controller\.signal\.aborted\s*\)\s*\{\s*return\s+false\s*\}[\s\S]*?this\.errorMessage\s*=\s*getErrorMessage\s*\(\s*err\s*\)\s*\|\|\s*this\.\$t\s*\(\s*['"]common:error\.unexpected['"]\s*\)[\s\S]*?if\s*\(\s*notifyError\s*\)[\s\S]*?showNotification\s*\([\s\S]*?throw\s+err/
-    )
-    expect(loadProviders).toMatch(
-      /finally\s*\{\s*if\s*\(\s*this\.loadController\s*===\s*controller\s*\)\s*\{[\s\S]*?this\.loadController\s*=\s*null[\s\S]*?if\s*\(\s*!this\.isUnmounted\s*\)\s*\{[\s\S]*?this\.loading\s*=\s*false[\s\S]*?this\.refreshing\s*=\s*false[\s\S]*?\}[\s\S]*?\}[\s\S]*?loadingStop\s*\(\s*wikiStore\s*,\s*['"]admin-comments-refresh['"]\s*\)/
-    )
-    expect(loadProviders).not.toMatch(directRootUiCommit)
-
-    expect(loadProviders.match(/\bloadingStart\s*\(/g) || []).toHaveLength(1)
-    expect(loadProviders.match(/\bshowNotification\s*\(/g) || []).toHaveLength(1)
-    expect(loadProviders.match(/\bloadingStop\s*\(/g) || []).toHaveLength(1)
+  it('retains the review and baseline after a conflicting save', async () => {
+    const { state, transport } = arrange(); await state.reload(); state.enabled = false; state.reviewOpen = true
+    transport.saveDiscussionWorkspace.mockRejectedValue(new Error('Settings changed. Reload.')); await state.savePolicy()
+    expect(state.dirty).toBe(true); expect(state.saved.enabled).toBe(true); expect(state.reviewOpen).toBe(true); expect(state.saveError).toBe('Settings changed. Reload.'); expect(state.busy).toBe(false)
   })
-
-  test('refresh waits for the current reload and only announces a committed success', () => {
-    expect(refresh).not.toBeNull()
-
-    expect(refresh).toMatch(
-      /async\s+refresh\s*\(\s*\)\s*\{\s*if\s*\(\s*this\.refreshing\s*\|\|\s*this\.saving\s*\)\s*return\s*try\s*\{\s*const\s+loaded\s*=\s*await\s+this\.loadProviders\s*\(\s*\)\s*if\s*\(\s*!loaded\s*\)\s*return\s*\}\s*catch\s*\{\s*return\s*\}[\s\S]*?showNotification\s*\(\s*wikiStore\s*,\s*\{[\s\S]*?message:\s*['"]Comment providers refreshed\.['"][\s\S]*?style:\s*['"]success['"][\s\S]*?icon:\s*['"]cached['"]/
-    )
-    expect(refresh).not.toMatch(directRootUiCommit)
-    expect(refresh.match(/\bshowNotification\s*\(/g) || []).toHaveLength(1)
+  it('keeps a committed save distinct from a failed runtime refresh', async () => {
+    const { state, transport } = arrange(); await state.reload(); state.enabled = false
+    transport.saveDiscussionWorkspace.mockResolvedValue({ ...snapshot, enabled: false, fingerprint: 'second', warnings: [] }); transport.fetchDiscussionWorkspace.mockRejectedValue(new Error('Unavailable'))
+    await state.savePolicy(); expect(state.dirty).toBe(false); expect(state.saved.enabled).toBe(false); expect(state.notice).toContain('saved.'); expect(state.notice).toContain('could not be refreshed'); expect(state.saveError).toBe('')
   })
-
-  test('rejected refresh reports once, balances loading, emits no success, and resolves', async () => {
-    const events = []
-    const wikiStore = {}
-    const loadingStart = jest.fn(() => events.push('loading:start'))
-    const loadingStop = jest.fn(() => events.push('loading:stop'))
-    const showNotification = jest.fn((store, notification) => events.push(`notification:${notification.style}`))
-    const context = {
-      $t: key => key,
-      providers: [],
-      loadController: null,
-      loading: false,
-      errorMessage: '',
-      refreshing: false,
-      isUnmounted: false
-    }
-
-    context.loadProviders = () =>
-      executeMethodBody(loadProviders, context, {
-        notifyError: true,
-        AbortController,
-        createAbortableFetch: jest.fn(),
-        loadingStart,
-        wikiStore,
-        fetchCommentProviders: jest.fn().mockRejectedValue(new Error('refresh failed')),
-        window: { fetch() {} },
-        showNotification,
-        getErrorMessage: err => err.message,
-        loadingStop
-      })
-
-    const handlerPromise = executeMethodBody(refresh, context, { showNotification, wikiStore })
-
-    await expect(handlerPromise).resolves.toBeUndefined()
-    expect(events).toEqual(['loading:start', 'notification:red', 'loading:stop'])
-    expect(loadingStart).toHaveBeenCalledWith(wikiStore, 'admin-comments-refresh')
-    expect(loadingStop).toHaveBeenCalledWith(wikiStore, 'admin-comments-refresh')
-    expect(showNotification).toHaveBeenCalledTimes(1)
-    expect(showNotification).toHaveBeenCalledWith(wikiStore, {
-      message: 'refresh failed',
-      style: 'red',
-      icon: 'alert'
-    })
+  it('ignores a late comment inspection when another comment is selected', async () => {
+    let release
+    const { state, transport } = arrange({ inspectDiscussion: vi.fn().mockImplementationOnce(() => new Promise(resolve => { release = resolve })).mockResolvedValueOnce({ id: 2 }) })
+    const pending = state.openComment(1); await state.openComment(2); release({ id: 1 }); await pending
+    expect(state.detail.id).toBe(2); expect(transport.inspectDiscussion).toHaveBeenCalledTimes(2)
   })
-
-  test('save preserves the provider payload and suppresses stale or aborted outcomes', () => {
-    expect(save).not.toBeNull()
-
-    expect(save).toMatch(
-      /async\s+save\s*\(\s*\)\s*\{\s*if\s*\(\s*!this\.canSave\s*\)\s*return\s*const\s+controller\s*=\s*new\s+AbortController\s*\(\s*\)\s*this\.saveController\s*=\s*controller\s*this\.saving\s*=\s*true\s*loadingStart\s*\(\s*wikiStore\s*,\s*['"]admin-comments-saveproviders['"]\s*\)/
-    )
-    expect(save).toMatch(
-      /saveCommentProviders\s*\(\s*createAbortableFetch\s*\(\s*controller\.signal\s*\)\s*,[\s\S]*?['"]Comment providers save response is invalid['"]\s*\)/
-    )
-    expect(save).toMatch(
-      /this\.providers\.map\s*\(\s*tgt\s*=>\s*\(\s*\{\s*isEnabled:\s*tgt\.key\s*===\s*this\.selectedProvider\s*,\s*key:\s*tgt\.key\s*,\s*config:\s*tgt\.config\.map\s*\(\s*cfg\s*=>\s*\(\s*\{\s*\.\.\.cfg\s*,\s*value:\s*JSON\.stringify\s*\(\s*\{\s*v:\s*cfg\.value\.value\s*\}\s*\)\s*\}\s*\)\s*\)\s*\}\s*\)\s*\)/
-    )
-    expect(save).toMatch(
-      /if\s*\(\s*controller\.signal\.aborted\s*\)\s*\{\s*return\s*\}\s*await\s+this\.loadProviders\s*\(\s*\{\s*notifyError:\s*false\s*\}\s*\)\s*if\s*\(\s*controller\.signal\.aborted\s*\)\s*\{\s*return\s*\}[\s\S]*?showNotification\s*\(\s*wikiStore/
-    )
-    expect(save).toMatch(
-      /catch\s*\(\s*err\s*\)\s*\{\s*if\s*\(\s*!controller\.signal\.aborted\s*\)\s*\{\s*pushGraphError\s*\(\s*wikiStore\s*,\s*err\s*\)\s*\}\s*\}/
-    )
-    expect(save).toMatch(
-      /finally\s*\{\s*if\s*\(\s*this\.saveController\s*===\s*controller\s*\)\s*\{\s*this\.saveController\s*=\s*null\s*if\s*\(\s*!this\.isUnmounted\s*\)\s*\{\s*this\.saving\s*=\s*false\s*\}\s*\}[\s\S]*?loadingStop\s*\(\s*wikiStore\s*,\s*['"]admin-comments-saveproviders['"]\s*\)/
-    )
-    expect(save).not.toMatch(/this\.\$apollo\.mutate|updateProviders\.responseResult|graphql-tag|\bgql\b/)
-    expect(save).not.toMatch(directRootUiCommit)
-
-    expect(save.match(/\bloadingStart\s*\(/g) || []).toHaveLength(1)
-    expect(save.match(/\bsaveCommentProviders\s*\(/g) || []).toHaveLength(1)
-    expect(save.match(/\bshowNotification\s*\(/g) || []).toHaveLength(1)
-    expect(save.match(/\bpushGraphError\s*\(/g) || []).toHaveLength(1)
-    expect(save.match(/\bloadingStop\s*\(/g) || []).toHaveLength(1)
+  it('does not replace an unsaved policy when moderation refreshes workspace counts', async () => {
+    const { state, transport } = arrange(); await state.reload(); state.current.config.minDelay = 60
+    state.detail = { id: 1, isHidden: false, fingerprint: 'before' }; state.reason = 'Needs context'
+    transport.moderateDiscussion.mockResolvedValue({ id: 1, isHidden: true, fingerprint: 'after' }); await state.moderate()
+    expect(state.detail.isHidden).toBe(true); expect(state.reason).toBe(''); expect(state.current.config.minDelay).toBe(60); expect(state.saved.providers[0].config.minDelay).toBe(30)
   })
-
-  test('teardown cancels provider loading and saving before stale work can settle UI state', async () => {
-    expect(beforeUnmount).not.toBeNull()
-    expect(beforeUnmount).toMatch(/this\.isUnmounted\s*=\s*true[\s\S]*?this\.loadController\?\.abort\s*\(\s*\)[\s\S]*?this\.saveController\?\.abort\s*\(\s*\)/)
-
-    const loadController = { abort: jest.fn() }
-    const saveController = { abort: jest.fn() }
-    const context = {
-      isUnmounted: false,
-      loadController,
-      saveController
-    }
-
-    await executeMethodBody(beforeUnmount, context, {})
-
-    expect(context.isUnmounted).toBe(true)
-    expect(loadController.abort).toHaveBeenCalledTimes(1)
-    expect(saveController.abort).toHaveBeenCalledTimes(1)
+  it('retains a failed moderation reason and does not flip visibility', async () => {
+    const { state, transport } = arrange(); state.detail = { id: 1, isHidden: false, fingerprint: 'before' }; state.reason = 'Needs context'
+    transport.moderateDiscussion.mockRejectedValue(new Error('Comment changed')); await state.moderate()
+    expect(state.detail.isHidden).toBe(false); expect(state.reason).toBe('Needs context'); expect(state.actionError).toBe('Comment changed'); expect(state.busy).toBe(false)
+  })
+  it('blocks empty moderation actions and late asynchronous updates after disposal', async () => {
+    let release; const { state, transport } = arrange({ fetchDiscussionWorkspace: () => new Promise(resolve => { release = resolve }) })
+    state.detail = { id: 1 }; await state.moderate(); expect(transport.moderateDiscussion).not.toHaveBeenCalled()
+    const pending = state.reload(); state.disposed = true; release(snapshot); await pending; expect(state.saved).toBeNull()
   })
 })

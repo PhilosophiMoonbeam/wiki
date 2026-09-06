@@ -4,6 +4,7 @@ import _ from 'lodash'
 import User from './users.ts'
 import Page from './pages.ts'
 import { canReadPage } from '../helpers/page-access.ts'
+import { assertPageUnlocked } from '../operations/page-protection.ts'
 
 interface CommentUser extends Record<string, unknown> {
   id: number
@@ -12,6 +13,7 @@ interface CommentUser extends Record<string, unknown> {
 interface CommentAction {
   user: CommentUser
   ip: string
+  sessionId?: string
 }
 
 interface PostCommentOptions extends CommentAction {
@@ -83,7 +85,7 @@ export default class Comment extends Model {
     this.updatedAt = new Date().toISOString()
   }
 
-  static async postNewComment ({ pageId, replyTo, content, guestName, guestEmail, user, ip }: PostCommentOptions): Promise<unknown> {
+  static async postNewComment ({ pageId, replyTo, content, guestName, guestEmail, user, ip, sessionId = '' }: PostCommentOptions): Promise<unknown> {
     if (user.id === 2) {
       const validation = validateValues({ email: _.toLower(guestEmail), name: guestName }, {
         email: { email: true, length: { maximum: 255 } },
@@ -92,6 +94,7 @@ export default class Comment extends Model {
       if (validation?.[0]) throw new wiki.Error.InputInvalid(validation[0])
     }
     content = _.trim(content)
+    if (content.length > 50000) throw new wiki.Error.InputInvalid('Comments must be at most 50,000 characters.')
     if (content.length < 2) throw new wiki.Error.CommentContentMissing()
     const page = await wiki.models.pages.getPageFromDb(pageId)
     if (!page) throw new wiki.Error.PageNotFound()
@@ -99,7 +102,11 @@ export default class Comment extends Model {
     if (!canReadPage(user, page) || !wiki.auth.checkAccess(user, ['write:comments'], { path: page.path, locale: page.localeCode, tags: page.tags })) {
       throw new wiki.Error.CommentPostForbidden()
     }
+    await assertPageUnlocked({ requester: user, pageId, sessionId })
+    if (typeof wiki.data.commentProvider.create !== 'function') throw new wiki.Error.InputInvalid('Built-in discussions are not the active provider.')
     return wiki.data.commentProvider.create({
+      requester: user,
+      sessionId,
       page,
       replyTo,
       content,
@@ -107,8 +114,8 @@ export default class Comment extends Model {
     })
   }
 
-  static async updateComment ({ id, content, user, ip }: UpdateCommentOptions): Promise<unknown> {
-    const pageId = await wiki.data.commentProvider.getPageIdFromCommentId(id)
+  static async updateComment ({ id, content, user, ip, sessionId = '' }: UpdateCommentOptions): Promise<unknown> {
+    const pageId = (await this.query().findById(id).select('pageId'))?.pageId
     if (!pageId) throw new wiki.Error.CommentNotFound()
     const page = await wiki.models.pages.getPageFromDb(pageId)
     if (!page) throw new wiki.Error.PageNotFound()
@@ -116,11 +123,16 @@ export default class Comment extends Model {
     if (!canReadPage(user, page) || !wiki.auth.checkAccess(user, ['manage:comments'], { path: page.path, locale: page.localeCode, tags: page.tags })) {
       throw new wiki.Error.CommentManageForbidden()
     }
-    return wiki.data.commentProvider.update({ id, content, page, user: { ...user, ip } })
+    await assertPageUnlocked({ requester: user, pageId, sessionId })
+    content = _.trim(content)
+    if (content.length < 2 || content.length > 50000) throw new wiki.Error.InputInvalid('Comments must be 2 to 50,000 characters.')
+    const { default: native } = await import('../modules/comments/default/comment.ts')
+    void ip
+    return native.update({ id, content, user: user as never })
   }
 
-  static async deleteComment ({ id, user, ip }: DeleteCommentOptions): Promise<void> {
-    const pageId = await wiki.data.commentProvider.getPageIdFromCommentId(id)
+  static async deleteComment ({ id, user, ip, sessionId = '' }: DeleteCommentOptions): Promise<void> {
+    const pageId = (await this.query().findById(id).select('pageId'))?.pageId
     if (!pageId) throw new wiki.Error.CommentNotFound()
     const page = await wiki.models.pages.getPageFromDb(pageId)
     if (!page) throw new wiki.Error.PageNotFound()
@@ -128,7 +140,9 @@ export default class Comment extends Model {
     if (!canReadPage(user, page) || !wiki.auth.checkAccess(user, ['manage:comments'], { path: page.path, locale: page.localeCode, tags: page.tags })) {
       throw new wiki.Error.CommentManageForbidden()
     }
-    await wiki.data.commentProvider.remove({ id, page, user: { ...user, ip } })
+    await assertPageUnlocked({ requester: user, pageId, sessionId })
+    void ip
+    await this.query().deleteById(id)
   }
 }
 

@@ -1,7 +1,8 @@
 <template lang="pug">
   div.comments(v-intersect.once='onIntersect')
+    v-alert.mb-4(v-if='availability && !availability.canPost', type='info', variant='tonal') {{ availability.closed ? 'This discussion is closed to new comments.' : 'Discussions are currently unavailable.' }}
     form.comments-composer(
-      v-if='permissions.write'
+      v-if='permissions.write && availability?.canPost'
       :aria-label='$t(`common:comments.postComment`)'
       :aria-busy='isPosting'
       novalidate
@@ -157,7 +158,7 @@
                 )
                   span.text-none {{$t('common:comments.updateComment')}}
     async-state.comments-empty(
-      v-else-if='permissions.write'
+      v-else-if='permissions.write && availability?.canPost'
       state='empty'
       :title='$t(`common:comments.beFirst`)'
     )
@@ -187,7 +188,7 @@
 import { defineComponent } from 'vue'
 import { markRaw } from 'vue'
 import { useGoTo } from 'vuetify'
-import { createComment, deleteComment, fetchComment, fetchComments, updateComment } from '../helpers/comments-api'
+import { createComment, deleteComment, fetchComment, fetchComments, fetchDiscussionAvailability, updateComment } from '../helpers/comments-api'
 import type { CommentRow } from '../helpers/comments-api'
 import { wikiStore } from '@/store/index.ts'
 import validateValues from '../../shared/validation'
@@ -236,6 +237,7 @@ export default defineComponent({
   },
   data () {
     return {
+      availability: null as { enabled: boolean; closed: boolean; canPost: boolean } | null,
       newcomment: '',
       isLoading: true,
       hasLoadedOnce: false,
@@ -272,6 +274,7 @@ export default defineComponent({
       this.fetchController = null
       this.fetchGeneration += 1
       this.comments = []
+      this.availability = null
       this.hasLoadedOnce = false
       this.fetchError = ''
       this.commentToDelete = null
@@ -300,11 +303,10 @@ export default defineComponent({
       this.isLoading = true
       this.fetchError = ''
       try {
-        const comments = await fetchComments(
-          (url, options) => window.fetch(url, { ...options, signal: controller.signal }),
-          this.pageId
-        )
+        const fetch = (url: string, options?: RequestInit) => window.fetch(url, { ...options, signal: controller.signal })
+        const [comments, availability] = await Promise.all([fetchComments(fetch, this.pageId), fetchDiscussionAvailability(fetch, this.pageId)])
         if (requestId !== this.fetchGeneration) return
+        this.availability = availability
         this.comments = comments.map(comment => {
           const nameParts = comment.authorName.trim().toUpperCase().split(/\s+/)
           const firstInitial = nameParts[0]?.charAt(0) ?? ''
@@ -337,7 +339,7 @@ export default defineComponent({
      * Post New Comment
      */
     async postComment () {
-      if (this.isPosting) return
+      if (this.isPosting || !this.availability?.canPost) return
       const pageId = this.pageId
       const rules: CommentValidationRules = {
         comment: {
@@ -403,6 +405,7 @@ export default defineComponent({
           void this.goTo(`#comment-post-id-${response.id}`, this.scrollOpts)
         })
       } catch (err) {
+        if (pageId === this.pageId) void this.fetch(true)
         wikiStore.showNotification({
           style: 'red',
           message: getErrorMessage(err),

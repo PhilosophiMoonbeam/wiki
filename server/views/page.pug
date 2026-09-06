@@ -5,7 +5,7 @@ block head
     style(type='text/css')!= injectCode.css
   if injectCode.head
     != injectCode.head
-  if config.features.featurePageComments
+  if commentsEnabled
     != comments.head
 
 block body
@@ -32,7 +32,7 @@ block body
         sidebar: Buffer.from(JSON.stringify(sidebar)).toString('base64'),
         navMode: config.nav.mode,
         navExpandParent: config.nav.expandParent !== false,
-        commentsEnabled: config.features.featurePageComments,
+        commentsEnabled: commentsEnabled,
         effectivePermissions: Buffer.from(JSON.stringify(effectivePermissions)).toString('base64'),
         commentsExternal: Boolean(comments.codeTemplate),
         editShortcuts: Buffer.from(JSON.stringify(config.editShortcuts)).toString('base64'),
@@ -50,5 +50,5 @@ block body
         div!= comments.main
   if injectCode.body
     != injectCode.body
-  if config.features.featurePageComments
+  if commentsEnabled
     != comments.body

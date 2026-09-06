@@ -1,324 +1,117 @@
-<template lang='pug'>
-  v-container(fluid)
-    admin-hero(
-      icon='mdi-comment-text-multiple-outline'
-      title='Comment providers'
-      description='Configure page discussion providers'
-      heading-id='admin-comments-heading'
-    )
-      template(v-slot:actions)
-        v-btn.animated.fadeInDown.wait-p3s(
-          icon
-          variant="outlined"
-          color='grey'
-          href='https://docs.requarks.io/comments'
-          target='_blank'
-          rel='noopener noreferrer'
-          aria-label='Comment provider help'
-        )
-          v-icon mdi-help-circle
-        v-btn.animated.fadeInDown.wait-p2s(
-          icon
-          variant="outlined"
-          color='grey'
-          @click='refresh'
-          :loading='refreshing'
-          :disabled='refreshing || saving'
-          aria-label='Refresh comment providers'
-        )
-          v-icon mdi-refresh
-        v-btn.animated.fadeInDown(
-          color='success'
-          @click='save'
-          variant="flat"
-          size="large"
-          :loading='saving'
-          :disabled='!canSave'
-        )
-          v-icon(start) mdi-check
-          span {{$t('common:actions.apply')}}
-    v-row
-      v-col(lg='3', cols='12')
-        v-card.animated.fadeInUp
-          v-toolbar(flat, color='primary', density="compact")
-            h2.text-body-large.ma-0 {{$t('admin:comments.provider')}}
-          async-state(v-if='loading', state='loading', title='Loading comment providers', message='Fetching available discussion providers.')
-          async-state(v-else-if='errorMessage', state='error', title='Comment providers could not be loaded', :message='errorMessage', retry-label='Try again', @retry='loadProviders')
-          async-state(v-else-if='providers.length < 1', state='empty', title='No comment providers available', message='No discussion provider is configured.')
-          template(v-else)
-            .text-body-small.text-medium-emphasis.pa-4.pb-2 Choose the provider to activate, then Apply.
-            v-list.py-0(lines="two", density="compact", role='radiogroup', aria-label='Comment provider', tabindex='-1')
-              template(v-for='(provider, idx) in providers', :key='provider.key')
-                v-list-item(
-                  role='radio'
-                  :aria-checked='provider.key === selectedProvider'
-                  :aria-disabled='!provider.isAvailable'
-                  :tabindex='provider.isAvailable && provider.key === selectedProvider ? 0 : -1'
-                  @click='selectProvider(provider)'
-                  @keydown.enter.prevent='selectProvider(provider)'
-                  @keydown.space.prevent='selectProvider(provider)'
-                  @keydown.right.stop.prevent='selectAdjacentProvider(provider, 1, $event)'
-                  @keydown.down.stop.prevent='selectAdjacentProvider(provider, 1, $event)'
-                  @keydown.left.stop.prevent='selectAdjacentProvider(provider, -1, $event)'
-                  @keydown.up.stop.prevent='selectAdjacentProvider(provider, -1, $event)'
-                  :disabled='!provider.isAvailable'
-                )
-                  template(v-slot:prepend)
-                    v-avatar(size='24')
-                      v-icon(color='grey', v-if='!provider.isAvailable') mdi-minus-box-outline
-                      v-icon(color='primary', v-else-if='provider.key === selectedProvider') mdi-radiobox-marked
-                      v-icon(color='grey', v-else) mdi-radiobox-blank
-                  v-list-item-title.text-body-medium(:class='!provider.isAvailable ? `text-medium-emphasis` : (selectedProvider === provider.key ? `text-primary` : ``)') {{ provider.title }}
-                  v-list-item-subtitle: .text-body-small {{ provider.description }}
-                  template(v-slot:append)
-                    v-avatar(v-if='selectedProvider === provider.key', size='24')
-                      v-icon.animated.fadeInLeft(color='primary', size="large") mdi-chevron-right
-                v-divider(v-if='idx < providers.length - 1')
-
-      v-col(cols='12', lg='9')
-        v-card.animated.fadeInUp.wait-p2s(v-if='!loading && !errorMessage && provider.key')
-          v-toolbar(color='primary', density="compact", flat)
-            h2.text-body-large.ma-0 {{provider.title}}
-          v-card-info(color='info')
-            div
-              div {{provider.description}}
-              span.text-body-small: a(:href='provider.website', target='_blank', rel='noopener noreferrer', :aria-label='`${provider.title} website — opens in a new tab`', style='overflow-wrap:anywhere') {{provider.website}}
-            v-spacer
-            .admin-providerlogo
-              img(:src='provider.logo', :alt='provider.title')
-          v-card-text
-            h3.text-label-small.my-5 {{$t('admin:comments.providerConfig')}}
-            .text-body-medium.ml-3(v-if='!provider.config || provider.config.length < 1'): em {{$t('admin:comments.providerNoConfig')}}
-            template(v-else)
-              template(v-for='cfg in provider.config', :key='cfg.key')
-                v-select.mb-3(
-                  v-if='cfg.value.type === "string" && cfg.value.enum'
-                  variant="outlined"
-                  :items='cfg.value.enum'
-                  :label='cfg.value.title'
-                  v-model='cfg.value.value'
-                  prepend-icon='mdi-cog-box'
-                  :hint='cfg.value.hint ? cfg.value.hint : ""'
-                  persistent-hint
-                  :class='cfg.value.hint ? "mb-2" : ""'
-                  :style='(cfg.value.maxWidth || 0) > 0 ? `max-width:` + cfg.value.maxWidth + `px;` : ``'
-                  :disabled='saving'
-                )
-                v-switch.mb-6(
-                  v-else-if='cfg.value.type === "boolean"'
-                  :label='cfg.value.title'
-                  v-model='cfg.value.value'
-                  color='primary'
-                  prepend-icon='mdi-cog-box'
-                  :hint='cfg.value.hint ? cfg.value.hint : ""'
-                  persistent-hint
-                  inset
-                  :disabled='saving'
-                  )
-                v-textarea.mb-3(
-                  v-else-if='cfg.value.type === "string" && cfg.value.multiline'
-                  variant="outlined"
-                  :label='cfg.value.title'
-                  v-model='cfg.value.value'
-                  prepend-icon='mdi-cog-box'
-                  :hint='cfg.value.hint ? cfg.value.hint : ""'
-                  persistent-hint
-                  :class='cfg.value.hint ? "mb-2" : ""'
-                  :style='(cfg.value.maxWidth || 0) > 0 ? `max-width:` + cfg.value.maxWidth + `px;` : ``'
-                  :disabled='saving'
-                  )
-                v-text-field.mb-3(
-                  v-else
-                  variant="outlined"
-                  :label='cfg.value.title'
-                  v-model='cfg.value.value'
-                  prepend-icon='mdi-cog-box'
-                  :hint='cfg.value.hint ? cfg.value.hint : ""'
-                  persistent-hint
-                  :class='cfg.value.hint ? "mb-2" : ""'
-                  :style='(cfg.value.maxWidth || 0) > 0 ? `max-width:` + cfg.value.maxWidth + `px;` : ``'
-                  :disabled='saving'
-                  )
-        async-state(v-else-if='!loading && !errorMessage && providers.length > 0', state='empty', title='Select a comment provider', message='Choose a provider to review its configuration.')
-
+<template>
+  <v-container fluid class="discussion-workspace">
+    <admin-hero title="Discussions" description="Make room for useful conversations around your knowledge." icon="mdi-comment-text-multiple-outline">
+      <template #actions><v-btn variant="text" prepend-icon="mdi-refresh" :loading="loading" :disabled="busy || reviewOpen" @click="reload">Reload workspace</v-btn><v-btn color="primary" variant="flat" :disabled="!dirty || busy || loading || issues.length > 0" @click="reviewOpen = true; saveError = ''">Review policy changes</v-btn></template>
+    </admin-hero>
+    <section class="discussion-intro"><div><span class="discussion-eyebrow">Conversation & care</span><h2>A thoughtful space to contribute.</h2><p>Choose how discussions work, keep comments useful, and bring a conversation to a considered close.</p></div><dl><div><dt>Visible comments</dt><dd>{{ saved?.counts.visible ?? '—' }}</dd></div><div><dt>Hidden for review</dt><dd>{{ saved?.counts.hidden ?? '—' }}</dd></div><div><dt>Closed discussions</dt><dd>{{ saved?.counts.closedPages ?? '—' }}</dd></div></dl></section>
+    <v-alert v-if="notice" :type="noticeWarning ? 'warning' : 'success'" variant="tonal" closable class="mb-4" @click:close="notice = ''">{{ notice }}</v-alert>
+    <async-state v-if="loading" state="loading" title="Opening the discussion workspace" />
+    <async-state v-else-if="loadError" state="error" title="Discussions are unavailable" :message="loadError" retry-label="Try again" @retry="reload" />
+    <template v-else-if="saved">
+      <div class="discussion-tabs-row"><div class="discussion-tabs" role="tablist" aria-label="Discussion workspace sections"><button v-for="tab in tabs" :id="`discussion-tab-${tab.key}`" :key="tab.key" role="tab" :aria-controls="`discussion-panel-${tab.key}`" :aria-selected="section === tab.key" :tabindex="section === tab.key ? 0 : -1" @click="setSection(tab.key)" @keydown="tabKey($event, tab.key)">{{ tab.title }}</button></div><span aria-live="polite">{{ dirty ? 'Unsaved discussion policy' : 'Policy matches saved settings' }}</span></div>
+      <section v-show="section === 'policy'" id="discussion-panel-policy" role="tabpanel" aria-labelledby="discussion-tab-policy">
+        <div class="discussion-availability"><div><span class="discussion-eyebrow">Workspace policy</span><h3>{{ enabled ? 'Open to discussion' : 'Discussions are paused' }}</h3><p>Pausing removes discussions from page views and stops new built-in comments. Stored comments remain in the moderation register.</p></div><v-switch v-model="enabled" label="Discussions enabled" color="primary" hide-details :disabled="busy || reviewOpen" /></div>
+        <div class="discussion-provider-layout"><aside class="discussion-provider-library"><h3>Where conversations live</h3><p>Choose one provider for this workspace.</p><div role="radiogroup" aria-label="Discussion provider"><button v-for="provider in draft" :key="provider.key" class="discussion-provider" role="radio" :aria-checked="provider.isEnabled" :aria-disabled="!provider.isAvailable" :tabindex="provider.isEnabled ? 0 : -1" :disabled="busy || reviewOpen || !provider.isAvailable" @click="chooseProvider(provider.key)" @keydown="providerKey($event, provider.key)"><v-icon :icon="provider.external ? 'mdi-open-in-new' : 'mdi-comment-processing-outline'" size="22" /><span><strong>{{ title(provider) }}</strong><small>{{ provider.external ? 'External service' : 'Stored in this wiki' }}</small></span><v-icon :icon="provider.isEnabled ? 'mdi-radiobox-marked' : 'mdi-radiobox-blank'" size="20" /></button></div><p class="discussion-footnote">Switching providers keeps existing local comments. External conversations are managed by their own service.</p></aside>
+          <article v-if="current" class="discussion-provider-detail"><header><div><span class="discussion-eyebrow">Provider configuration</span><h3>{{ title(current) }}</h3><p>{{ current.description }}</p></div><v-chip size="small" variant="tonal">{{ current.external ? 'External' : 'Native' }}</v-chip></header>
+            <div v-if="current.external" class="discussion-boundary"><v-icon icon="mdi-lock-outline" size="22" /><p>External embeds load only on public pages without a page password. Private and password-protected pages do not load the provider. Their local comments stay available here.</p></div>
+            <div v-else class="discussion-boundary"><v-icon icon="mdi-shield-check-outline" size="22" /><p>Page access and password rules also protect comments. Moderation and page closure are available below. Guests have separate posting delays by IP address.</p></div>
+            <div class="discussion-fields"><template v-for="[key, prop] in properties" :key="key"><div v-if="prop.sensitive" class="discussion-secret"><div><strong>{{ prop.title || key }}</strong><span>{{ current.config[key] === secretMask ? 'Saved credential · concealed' : current.config[key] ? 'Replacement ready to save' : 'Not configured' }}</span></div><v-text-field v-if="current.config[key] !== secretMask" v-model="current.config[key]" :label="prop.title || key" type="password" autocomplete="new-password" variant="outlined" :hint="prop.hint" persistent-hint :disabled="busy || reviewOpen" /><div class="discussion-secret-actions"><v-btn v-if="current.config[key] === secretMask" variant="tonal" size="small" :disabled="busy || reviewOpen" @click="current.config[key] = ''">Replace or remove key</v-btn><v-btn v-else-if="savedSecret(current.key, key)" variant="text" size="small" :disabled="busy || reviewOpen" @click="current.config[key] = secretMask">Keep saved key</v-btn></div><small>An empty key disables Akismet after saving.</small></div><v-text-field v-else-if="prop.type === 'number'" :model-value="String(current.config[key] ?? '')" :label="prop.title || key" type="number" variant="outlined" :hint="prop.hint" persistent-hint :disabled="busy || reviewOpen" @update:model-value="current.config[key] = $event === '' || $event == null ? null : Number($event)" /><v-text-field v-else v-model="current.config[key]" :label="prop.title || key" variant="outlined" :hint="prop.hint" persistent-hint :disabled="busy || reviewOpen" /></template></div>
+            <div v-if="!current.external" class="discussion-runtime"><h4>Spam protection & pacing</h4><dl><div><dt>Akismet verification</dt><dd>{{ spamStatus }}</dd></div><div><dt>Request protection</dt><dd>One attempt per 15 seconds</dd></div></dl><p>Akismet checks public, unprotected pages only. A failed service check leaves the comment available for local moderation. The posting delay is measured from creation, so later edits do not restart it.</p></div>
+            <footer><a :href="current.website" target="_blank" rel="noopener noreferrer">{{ title(current) }} website <v-icon icon="mdi-arrow-top-right" size="14" /></a><v-btn variant="text" size="small" :disabled="!dirty || busy || reviewOpen" @click="resetPolicy">Reset policy draft</v-btn></footer>
+          </article></div>
+        <v-alert v-if="issues.length" type="error" variant="tonal" class="mt-4"><div v-for="issue in issues" :key="issue.provider + issue.field + issue.message">{{ issue.message }}</div></v-alert>
+      </section>
+      <section v-show="section === 'moderation'" id="discussion-panel-moderation" role="tabpanel" aria-labelledby="discussion-tab-moderation">
+        <div class="discussion-section-heading"><div><span class="discussion-eyebrow">Built-in comment register</span><h3>Read the context. Choose the response.</h3><p>Hide a comment from readers without deleting it. Restore it when the issue is resolved.</p></div><v-btn variant="tonal" prepend-icon="mdi-refresh" :disabled="inventoryLoading || busy" @click="loadInventory">Refresh register</v-btn></div>
+        <form class="discussion-filters" @submit.prevent="offset = 0; loadInventory()"><v-text-field v-model="search" label="Search comments, authors or pages" prepend-inner-icon="mdi-magnify" variant="outlined" density="compact" hide-details clearable /><v-select v-model="state" label="Comment visibility" :items="stateOptions" variant="outlined" density="compact" hide-details @update:model-value="offset = 0; loadInventory()" /><v-select v-model="visibility" label="Page visibility" :items="visibilityOptions" variant="outlined" density="compact" hide-details @update:model-value="offset = 0; loadInventory()" /><v-btn type="submit" variant="tonal" :disabled="inventoryLoading">Search</v-btn></form>
+        <async-state v-if="inventoryLoading" state="loading" title="Loading comments" /><async-state v-else-if="inventoryError" state="error" title="The register could not be loaded" :message="inventoryError" retry-label="Try again" @retry="loadInventory" />
+        <template v-else><div v-if="inventory?.items.length" class="discussion-register"><button v-for="item in inventory.items" :key="item.id" class="discussion-comment-row" @click="openComment(item.id)"><div class="discussion-author"><span class="discussion-avatar">{{ initials(item.authorName) }}</span><span><strong>{{ item.authorName }}</strong><small>{{ date(item.createdAt) }} · #{{ item.id }}</small></span></div><div class="discussion-comment-excerpt"><p>{{ item.excerpt }}</p><small><v-icon v-if="item.page.visibility === 'private'" icon="mdi-lock-outline" size="14" />{{ item.page.title }} <span>· {{ item.page.locale }}/{{ item.page.path }}</span></small></div><span class="discussion-state" :class="{ 'discussion-state--hidden': item.isHidden }">{{ item.isHidden ? 'Hidden' : 'Visible' }}</span><v-icon icon="mdi-arrow-top-right" size="18" /></button></div><async-state v-else state="empty" :title="search || state !== 'all' || visibility !== 'all' ? 'No matching comments' : 'The conversation starts here'" :message="search || state !== 'all' || visibility !== 'all' ? 'Try a different search or visibility filter.' : 'Built-in comments appear here when readers contribute. External providers keep their own records.'" /><div v-if="inventory" class="discussion-pagination"><span>{{ range(inventory) }}</span><div><v-btn variant="text" :disabled="offset === 0" @click="offset = Math.max(0, offset - 30); loadInventory()">Previous</v-btn><v-btn variant="text" :disabled="offset + 30 >= inventory.total" @click="offset += 30; loadInventory()">Next</v-btn></div></div></template>
+      </section>
+      <section v-show="section === 'closed'" id="discussion-panel-closed" role="tabpanel" aria-labelledby="discussion-tab-closed">
+        <div class="discussion-section-heading"><div><span class="discussion-eyebrow">Conversation lifecycle</span><h3>A clear ending, with room to reopen.</h3><p>Closing a built-in discussion stops new posts while keeping its visible comments readable.</p></div><v-btn variant="tonal" prepend-icon="mdi-refresh" :disabled="closedLoading || busy" @click="loadClosed">Refresh closed pages</v-btn></div>
+        <div class="discussion-page-picker"><v-autocomplete v-model="pageId" :items="pageOptions" label="Choose a page to manage its discussion" :loading="pagesLoading" variant="outlined" hide-details clearable /><v-btn color="primary" variant="tonal" :disabled="!pageId || busy" @click="openPage(pageId!)">Manage discussion</v-btn></div><v-alert v-if="pagesError" type="error" variant="tonal" class="mb-4">{{ pagesError }} <v-btn variant="text" @click="loadPages">Retry page list</v-btn></v-alert>
+        <form class="discussion-closed-search" @submit.prevent="closedOffset = 0; loadClosed()"><v-text-field v-model="closedSearch" label="Find a closed discussion" variant="outlined" density="compact" hide-details clearable /><v-btn type="submit" variant="tonal" :disabled="closedLoading">Search</v-btn></form>
+        <async-state v-if="closedLoading" state="loading" title="Loading closed discussions" /><async-state v-else-if="closedError" state="error" title="Closed discussions are unavailable" :message="closedError" retry-label="Try again" @retry="loadClosed" /><template v-else><div class="discussion-register"><button v-for="item in closedInventory?.items ?? []" :key="item.page.id" class="discussion-closed-row" @click="openPage(item.page.id)"><v-icon icon="mdi-comment-lock-outline" size="24" /><span><strong>{{ item.page.title }}</strong><small>{{ item.page.locale }}/{{ item.page.path }} · {{ item.page.visibility === 'private' ? 'Private' : 'Public' }}</small></span><small>{{ date(item.updatedAt) }}</small><v-icon icon="mdi-arrow-top-right" size="18" /></button></div><async-state v-if="!closedInventory?.items.length" state="empty" title="No closed discussions found" message="Choose a page above to review its policy or close a conversation." /><div v-if="closedInventory" class="discussion-pagination"><span>{{ range(closedInventory) }}</span><div><v-btn variant="text" :disabled="closedOffset === 0" @click="closedOffset = Math.max(0, closedOffset - 30); loadClosed()">Previous</v-btn><v-btn variant="text" :disabled="closedOffset + 30 >= closedInventory.total" @click="closedOffset += 30; loadClosed()">Next</v-btn></div></div></template>
+      </section>
+    </template>
+    <v-dialog v-model="reviewOpen" max-width="650" :persistent="busy" aria-label="Review discussion policy changes"><v-card class="discussion-dialog"><v-card-title>Review discussion policy</v-card-title><v-card-text><p>These settings apply across the workspace after saving.</p><dl class="discussion-review"><div><dt>Availability</dt><dd>{{ saved?.enabled ? 'Enabled' : 'Paused' }} → {{ enabled ? 'Enabled' : 'Paused' }}</dd></div><div><dt>Provider</dt><dd>{{ savedProviderTitle }} → {{ current ? title(current) : 'None' }}</dd></div><div v-for="change in changes" :key="change"><dt>Configuration</dt><dd>{{ change }}</dd></div></dl><p v-if="current?.external">Public, unprotected pages may contact {{ title(current) }} when opened. Local comments remain in the register.</p><p v-else>New comments use the saved posting delay and spam settings. Hidden comments and closed discussions retain their current state.</p><v-alert v-if="saveError" type="error" variant="tonal">{{ saveError }}<v-btn variant="text" :disabled="busy" @click="reloadFromReview">Reload saved policy</v-btn></v-alert></v-card-text><v-card-actions><v-btn variant="text" :disabled="busy" @click="reviewOpen = false">Keep editing</v-btn><v-spacer /><v-btn color="primary" variant="flat" :disabled="!dirty || issues.length > 0" :loading="saving" @click="savePolicy">Save discussion policy</v-btn></v-card-actions></v-card></v-dialog>
+    <v-dialog v-model="detailOpen" max-width="860" :persistent="busy" aria-label="Review a discussion comment"><v-card class="discussion-dialog"><v-card-title>Comment review</v-card-title><v-card-text><async-state v-if="detailLoading" state="loading" title="Loading comment context" /><async-state v-else-if="detailError" state="error" title="Comment unavailable" :message="detailError" retry-label="Try again" @retry="openComment(detailId)" /><template v-else-if="detail"><header class="discussion-detail-heading"><div><h3>{{ detail.authorName }}</h3><p>{{ date(detail.createdAt) }} · Comment #{{ detail.id }}</p></div><v-chip :color="detail.isHidden ? 'warning' : 'primary'" variant="tonal">{{ detail.isHidden ? 'Hidden from readers' : 'Visible to readers' }}</v-chip></header><a class="discussion-page-link" :href="`/i/${detail.page.id}`" target="_blank" rel="noopener noreferrer">{{ detail.page.title }} · {{ detail.page.visibility === 'private' ? 'Private page' : 'Public page' }} <v-icon icon="mdi-arrow-top-right" size="16" /></a><div class="discussion-source" aria-label="Comment source">{{ detail.content }}</div><p class="discussion-footnote">Markdown source is shown without loading embedded resources.</p><details class="discussion-audit"><summary>Author audit details</summary><dl><div><dt>Account</dt><dd>{{ detail.authorId === 2 ? 'Guest' : '#' + detail.authorId }}</dd></div><div><dt>Email</dt><dd>{{ detail.authorEmail || 'Not recorded' }}</dd></div><div><dt>IP address</dt><dd>{{ detail.authorIP || 'Not recorded' }}</dd></div></dl></details><h4 class="mt-5">{{ detail.isHidden ? 'Restore this contribution' : 'Hide this contribution' }}</h4><p>{{ detail.isHidden ? 'Restoring makes the comment readable again under the page’s access rules.' : 'Hiding removes the comment from reader responses. Its source remains here for review.' }}</p><v-textarea v-model="reason" label="Moderation reason" hint="3–1,000 characters. Visible to administrators only." persistent-hint variant="outlined" rows="2" auto-grow maxlength="1000" :disabled="busy" /><v-alert v-if="actionError" type="error" variant="tonal" class="mt-4">{{ actionError }} <v-btn variant="text" :disabled="busy" @click="openComment(detail.id)">Reload comment</v-btn></v-alert><details v-if="detail.history.length" class="discussion-history"><summary>Moderation history · latest {{ detail.history.length }}</summary><ol><li v-for="event in detail.history" :key="event.id"><strong>{{ event.action === 'hide' ? 'Hidden' : 'Restored' }}</strong><small>{{ date(event.createdAt) }} · {{ event.actorId ? 'Account #' + event.actorId : 'System credential' }}</small><p>{{ event.reason }}</p></li></ol></details></template></v-card-text><v-card-actions><v-btn variant="text" :disabled="busy" @click="detailOpen = false">Close review</v-btn><v-spacer /><v-btn v-if="detail && !detailLoading && !detailError" :color="detail.isHidden ? 'primary' : 'warning'" variant="flat" :loading="acting" :disabled="reason.trim().length < 3" @click="moderate">{{ detail.isHidden ? 'Restore comment' : 'Hide comment' }}</v-btn></v-card-actions></v-card></v-dialog>
+    <v-dialog v-model="pageOpen" max-width="690" :persistent="busy" aria-label="Manage page discussion"><v-card class="discussion-dialog"><v-card-title>Page discussion</v-card-title><v-card-text><async-state v-if="pageLoading" state="loading" title="Reading page policy" /><async-state v-else-if="pageError" state="error" title="Page policy unavailable" :message="pageError" retry-label="Try again" @retry="openPage(policyId)" /><template v-else-if="pagePolicy"><span class="discussion-eyebrow">{{ pagePolicy.page.visibility }} page · #{{ pagePolicy.page.id }}</span><h3>{{ pagePolicy.page.title }}</h3><p>{{ pagePolicy.page.locale }}/{{ pagePolicy.page.path }}</p><div class="discussion-boundary"><v-icon :icon="pagePolicy.closed ? 'mdi-comment-lock-outline' : 'mdi-comment-outline'" /><p>{{ pagePolicy.closed ? 'This discussion is closed. Visible comments can still be read.' : 'This page allows new comments when built-in discussions are enabled and the reader has permission to post.' }}</p></div><h4>{{ pagePolicy.closed ? 'Reopen the conversation' : 'Close new contributions' }}</h4><p>This policy applies to built-in discussions. External services manage their own conversation settings.</p><v-textarea v-model="pageReason" label="Discussion policy reason" hint="3–1,000 characters. Readers see only whether the discussion is closed." persistent-hint variant="outlined" rows="2" auto-grow maxlength="1000" :disabled="busy" /><v-alert v-if="actionError" type="error" variant="tonal" class="mt-4">{{ actionError }} <v-btn variant="text" :disabled="busy" @click="openPage(pagePolicy.page.id)">Reload page policy</v-btn></v-alert><details v-if="pagePolicy.history.length" class="discussion-history"><summary>Policy history · latest {{ pagePolicy.history.length }}</summary><ol><li v-for="event in pagePolicy.history" :key="event.id"><strong>{{ event.action === 'close' ? 'Closed' : 'Reopened' }}</strong><small>{{ date(event.createdAt) }} · {{ event.actorId ? 'Account #' + event.actorId : 'System credential' }}</small><p>{{ event.reason }}</p></li></ol></details></template></v-card-text><v-card-actions><v-btn variant="text" :disabled="busy" @click="pageOpen = false">Done</v-btn><v-spacer /><v-btn v-if="pagePolicy && !pageLoading && !pageError" color="primary" variant="flat" :loading="acting" :disabled="pageReason.trim().length < 3" @click="changePagePolicy">{{ pagePolicy.closed ? 'Reopen discussion' : 'Close discussion' }}</v-btn></v-card-actions></v-card></v-dialog>
+  </v-container>
 </template>
-<script lang='ts'>
+<script lang="ts">
 import AsyncState from '@/components/common/async-state.vue'
-import { wikiStore } from '@/store/index.ts'
-import { fetchCommentProviders, saveCommentProviders, type CommentProvider } from '../../helpers/comments-api'
-import { getErrorMessage, loadingStart, loadingStop, showNotification, pushGraphError } from '../../helpers/root-ui-store'
-
-const createAbortableFetch = (signal: AbortSignal) => (
-  input: RequestInfo | URL,
-  init?: RequestInit
-) => window.fetch(input, { ...init, signal })
-
+import { DISCUSSION_SECRET_MASK, discussionIssues, discussionProviderTitle, discussionSettings, type DiscussionProvider, type DiscussionWorkspace, type ModerationInventory, type ModerationInspection, type PageDiscussionPolicy } from '../../../shared/discussion-policy.ts'
+import { fetchDiscussionWorkspace, saveDiscussionWorkspace, fetchDiscussionInventory, inspectDiscussion, moderateDiscussion, fetchClosedDiscussions, fetchPageDiscussionPolicy, savePageDiscussionPolicy, type ClosedDiscussionInventory } from '../../helpers/discussion-api.ts'
+import { fetchPageList, type PageListRow } from '../../helpers/pages-api.ts'
+import { getErrorMessage } from '../../helpers/root-ui-store.ts'
+const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 export default {
-  components: {
-    AsyncState
-  },
-  data() {
-    return {
-      providers: [] as CommentProvider[],
-      selectedProvider: '',
-      loading: false,
-      errorMessage: '',
-      refreshing: false,
-      saving: false,
-      loadController: null as AbortController | null,
-      saveController: null as AbortController | null,
-      isUnmounted: false
-    }
-  },
+  components: { AsyncState },
+  data() { return {
+    saved: null as DiscussionWorkspace | null, draft: [] as DiscussionProvider[], enabled: false, loading: false, loadError: '', saving: false, saveError: '', reviewOpen: false, disposed: false, notice: '', noticeWarning: false,
+    section: 'policy', tabs: [{ key: 'policy', title: 'Discussion policy' }, { key: 'moderation', title: 'Moderation register' }, { key: 'closed', title: 'Closed discussions' }], secretMask: DISCUSSION_SECRET_MASK,
+    inventory: null as ModerationInventory | null, inventoryLoading: false, inventoryError: '', inventorySequence: 0, search: '', state: 'all', visibility: 'all', offset: 0,
+    stateOptions: [{ title: 'All comments', value: 'all' }, { title: 'Visible', value: 'visible' }, { title: 'Hidden', value: 'hidden' }], visibilityOptions: [{ title: 'All pages', value: 'all' }, { title: 'Public pages', value: 'public' }, { title: 'Private pages', value: 'private' }],
+    detail: null as ModerationInspection | null, detailId: 0, detailOpen: false, detailLoading: false, detailError: '', detailSequence: 0, reason: '', acting: false, actionError: '',
+    closedInventory: null as ClosedDiscussionInventory | null, closedLoading: false, closedError: '', closedSequence: 0, closedSearch: '', closedOffset: 0,
+    pages: [] as PageListRow[], pagesLoading: false, pagesError: '', pageId: null as number | null, pagePolicy: null as PageDiscussionPolicy | null, policyId: 0, pageOpen: false, pageLoading: false, pageError: '', pageSequence: 0, pageReason: ''
+  } },
   computed: {
-    provider (): Partial<CommentProvider> {
-      return this.providers.find(provider => provider.key === this.selectedProvider) || {}
-    },
-    canSave (): boolean {
-      return !this.loading && !this.refreshing && !this.saving && !this.errorMessage && this.providers.length > 0 &&
-        Boolean(this.providers.find(provider => provider.key === this.selectedProvider)?.isAvailable)
-    }
-  },
-  created() {
-    this.loadProviders().catch(() => {})
+    busy(): boolean { return this.saving || this.acting },
+    current(): DiscussionProvider | undefined { return this.draft.find(provider => provider.isEnabled) },
+    properties() { return Object.entries(this.current?.props ?? {}).sort(([, a], [, b]) => (a.order ?? 100) - (b.order ?? 100)) },
+    dirty(): boolean { return Boolean(this.saved && (this.saved.enabled !== this.enabled || JSON.stringify(discussionSettings(this.saved.providers)) !== JSON.stringify(discussionSettings(this.draft)))) },
+    issues() { return discussionIssues(this.draft) },
+    changes(): string[] { return this.draft.flatMap(provider => Object.entries(provider.config).filter(([key, value]) => Object.hasOwn(provider.props, key) && value !== this.saved?.providers.find(row => row.key === provider.key)?.config[key]).map(([key]) => `${this.title(provider)} · ${provider.props[key]?.title || key}`)) },
+    savedProviderTitle(): string { const provider = this.saved?.providers.find(row => row.isEnabled); return provider ? this.title(provider) : 'None' },
+    spamStatus(): string { const runtime = this.saved?.runtime; if (runtime?.provider !== 'default') return 'Built-in provider is not active'; return ({ off: 'No key configured', verified: 'Key verified at activation', unverified: 'Key could not be verified', unavailable: 'Verification status unavailable' })[runtime.antiSpam.state] },
+    pageOptions() { return this.pages.map(page => ({ title: `${page.title} · ${page.locale}/${page.path}${page.visibility === 'private' ? ' · Private' : ''}`, value: page.id })) }
   },
   methods: {
-    selectProvider (provider: CommentProvider) {
-      if (provider.isAvailable) {
-        this.selectedProvider = provider.key
-      }
-    },
-    selectAdjacentProvider (provider: CommentProvider, direction: 1 | -1, event: KeyboardEvent) {
-      const availableProviders = this.providers.filter(item => item.isAvailable)
-      const currentIndex = availableProviders.findIndex(item => item.key === provider.key)
-      if (currentIndex < 0 || availableProviders.length < 2) return
-      const nextIndex = (currentIndex + direction + availableProviders.length) % availableProviders.length
-      const nextProvider = availableProviders[nextIndex]
-      if (!nextProvider) return
-      this.selectedProvider = nextProvider.key
-      const group = (event.currentTarget as HTMLElement | null)?.closest('[role="radiogroup"]')
-      this.$nextTick(() => {
-        group?.querySelectorAll<HTMLElement>('[role="radio"][aria-disabled="false"]')[nextIndex]?.focus()
-      })
-    },
-    async loadProviders({ notifyError = true }: { notifyError?: boolean } = {}) {
-      this.loadController?.abort()
-      const controller = new AbortController()
-      this.loadController = controller
-      this.loading = true
-      this.errorMessage = ''
-      this.refreshing = notifyError
-      loadingStart(wikiStore, 'admin-comments-refresh')
-      try {
-        const providers = await fetchCommentProviders(
-          createAbortableFetch(controller.signal),
-          'Comment providers response is invalid'
-        )
-        if (controller.signal.aborted) {
-          return false
-        }
-        const selected = providers.find(provider => provider.isEnabled && provider.isAvailable) ||
-          providers.find(provider => provider.isAvailable)
-        this.providers = providers
-        this.selectedProvider = selected?.key || ''
-        return true
-      } catch (err) {
-        if (controller.signal.aborted) {
-          return false
-        }
-        this.errorMessage = getErrorMessage(err) || this.$t('common:error.unexpected')
-        if (notifyError) {
-          showNotification(wikiStore, {
-            message: this.errorMessage,
-            style: 'red',
-            icon: 'alert'
-          })
-        }
-        throw err
-      } finally {
-        if (this.loadController === controller) {
-          this.loadController = null
-          if (!this.isUnmounted) {
-            this.loading = false
-            this.refreshing = false
-          }
-        }
-        loadingStop(wikiStore, 'admin-comments-refresh')
-      }
-    },
-    async refresh() {
-      if (this.refreshing || this.saving) return
-      try {
-        const loaded = await this.loadProviders()
-        if (!loaded) return
-      } catch {
-        return
-      }
-      showNotification(wikiStore, {
-        message: 'Comment providers refreshed.',
-        style: 'success',
-        icon: 'cached'
-      })
-    },
-    async save() {
-      if (!this.canSave) return
-      const controller = new AbortController()
-      this.saveController = controller
-      this.saving = true
-      loadingStart(wikiStore, 'admin-comments-saveproviders')
-      try {
-        await saveCommentProviders(createAbortableFetch(controller.signal), this.providers.map(tgt => ({
-          isEnabled: tgt.key === this.selectedProvider,
-          key: tgt.key,
-          config: tgt.config.map(cfg => ({...cfg, value: JSON.stringify({ v: cfg.value.value })}))
-        })), 'Comment providers save response is invalid')
-        if (controller.signal.aborted) {
-          return
-        }
-        await this.loadProviders({ notifyError: false })
-        if (controller.signal.aborted) {
-          return
-        }
-        showNotification(wikiStore, {
-          message: this.$t('admin:comments.configSaveSuccess'),
-          style: 'success',
-          icon: 'check'
-        })
-      } catch (err) {
-        if (!controller.signal.aborted) {
-          pushGraphError(wikiStore, err)
-        }
-      } finally {
-        if (this.saveController === controller) {
-          this.saveController = null
-          if (!this.isUnmounted) {
-            this.saving = false
-          }
-        }
-        loadingStop(wikiStore, 'admin-comments-saveproviders')
-      }
-    }
+    title: discussionProviderTitle,
+    date(value: string) { const date = new Date(value); return Number.isNaN(date.valueOf()) ? 'Date unavailable' : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) },
+    initials(value: string) { return value.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase() || '?' },
+    range(value: { total: number; offset: number; items: unknown[] }) { return value.total ? `${value.offset + (value.items.length ? 1 : 0)}–${value.offset + value.items.length} of ${value.total}` : '0 records' },
+    savedSecret(provider: string, field: string) { return this.saved?.providers.find(row => row.key === provider)?.config[field] === DISCUSSION_SECRET_MASK },
+    chooseProvider(key: string) { if (this.busy || this.reviewOpen || !this.draft.find(row => row.key === key)?.isAvailable) return; this.draft.forEach(row => { row.isEnabled = row.key === key }) },
+    providerKey(event: KeyboardEvent, key: string) { const keys = this.draft.filter(row => row.isAvailable).map(row => row.key); if (!['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const index = event.key === 'Home' ? 0 : event.key === 'End' ? keys.length - 1 : (keys.indexOf(key) + (['ArrowDown', 'ArrowRight'].includes(event.key) ? 1 : -1) + keys.length) % keys.length; const group = (event.currentTarget as HTMLElement | null)?.parentElement; this.chooseProvider(keys[index]!); this.$nextTick(() => group?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus()) },
+    setSection(key: string) { this.section = key; void this.$router.replace({ query: this.$route.query, hash: '#' + key }); if (key === 'moderation' && !this.inventory) void this.loadInventory(); if (key === 'closed') { if (!this.closedInventory) void this.loadClosed(); if (!this.pages.length) void this.loadPages() } },
+    tabKey(event: KeyboardEvent, key: string) { const keys = this.tabs.map(tab => tab.key); if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const index = event.key === 'Home' ? 0 : event.key === 'End' ? keys.length - 1 : (keys.indexOf(key) + (event.key === 'ArrowRight' ? 1 : -1) + keys.length) % keys.length; this.setSection(keys[index]!); this.$nextTick(() => document.getElementById('discussion-tab-' + keys[index])?.focus()) },
+    resetPolicy() { if (!this.saved || this.busy) return; this.draft = copy(this.saved.providers); this.enabled = this.saved.enabled; this.saveError = '' },
+    async reload() { if (this.loading || this.busy || this.disposed || (this.dirty && !window.confirm('Discard the unsaved discussion policy and reload?'))) return; this.loading = true; this.loadError = ''; try { const value = await fetchDiscussionWorkspace(); if (this.disposed) return; this.saved = value; this.resetPolicy(); this.inventory = null; this.closedInventory = null; this.setSection(this.section) } catch (error) { if (!this.disposed) this.loadError = getErrorMessage(error) } finally { if (!this.disposed) this.loading = false } },
+    async reloadFromReview() { if (this.busy || !window.confirm('Discard this discussion policy draft and load the latest saved settings?')) return; this.reviewOpen = false; this.resetPolicy(); await this.reload() },
+    async savePolicy() { if (!this.saved || !this.dirty || this.busy || this.issues.length) return; this.saving = true; this.saveError = ''; try { const result = await saveDiscussionWorkspace(this.enabled, discussionSettings(this.draft), this.saved.fingerprint); if (this.disposed) return; this.saved = { ...this.saved, ...result }; this.saving = false; this.resetPolicy(); this.reviewOpen = false; this.notice = result.warnings?.length ? result.warnings.join(' ') : 'Discussion policy saved.'; this.noticeWarning = Boolean(result.warnings?.length); try { const latest = await fetchDiscussionWorkspace(); if (!this.disposed) this.saved = { ...this.saved, counts: latest.counts, runtime: latest.runtime } } catch { if (!this.disposed) { this.notice += ' Runtime status could not be refreshed. Reload the workspace to check it.'; this.noticeWarning = true } } } catch (error) { if (!this.disposed) this.saveError = getErrorMessage(error) } finally { if (!this.disposed) this.saving = false } },
+    async loadInventory() { const sequence = ++this.inventorySequence; this.inventoryLoading = true; this.inventoryError = ''; try { const value = await fetchDiscussionInventory(new URLSearchParams({ search: this.search || '', state: this.state, visibility: this.visibility, offset: String(this.offset), limit: '30' })); if (!this.disposed && sequence === this.inventorySequence) this.inventory = value } catch (error) { if (!this.disposed && sequence === this.inventorySequence) this.inventoryError = getErrorMessage(error) } finally { if (!this.disposed && sequence === this.inventorySequence) this.inventoryLoading = false } },
+    async openComment(id: number) { if (this.busy) return; const sequence = ++this.detailSequence; this.detailId = id; this.detailOpen = true; this.detailLoading = true; this.detailError = ''; this.actionError = ''; this.detail = null; this.reason = ''; try { const value = await inspectDiscussion(id); if (!this.disposed && sequence === this.detailSequence) this.detail = value } catch (error) { if (!this.disposed && sequence === this.detailSequence) this.detailError = getErrorMessage(error) } finally { if (!this.disposed && sequence === this.detailSequence) this.detailLoading = false } },
+    async moderate() { if (!this.detail || this.busy || this.reason.trim().length < 3) return; this.acting = true; this.actionError = ''; try { const value = await moderateDiscussion(this.detail.id, !this.detail.isHidden, this.reason.trim(), this.detail.fingerprint); if (this.disposed) return; this.detail = value; this.reason = ''; this.notice = value.isHidden ? 'Comment hidden from readers.' : 'Comment restored for readers.'; this.noticeWarning = false; await this.refreshCounts(); await this.loadInventory() } catch (error) { if (!this.disposed) this.actionError = getErrorMessage(error) } finally { if (!this.disposed) this.acting = false } },
+    async refreshCounts() { try { const value = await fetchDiscussionWorkspace(); if (!this.disposed && this.saved) this.saved = { ...this.saved, counts: value.counts, runtime: value.runtime } } catch { if (!this.disposed) { this.notice += ' Counts could not be refreshed. Reload the workspace.'; this.noticeWarning = true } } },
+    async loadClosed() { const sequence = ++this.closedSequence; this.closedLoading = true; this.closedError = ''; try { const value = await fetchClosedDiscussions(new URLSearchParams({ search: this.closedSearch || '', offset: String(this.closedOffset), limit: '30' })); if (!this.disposed && sequence === this.closedSequence) this.closedInventory = value } catch (error) { if (!this.disposed && sequence === this.closedSequence) this.closedError = getErrorMessage(error) } finally { if (!this.disposed && sequence === this.closedSequence) this.closedLoading = false } },
+    async loadPages() { if (this.pagesLoading) return; this.pagesLoading = true; this.pagesError = ''; try { const pages = await fetchPageList(window.fetch.bind(window)); if (!this.disposed) this.pages = pages } catch (error) { if (!this.disposed) this.pagesError = getErrorMessage(error) } finally { if (!this.disposed) this.pagesLoading = false } },
+    async openPage(id: number) { if (this.busy) return; const sequence = ++this.pageSequence; this.policyId = id; this.pageOpen = true; this.pageLoading = true; this.pageError = ''; this.actionError = ''; this.pagePolicy = null; this.pageReason = ''; try { const value = await fetchPageDiscussionPolicy(id); if (!this.disposed && sequence === this.pageSequence) this.pagePolicy = value } catch (error) { if (!this.disposed && sequence === this.pageSequence) this.pageError = getErrorMessage(error) } finally { if (!this.disposed && sequence === this.pageSequence) this.pageLoading = false } },
+    async changePagePolicy() { if (!this.pagePolicy || this.busy || this.pageReason.trim().length < 3) return; this.acting = true; this.actionError = ''; try { const value = await savePageDiscussionPolicy(this.pagePolicy.page.id, !this.pagePolicy.closed, this.pageReason.trim(), this.pagePolicy.fingerprint); if (this.disposed) return; this.pagePolicy = value; this.pageReason = ''; this.notice = value.closed ? 'Discussion closed to new comments.' : 'Discussion reopened.'; this.noticeWarning = false; await this.refreshCounts(); await this.loadClosed() } catch (error) { if (!this.disposed) this.actionError = getErrorMessage(error) } finally { if (!this.disposed) this.acting = false } },
+    beforeUnload(event: BeforeUnloadEvent) { if (this.dirty || this.busy) { event.preventDefault(); event.returnValue = '' } }
   },
-  beforeUnmount () {
-    this.isUnmounted = true
-    this.loadController?.abort()
-    this.saveController?.abort()
-  }
+  created() { const key = this.$route.hash.slice(1); if (this.tabs.some(tab => tab.key === key)) this.section = key; void this.reload() },
+  mounted() { window.addEventListener('beforeunload', this.beforeUnload) },
+  beforeRouteLeave() { return !this.busy && (!this.dirty || window.confirm('Discard the unsaved discussion policy?')) },
+  beforeUnmount() { this.disposed = true; window.removeEventListener('beforeunload', this.beforeUnload) }
 }
 </script>
-<style lang='scss' scoped>
-.admin-providerlogo {
-  max-width: min(220px, 35vw);
-
-  img {
-    max-width: 100%;
-    height: auto;
-  }
-}
-
-@media (max-width: 599.98px) {
-  .admin-providerlogo {
-    max-width: 100%;
-  }
-}
+<style lang="scss" scoped>
+.discussion-workspace, .discussion-dialog { --discussion-line: rgba(var(--v-theme-on-surface), .12); --discussion-muted: rgba(var(--v-theme-on-surface), .7); }
+.discussion-workspace { max-width: 1660px; padding-bottom: 64px; }
+.discussion-workspace :is(h2,h3,h4,p) { margin: 0; } .discussion-workspace h2 { font-size: clamp(24px, 2.3vw, 34px); font-weight: 550; letter-spacing: -.8px; line-height: 1.2; } .discussion-workspace h3 { font-size: 21px; font-weight: 600; letter-spacing: -.35px; } .discussion-workspace p { color: var(--discussion-muted); line-height: 1.65; } .discussion-eyebrow { display: block; margin-bottom: 10px; font-size: 10px; letter-spacing: 1.9px; text-transform: uppercase; font-weight: 750; color: rgb(var(--v-theme-on-surface)); }
+.discussion-intro { display: grid; grid-template-columns: 1.2fr 1fr; align-items: center; gap: 40px; padding: 30px 0 36px; border-bottom: 1px solid var(--discussion-line); margin-bottom: 24px; } .discussion-intro p { max-width: 570px; margin-top: 12px; } .discussion-intro dl { display: grid; grid-template-columns: repeat(3,1fr); gap: 22px; } .discussion-intro dt { font-size: 11px; color: var(--discussion-muted); } .discussion-intro dd { font-size: 38px; letter-spacing: -1.3px; line-height: 1.5; font-weight: 500; }
+.discussion-tabs-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--discussion-line); margin-bottom: 28px; } .discussion-tabs-row > span { font-size: 11px; color: var(--discussion-muted); } .discussion-tabs { display: flex; gap: 24px; } .discussion-tabs button { padding: 15px 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--discussion-muted); font: inherit; font-size: 13px; cursor: pointer; } .discussion-tabs button[aria-selected=true] { color: rgb(var(--v-theme-on-surface)); border-bottom-color: rgb(var(--v-theme-primary)); font-weight: 650; }
+.discussion-availability { display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: 24px 28px; margin-bottom: 24px; background: rgba(var(--v-theme-primary), .045); border: 1px solid var(--discussion-line); border-radius: 14px; } .discussion-availability p { max-width: 650px; margin-top: 8px; font-size: 13px; } .discussion-availability .v-switch { flex: 0 0 auto; }
+.discussion-provider-layout { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); gap: 28px; } .discussion-provider-library { padding: 6px 0; } .discussion-provider-library h3 { font-size: 15px; } .discussion-provider-library > p { font-size: 12px; margin: 6px 0 20px; } .discussion-provider { display: flex; align-items: center; width: 100%; gap: 14px; padding: 18px 16px; border: 1px solid transparent; border-radius: 10px; margin-bottom: 5px; background: transparent; color: rgb(var(--v-theme-on-surface)); text-align: left; cursor: pointer; } .discussion-provider span { flex: 1; min-width: 0; } .discussion-provider strong, .discussion-author strong { display: block; font-size: 13px; font-weight: 650; } .discussion-provider small, .discussion-author small { display: block; font-size: 11px; margin-top: 4px; color: var(--discussion-muted); } .discussion-provider[aria-checked=true] { background: rgba(var(--v-theme-primary), .07); border-color: rgba(var(--v-theme-primary), .3); } .discussion-provider:disabled { opacity: .55; cursor: default; }
+.discussion-provider-detail { padding: 28px; border: 1px solid var(--discussion-line); border-radius: 14px; background: rgb(var(--v-theme-surface)); min-width: 0; } .discussion-provider-detail header, .discussion-provider-detail footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; } .discussion-provider-detail header p { font-size: 13px; margin-top: 8px; max-width: 620px; } .discussion-boundary { display: flex; align-items: flex-start; gap: 12px; padding: 17px; margin: 24px 0; border-radius: 8px; background: rgba(var(--v-theme-on-surface), .035); } .discussion-boundary p { font-size: 12px; } .discussion-boundary .v-icon { flex: 0 0 auto; color: rgb(var(--v-theme-on-surface)); margin-top: 3px; } .discussion-fields { display: grid; gap: 24px; max-width: 690px; } .discussion-secret > div:first-child { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; margin-bottom: 12px; } .discussion-secret strong { font-size: 13px; } .discussion-secret span, .discussion-secret small { font-size: 11px; color: var(--discussion-muted); } .discussion-secret-actions { margin: 8px 0; } .discussion-runtime { margin-top: 28px; padding-top: 23px; border-top: 1px solid var(--discussion-line); } .discussion-runtime h4 { font-size: 13px; margin-bottom: 16px; } .discussion-runtime dl { display: flex; flex-wrap: wrap; gap: 20px 44px; } .discussion-runtime dt { font-size: 11px; color: var(--discussion-muted); margin-bottom: 4px; } .discussion-runtime dd { font-size: 13px; } .discussion-runtime p { font-size: 12px; margin-top: 16px; } .discussion-provider-detail footer { align-items: center; margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--discussion-line); } .discussion-provider-detail a { font-size: 12px; color: rgb(var(--v-theme-on-surface)); }
+.discussion-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin: 30px 0 24px; } .discussion-section-heading p { font-size: 13px; margin-top: 8px; max-width: 660px; } .discussion-filters { display: grid; grid-template-columns: minmax(230px, 1fr) 170px 170px auto; gap: 12px; align-items: center; margin-bottom: 24px; } .discussion-register { border-top: 1px solid var(--discussion-line); } .discussion-comment-row { display: grid; grid-template-columns: 190px minmax(0,1fr) 65px 18px; align-items: center; gap: 24px; width: 100%; padding: 23px 10px; border: 0; border-bottom: 1px solid var(--discussion-line); background: transparent; color: rgb(var(--v-theme-on-surface)); text-align: left; cursor: pointer; } .discussion-comment-row:hover, .discussion-closed-row:hover { background: rgba(var(--v-theme-primary), .04); } .discussion-author { display: flex; align-items: center; gap: 12px; min-width: 0; } .discussion-avatar { display: grid; place-items: center; width: 35px; height: 35px; border-radius: 50%; background: rgba(var(--v-theme-primary), .09); color: rgb(var(--v-theme-on-surface)); flex: 0 0 auto; font-size: 11px; font-weight: 650; } .discussion-comment-excerpt { min-width: 0; } .discussion-comment-excerpt p { font-size: 13px; color: rgb(var(--v-theme-on-surface)); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; } .discussion-comment-excerpt small { display: block; font-size: 11px; color: var(--discussion-muted); margin-top: 9px; overflow-wrap: anywhere; } .discussion-comment-excerpt small span { opacity: .85; } .discussion-state { font-size: 11px; color: rgb(var(--v-theme-on-surface)); } .discussion-state.discussion-state--hidden { color: var(--discussion-muted); } .discussion-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; font-size: 12px; color: var(--discussion-muted); }
+.discussion-page-picker { display: flex; gap: 14px; align-items: center; padding: 24px; margin-bottom: 24px; border: 1px solid var(--discussion-line); border-radius: 12px; } .discussion-page-picker .v-autocomplete { min-width: 0; } .discussion-closed-search { display: flex; gap: 14px; align-items: center; max-width: 580px; margin-bottom: 24px; } .discussion-closed-row { display: grid; grid-template-columns: 25px minmax(0,1fr) auto 18px; align-items: center; width: 100%; padding: 22px 12px; gap: 22px; border: 0; border-bottom: 1px solid var(--discussion-line); background: transparent; color: rgb(var(--v-theme-on-surface)); text-align: left; cursor: pointer; } .discussion-closed-row strong { display: block; font-size: 14px; } .discussion-closed-row small { display: block; margin-top: 5px; color: var(--discussion-muted); font-size: 11px; overflow-wrap: anywhere; }
+.discussion-dialog { border-radius: 16px !important; } .discussion-dialog :deep(.v-card-title) { white-space: normal; padding: 24px 28px 12px; font-size: 22px; } .discussion-dialog :deep(.v-card-text) { padding: 12px 28px 24px; } .discussion-dialog :deep(.v-card-actions) { padding: 16px 20px; border-top: 1px solid var(--discussion-line); flex-wrap: wrap; gap: 8px; } .discussion-dialog p { margin: 10px 0 18px; font-size: 13px; } .discussion-review > div, .discussion-audit dl > div { display: grid; grid-template-columns: 115px minmax(0,1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--discussion-line); font-size: 13px; } .discussion-review dt, .discussion-audit dt { color: var(--discussion-muted); } .discussion-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; } .discussion-detail-heading h3 { font-size: 20px; } .discussion-page-link { display: inline-block; font-size: 12px; color: rgb(var(--v-theme-on-surface)); margin: 0 0 15px; } .discussion-source { padding: 22px; border: 1px solid var(--discussion-line); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 340px; overflow: auto; font: 13px/1.75 ui-monospace, monospace; background: rgba(var(--v-theme-on-surface), .025); } .discussion-footnote { font-size: 11px !important; } .discussion-audit, .discussion-history { border-top: 1px solid var(--discussion-line); padding-top: 16px; margin-top: 22px; font-size: 13px; } .discussion-audit summary, .discussion-history summary { cursor: pointer; font-weight: 600; } .discussion-audit dd { overflow-wrap: anywhere; } .discussion-history ol { padding-left: 20px; margin-top: 18px; } .discussion-history li { padding: 5px 0 12px 5px; } .discussion-history small { display: block; margin-top: 5px; color: var(--discussion-muted); font-size: 11px; } .discussion-history p { margin: 6px 0; overflow-wrap: anywhere; }
+.discussion-workspace button:focus-visible, .discussion-dialog summary:focus-visible { outline: 2px solid rgb(var(--v-theme-primary)); outline-offset: 4px; } .discussion-workspace :is(strong, h3, dd) { overflow-wrap: anywhere; }
+@media(max-width:1199px) { .discussion-intro { gap: 24px; grid-template-columns: 1fr; } .discussion-intro dl { max-width: 650px; } .discussion-filters { grid-template-columns: 1fr 1fr auto; } .discussion-filters > :first-child { grid-column: 1 / -1; } .discussion-comment-row { grid-template-columns: 160px minmax(0,1fr) 55px; gap: 18px; } .discussion-comment-row > .v-icon { display: none; } .discussion-tabs-row { align-items: flex-start; flex-direction: column; gap: 0; } .discussion-tabs-row > span { padding-bottom: 12px; } }
+@media(max-width:850px) { .discussion-provider-layout { grid-template-columns: 1fr; } .discussion-provider-library > div { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; } .discussion-provider-library .discussion-footnote { margin-bottom: 0; } .discussion-availability { align-items: flex-start; flex-direction: column; gap: 8px; } }
+@media(max-width:599px) { .discussion-intro { padding-top: 18px; } .discussion-intro dl { gap: 12px; } .discussion-intro dd { font-size: 29px; } .discussion-intro dt { font-size: 10px; } .discussion-tabs { gap: 16px; width: 100%; justify-content: space-between; } .discussion-tabs button { font-size: 11px; } .discussion-availability, .discussion-provider-detail { padding: 20px; } .discussion-provider-library > div { grid-template-columns: 1fr; } .discussion-provider { padding: 15px 12px; } .discussion-provider-detail header, .discussion-provider-detail footer, .discussion-section-heading { flex-direction: column; gap: 14px; } .discussion-fields { gap: 20px; } .discussion-filters { grid-template-columns: 1fr 1fr; } .discussion-filters > .v-btn { grid-column: 1 / -1; } .discussion-comment-row { grid-template-columns: minmax(0,1fr) 50px; gap: 14px; padding: 20px 4px; } .discussion-comment-excerpt { grid-column: 1 / -1; grid-row: 2; } .discussion-state { text-align: right; } .discussion-page-picker { padding: 18px; flex-direction: column; align-items: stretch; } .discussion-closed-row { grid-template-columns: 24px minmax(0,1fr) 18px; gap: 14px; } .discussion-closed-row > small { grid-column: 2; grid-row: 2; margin: 0; } .discussion-closed-row > .v-icon:last-child { grid-column: 3; grid-row: 1; } .discussion-pagination { flex-wrap: wrap; } .discussion-detail-heading { align-items: flex-start; flex-direction: column; gap: 8px; } .discussion-review > div, .discussion-audit dl > div { grid-template-columns: 1fr; gap: 5px; } .discussion-dialog :deep(.v-card-text), .discussion-dialog :deep(.v-card-title) { padding-left: 20px; padding-right: 20px; } }
 </style>

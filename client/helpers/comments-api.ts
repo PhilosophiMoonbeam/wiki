@@ -298,3 +298,10 @@ export async function deleteComment(fetchImpl: FetchImpl, id: number, fallbackMe
   })
   return normalizeMessage(await parseJsonResponse(response, fallbackMessage), fallbackMessage)
 }
+
+export async function fetchDiscussionAvailability(fetchImpl: FetchImpl, pageId: number): Promise<{ enabled: boolean; closed: boolean; canPost: boolean }> {
+  const response = await sameOriginJsonFetch(fetchImpl, '/_api/comments/availability/' + pageId, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+  const value = await parseJsonResponse(response, 'Discussion availability could not be loaded.')
+  if (!isRecord(value) || typeof value.enabled !== 'boolean' || typeof value.closed !== 'boolean' || typeof value.canPost !== 'boolean') throw new Error('Discussion availability response is invalid.')
+  return { enabled: value.enabled, closed: value.closed, canPost: value.canPost }
+}

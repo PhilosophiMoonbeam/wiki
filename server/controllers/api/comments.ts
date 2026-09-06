@@ -1,6 +1,10 @@
 import express from 'express'
 import { errorStatus, objectValue, type NextFunction, type Request, type Response, getWikiAuth } from '../_types.ts'
 
+import { readDiscussionWorkspace, writeDiscussionWorkspace } from '../../operations/discussion-settings.ts'
+import { discussionModeration } from '../../operations/discussion-moderation.ts'
+import { assertPageUnlocked } from '../../operations/page-protection.ts'
+import type { Knex } from 'knex'
 import commentOperations from '../../operations/comments.ts'
 
 const router = express.Router()
@@ -33,6 +37,32 @@ const handleCommentError = (err: unknown, res: Response, next: NextFunction): vo
   }
   next(err)
 }
+
+router.use((_req, res, next) => { res.set('Cache-Control', 'private, no-store'); next() })
+const fail = (res: Response, error: unknown) => {
+  const status = errorStatus(error) ?? 500
+  if (status >= 500) (WIKI as unknown as { logger: { warn(error: unknown): void } }).logger.warn(error)
+  res.status(status).json({ error: status >= 500 ? 'Discussion request failed. Try again or check server logs.' : error instanceof Error ? error.message : String(error) })
+}
+router.get('/workspace', async (req, res) => { try { res.json(await readDiscussionWorkspace(req.user)) } catch (error) { fail(res, error) } })
+router.put('/workspace', async (req, res) => { try { res.json(await writeDiscussionWorkspace(req.user, req.body, req.body?.fingerprint)) } catch (error) { fail(res, error) } })
+router.get('/moderation', async (req, res) => { try { res.json(await discussionModeration().list(req.user, req.query)) } catch (error) { fail(res, error) } })
+router.get('/moderation/:id', async (req, res) => { try { res.json(await discussionModeration().inspect(req.user, Number(req.params.id))) } catch (error) { fail(res, error) } })
+router.patch('/moderation/:id', async (req, res) => { try { res.json(await discussionModeration().moderate(req.user, Number(req.params.id), req.body ?? {})) } catch (error) { fail(res, error) } })
+router.get('/closed-pages', async (req, res) => { try { res.json(await discussionModeration().closedPages(req.user, req.query)) } catch (error) { fail(res, error) } })
+router.get('/page-policy/:id', async (req, res) => { try { res.json(await discussionModeration().policy(req.user, Number(req.params.id))) } catch (error) { fail(res, error) } })
+router.patch('/page-policy/:id', async (req, res) => { try { res.json(await discussionModeration().setPolicy(req.user, Number(req.params.id), req.body ?? {})) } catch (error) { fail(res, error) } })
+router.get('/availability/:id', async (req, res) => {
+  const pageId = parsePositiveInteger(req.params.id)
+  if (pageId === null) return res.status(400).json({ error: 'Choose a valid page.' })
+  try {
+    await assertPageUnlocked({ requester: req.user, pageId, sessionId: req.sessionID })
+    const context = WIKI as unknown as { models: { knex: Knex }; config: { features: { featurePageComments: boolean } }; data: { commentProvider: { key?: string } } }
+    const policy = await context.models.knex('pageDiscussionPolicy').where('pageId', pageId).first('closed')
+    const enabled = context.config.features.featurePageComments && context.data.commentProvider.key === 'default'
+    res.json({ enabled, closed: policy?.closed === true, canPost: enabled && !policy?.closed })
+  } catch (error) { fail(res, error) }
+})
 
 router.get('/providers', async (req, res, next) => {
   if (!requireSystemAccess(req, res)) return
@@ -72,7 +102,7 @@ router.get('/', async (req, res, next) => {
   }
   if (!requireCommentRequester(req, res)) return
   try {
-    res.json(await commentOperations.list({ requester: req.user, pageId }))
+    res.json(await commentOperations.list({ requester: req.user, sessionId: req.sessionID, pageId }))
   } catch (err) {
     next(err)
   }
@@ -84,7 +114,7 @@ router.post('/', async (req, res, next) => {
   const input = typeof body === 'object' && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : {}
   try {
     const id = await commentOperations.create({
-      requester: req.user,
+      requester: req.user, sessionId: req.sessionID,
       ip: req.ip ?? '',
       input
     })
@@ -99,7 +129,7 @@ router.get('/:id', async (req, res, next) => {
   if (id === null) return res.status(400).json({ error: 'comment id must be a positive integer' })
   if (!requireCommentRequester(req, res)) return
   try {
-    res.json(await commentOperations.get({ requester: req.user, id }))
+    res.json(await commentOperations.get({ requester: req.user, sessionId: req.sessionID, id }))
   } catch (err) {
     next(err)
   }
@@ -111,7 +141,7 @@ router.patch('/:id', async (req, res, next) => {
   if (!requireCommentRequester(req, res)) return
   try {
     const render = await commentOperations.update({
-      requester: req.user,
+      requester: req.user, sessionId: req.sessionID,
       ip: req.ip ?? '',
       input: { id, content: objectValue(req.body, 'content') }
     })
@@ -126,7 +156,7 @@ router.delete('/:id', async (req, res, next) => {
   if (id === null) return res.status(400).json({ error: 'comment id must be a positive integer' })
   if (!requireCommentRequester(req, res)) return
   try {
-    await commentOperations.remove({ requester: req.user, ip: req.ip ?? '', id })
+    await commentOperations.remove({ requester: req.user, sessionId: req.sessionID, ip: req.ip ?? '', id })
     res.json({ message: 'Comment deleted successfully' })
   } catch (err) {
     handleCommentError(err, res, next)

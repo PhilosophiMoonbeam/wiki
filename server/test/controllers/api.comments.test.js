@@ -1,3 +1,7 @@
+const persistProviders = vi.fn().mockResolvedValue({ warnings: [] })
+const assertUnlocked = vi.fn().mockResolvedValue(undefined)
+vi.mockModule('../../operations/discussion-settings.ts', import.meta.url, () => ({ writeLegacyDiscussionProviders: persistProviders, readDiscussionWorkspace: vi.fn(), writeDiscussionWorkspace: vi.fn() }))
+vi.mockModule('../../operations/page-protection.ts', import.meta.url, () => ({ assertPageUnlocked: assertUnlocked }))
 vi.mockModule('express', import.meta.url, () => {
   const routers = []
   const express = {
@@ -87,6 +91,8 @@ const loadApiIndexRouter = async () => {
 describe('controllers/api comments endpoints', () => {
   beforeEach(() => {
     vi.resetModules()
+    persistProviders.mockResolvedValue({ warnings: [] })
+    assertUnlocked.mockResolvedValue(undefined)
     express.__routers.length = 0
 
     global.WIKI = {
@@ -192,6 +198,7 @@ describe('controllers/api comments endpoints', () => {
         },
         comments: {
           query: vi.fn(() => ({
+            findById: id => global.WIKI.data.commentProvider.getCommentById(id),
             where: vi.fn(() => ({
               orderBy: vi.fn().mockResolvedValue([{
                 id: 31,
@@ -374,31 +381,17 @@ describe('controllers/api comments endpoints', () => {
     expect(global.WIKI.models.commentProviders.initProvider).not.toHaveBeenCalled()
   })
 
-  it('saves providers with GraphQL parity and initializes the active comment provider', async () => {
+  it('passes legacy provider payloads to the atomic shared settings service', async () => {
     global.WIKI.auth.checkAccess.mockReturnValue(true)
     const { saveProviders } = await loadHandlers()
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn() }
 
     await saveProviders(createSavePayload(), res)
 
-    const queries = global.WIKI.models.commentProviders.__queries
-    expect(queries).toHaveLength(2)
-    expect(queries[0].patch).toHaveBeenCalledWith({
-      isEnabled: true,
-      config: {
-        displayMode: 'expanded',
-        missingValue: null
-      }
-    })
-    expect(queries[0].where).toHaveBeenCalledWith('key', 'default')
-    expect(queries[1].patch).toHaveBeenCalledWith({
-      isEnabled: false,
-      config: {
-        endpoint: 'https://example.invalid/comments'
-      }
-    })
-    expect(queries[1].where).toHaveBeenCalledWith('key', 'external')
-    expect(global.WIKI.models.commentProviders.initProvider).toHaveBeenCalledTimes(1)
+    expect(persistProviders).toHaveBeenCalledWith([
+      { key: 'default', isEnabled: true, config: { displayMode: 'expanded', missingValue: null } },
+      { key: 'external', isEnabled: false, config: { endpoint: 'https://example.invalid/comments' } }
+    ])
     expect(res.status).not.toHaveBeenCalled()
     expect(res.json).toHaveBeenCalledWith({ message: 'Comment Providers updated successfully' })
   })
@@ -433,11 +426,7 @@ describe('controllers/api comments endpoints', () => {
   it('forwards unexpected provider save failures to the shared error policy', async () => {
     global.WIKI.auth.checkAccess.mockReturnValue(true)
     const err = new Error('comment save failed')
-    const query = {
-      patch: vi.fn().mockReturnThis(),
-      where: vi.fn().mockRejectedValue(err)
-    }
-    global.WIKI.models.commentProviders.query.mockReturnValue(query)
+    persistProviders.mockRejectedValueOnce(err)
     const { saveProviders } = await loadHandlers()
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn() }
     const next = vi.fn()
@@ -449,18 +438,12 @@ describe('controllers/api comments endpoints', () => {
     expect(global.WIKI.models.commentProviders.initProvider).not.toHaveBeenCalled()
   })
 
-  it('forwards unexpected comment provider initialization failures to the shared error policy', async () => {
+  it('does not report a committed provider policy as a failed write when activation returns warnings', async () => {
+    persistProviders.mockResolvedValueOnce({ warnings: ['Saved; runtime activation needs attention.'] })
     global.WIKI.auth.checkAccess.mockReturnValue(true)
-    const err = new Error('init failed')
-    global.WIKI.models.commentProviders.initProvider.mockRejectedValueOnce(err)
-    const { saveProviders } = await loadHandlers()
-    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() }
-    const next = vi.fn()
-
+    const { saveProviders } = await loadHandlers(), res = { status: vi.fn().mockReturnThis(), json: vi.fn() }, next = vi.fn()
     await saveProviders(createSavePayload(), res, next)
-
-    expect(next).toHaveBeenCalledWith(err)
-    expect(res.json).not.toHaveBeenCalled()
+    expect(next).not.toHaveBeenCalled(); expect(res.json).toHaveBeenCalledWith({ message: 'Comment Providers updated successfully' })
   })
 
   it('forwards unexpected failures to next', async () => {
@@ -560,7 +543,7 @@ describe('controllers/api comments endpoints', () => {
     expect(global.WIKI.models.comments.postNewComment).toHaveBeenCalledWith({
       ...createReq.body,
       user,
-      ip: createReq.ip
+      ip: createReq.ip, sessionId: ''
     })
     expect(createRes.status).toHaveBeenCalledWith(201)
     expect(createRes.json).toHaveBeenCalledWith({ id: 73 })
@@ -572,14 +555,14 @@ describe('controllers/api comments endpoints', () => {
       id: 73,
       content: 'Updated',
       user,
-      ip: updateReq.ip
+      ip: updateReq.ip, sessionId: ''
     })
     expect(updateRes.json).toHaveBeenCalledWith({ render: '<p>Updated</p>' })
 
     const deleteReq = { user, ip: '127.0.0.3', params: { id: '73' } }
     const deleteRes = { status: vi.fn().mockReturnThis(), json: vi.fn() }
     await handlers.remove(deleteReq, deleteRes)
-    expect(global.WIKI.models.comments.deleteComment).toHaveBeenCalledWith({ id: 73, user, ip: deleteReq.ip })
+    expect(global.WIKI.models.comments.deleteComment).toHaveBeenCalledWith({ id: 73, user, ip: deleteReq.ip, sessionId: '' })
     expect(deleteRes.json).toHaveBeenCalledWith({ message: 'Comment deleted successfully' })
   })
 

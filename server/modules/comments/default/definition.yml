@@ -1,6 +1,6 @@
 key: default
 title: Default
-description: Built-in advanced comments tool.
+description: Page conversations stored in this wiki, with access controls and reversible moderation.
 author: tsEpistle contributors
 logo: /_assets/svg/icon-tsepistle.svg
 website: https://github.com/PhilosophiMoonbeam/tsEpistle
@@ -10,6 +10,7 @@ props:
   akismet:
     type: String
     title: Akismet API Key
+    sensitive: true
     default: ''
     hint: 'Prevent spam by using the Akismet service. Enter your API key here to enable. Leave empty to disable.'
     maxWidth: 650
@@ -18,6 +19,6 @@ props:
     type: Number
     title: Post delay
     default: 30
-    hint: 'Minimum delay (in seconds) between comments per account. Note that all guests are considered as a single account.'
+    hint: 'Minimum delay (in seconds) between comments per account. Guest posting delays are separated by IP address.'
     maxWidth: 400
     order: 2

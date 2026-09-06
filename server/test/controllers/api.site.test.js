@@ -1,3 +1,5 @@
+const patchFeatures = vi.fn(async features => { global.WIKI.config.features = { ...global.WIKI.config.features, ...features } })
+vi.mockModule('../../operations/discussion-settings.ts', import.meta.url, () => ({ patchSiteFeatures: patchFeatures }))
 vi.mockModule('../../operations/editors.ts', import.meta.url, () => ({ updateEditorAvailability: async available => { global.WIKI.config.editors = { ...global.WIKI.config.editors, available } } }))
 vi.mockModule('express', import.meta.url, () => {
   const routers = []
@@ -301,13 +303,14 @@ describe('controllers/api site endpoints', () => {
     expect(global.WIKI.config.editShortcuts.editFab).toBe(false)
     expect(global.WIKI.config.editShortcuts.editMenuBar).toBe(true)
     expect(global.WIKI.config.features.featurePageComments).toBe(true)
+    expect(patchFeatures).toHaveBeenCalledWith({ featurePageComments: true })
     expect(global.WIKI.config.features.featurePageRatings).toBe(true)
     expect(global.WIKI.config.security.securityTrustProxy).toBe(true)
     expect(global.WIKI.config.security.securityHSTSDuration).toBe(31536000)
     expect(global.WIKI.config.uploads.maxFileSize).toBe(2097152)
     expect(global.WIKI.config.uploads.maxFiles).toBe(20)
     expect(global.WIKI.config.uploads.forceDownload).toBe(true)
-    expect(global.WIKI.configSvc.saveToDb).toHaveBeenCalledWith(['host', 'title', 'company', 'contentLicense', 'footerOverride', 'banner', 'seo', 'pageExtensions', 'auth', 'editShortcuts', 'features', 'security', 'uploads'])
+    expect(global.WIKI.configSvc.saveToDb).toHaveBeenCalledWith(['host', 'title', 'company', 'contentLicense', 'footerOverride', 'banner', 'seo', 'pageExtensions', 'auth', 'editShortcuts', 'security', 'uploads'])
     expect(global.WIKI.app.set.mock.calls).toEqual([['trust proxy', 1]])
     expect(res.status).not.toHaveBeenCalled()
     expect(res.json).toHaveBeenCalledWith({ message: 'Site configuration updated successfully' })

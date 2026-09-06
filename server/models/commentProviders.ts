@@ -4,12 +4,15 @@ import fs from 'fs-extra'
 import path from 'node:path'
 import _ from 'lodash'
 import * as yaml from 'js-yaml'
+import { buildDiscussionEmbed } from '../helpers/discussion-embed.ts'
 import commonHelper from '../helpers/common.ts'
-import { readModuleDefinition, readModuleDirectories, readString, readYamlRecord, type LoadedModuleDefinition, type ModuleConfig } from './moduleTypes.ts'
+import { readModuleDefinition, readModuleDirectories, type LoadedModuleDefinition, type ModuleConfig } from './moduleTypes.ts'
 
 interface CommentProviderDefinition extends LoadedModuleDefinition { title?: string, description?: string, logo?: string, website?: string, isAvailable?: boolean, codeTemplate?: boolean }
-interface CommentRuntime extends Record<string, unknown> { config: ModuleConfig, head: string, bodyStart: string, bodyEnd: string, body?: string, main: string, init?: () => Promise<void> }
-interface CommentModule extends Record<string, unknown> { init(): Promise<void> }
+interface CommentRuntime extends Record<string, unknown> { config: ModuleConfig, head: string, bodyStart: string, bodyEnd: string, body?: string, main: string, init?: (config: ModuleConfig) => Promise<void> }
+interface CommentModule extends Record<string, unknown> { init(config: ModuleConfig): Promise<void> }
+
+let activationQueue: Promise<void> = Promise.resolve()
 
 export default class CommentProvider extends Model {
   declare key: string
@@ -56,27 +59,28 @@ export default class CommentProvider extends Model {
   }
 
   static async initProvider (): Promise<void> {
-    const provider = await wiki.models.commentProviders.query().findOne('isEnabled', true)
-    if (!provider) return
-    const definition = _.find(wiki.data.commentProviders, ['key', provider.key])
-    const base = { ...(definition ?? {}), config: provider.config, head: '', bodyStart: '', bodyEnd: '', main: '<comments></comments>' }
-    if (definition?.codeTemplate) {
-      const codePath = path.join(wiki.SERVERPATH, 'modules/comments', provider.key, 'code.yml')
-      const record = readYamlRecord(yaml.load(await fs.readFile(codePath, 'utf8')), codePath)
-      const code = { head: readString(record, 'head'), body: readString(record, 'body'), main: readString(record, 'main') }
-      _.forOwn(provider.config, (value, key) => {
-        const replacement = String(value)
-        code.head = _.replace(code.head, new RegExp(`{{${key}}}`, 'g'), replacement)
-        code.body = _.replace(code.body, new RegExp(`{{${key}}}`, 'g'), replacement)
-        code.main = _.replace(code.main, new RegExp(`{{${key}}}`, 'g'), replacement)
-      })
-      wiki.data.commentProvider = { ...base, ...code }
-    } else {
-      const imported = await import(`../modules/comments/${provider.key}/comment.ts`) as unknown as { default: CommentModule }
-      wiki.data.commentProvider = { ...base, ...imported.default, config: provider.config }
-      await imported.default.init()
-    }
-    wiki.data.commentProvider.config = provider.config
+    const activation = activationQueue.catch(() => {}).then(async () => {
+      const providers = await wiki.models.commentProviders.getProviders(true)
+      const provider = providers.length === 1 ? providers[0] : undefined
+      if (!provider) {
+        wiki.data.commentProvider = { config: {}, head: '', bodyStart: '', bodyEnd: '', main: '' }
+        throw new Error('Exactly one discussion provider must be enabled.')
+      }
+      const definition = _.find(wiki.data.commentProviders, ['key', provider.key])
+      if (!definition?.isAvailable) throw new Error('Selected discussion provider is unavailable.')
+      const base = { ...definition, config: provider.config, head: '', bodyStart: '', bodyEnd: '', main: '<comments></comments>' }
+      if (definition.codeTemplate) {
+        const renderForPage = (pageId: number, pageUrl: string) => buildDiscussionEmbed(provider.key, provider.config, pageId, pageUrl)
+        renderForPage(1, 'https://wiki.local/i/1')
+        wiki.data.commentProvider = { ...base, main: '', renderForPage }
+      } else {
+        const imported = await import(`../modules/comments/${provider.key}/comment.ts`) as unknown as { default: CommentModule }
+        await imported.default.init(provider.config)
+        wiki.data.commentProvider = { ...base, ...imported.default }
+      }
+    })
+    activationQueue = activation
+    await activation
   }
 }
 

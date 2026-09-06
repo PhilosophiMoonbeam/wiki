@@ -1,3 +1,5 @@
+const assertUnlocked = vi.fn().mockResolvedValue(undefined)
+vi.mockModule('../operations/page-protection.ts', import.meta.url, () => ({ assertPageUnlocked: assertUnlocked }))
 const originalWIKI = global.WIKI
 
 class CommentNotFound extends Error {}
@@ -81,8 +83,9 @@ describe('comment page identity and private existence isolation', () => {
     })
     const operations = (await vi.importFresh('../operations/comments.ts', import.meta.url)).default
 
-    expect(await operations.list({ requester: { id: 7, permissions: ['read:comments'] }, pageId: 17 })).toEqual([expect.objectContaining({ id: 31, authorName: 'Owner' })])
+    expect(await operations.list({ requester: { id: 7, permissions: ['read:comments'] }, pageId: 17, sessionId: 'reader-session' })).toEqual([expect.objectContaining({ id: 31, authorName: 'Owner' })])
     expect(query.findById).toHaveBeenCalledWith(17)
+    expect(assertUnlocked).toHaveBeenCalledWith({ requester: { id: 7, permissions: ['read:comments'] }, pageId: 17, sessionId: 'reader-session' })
   })
 
   it('returns the same not-found error for an absent page and another owner private page', async () => {

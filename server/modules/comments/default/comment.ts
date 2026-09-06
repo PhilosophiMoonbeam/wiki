@@ -4,7 +4,9 @@ import { full as mdEmoji } from 'markdown-it-emoji'
 import jsdomModule from 'jsdom'
 import createDOMPurify from 'dompurify'
 import _ from 'lodash'
-import moment from 'moment'
+import type { Knex } from 'knex'
+import type { PagePrincipal } from '../../../helpers/page-access.ts'
+import { createDiscussionPostingStore } from '../../../operations/discussion-posting.ts'
 
 const { JSDOM } = jsdomModule
 const window = new JSDOM('').window
@@ -31,6 +33,8 @@ interface CreateCommentInput {
   replyTo: number | undefined
   content: string
   user: CommentUser
+  requester: PagePrincipal
+  sessionId: string
 }
 
 interface UpdateCommentInput {
@@ -87,7 +91,7 @@ interface CommentByIdQuery<Row> extends PromiseLike<Row | undefined> {
 }
 
 interface CommentCountQuery {
-  where(column: 'pageId', value: number): CommentCountQuery
+  where(column: 'pageId' | 'isHidden', value: number | boolean): CommentCountQuery
   first(): PromiseLike<CommentCountRow>
 }
 
@@ -175,7 +179,8 @@ class AkismetClient {
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'tsEpistle'
       },
-      body: new URLSearchParams(fields)
+      body: new URLSearchParams(fields),
+      signal: AbortSignal.timeout(8000)
     })
     const result = await response.text()
     if (!response.ok) {
@@ -195,6 +200,8 @@ if (!isCommentModel(commentModelCandidate)) {
 const comments = commentModelCandidate
 
 let akismetClient: AkismetClient | null = null
+let antiSpamState: 'off' | 'verified' | 'unverified' = 'off'
+let antiSpamCheckedAt: string | null = null
 
 const mkdown = md({
   html: false,
@@ -216,21 +223,25 @@ const plugin = {
    * Init
    */
   async init(_config?: { akismet: string; minDelay: number }) {
-    void _config
+    const config = _config ?? wiki.data.commentProvider.config
+    antiSpamState = config.akismet ? 'unverified' : 'off'
+    antiSpamCheckedAt = null
     wiki.logger.info('(COMMENTS/DEFAULT) Initializing...')
-    if (wiki.data.commentProvider.config.akismet && wiki.data.commentProvider.config.akismet.length > 2) {
+    if (config.akismet && config.akismet.length > 2) {
       akismetClient = new AkismetClient({
-        key: wiki.data.commentProvider.config.akismet,
+        key: config.akismet,
         blog: wiki.config.host,
         lang: wiki.config.lang.namespacing ? wiki.config.lang.namespaces.join(', ') : wiki.config.lang.code,
         charset: 'UTF-8'
       })
       try {
         const isValid = await akismetClient.verifyKey()
+        antiSpamCheckedAt = new Date().toISOString()
         if (!isValid) {
           akismetClient = null
           wiki.logger.warn('(COMMENTS/DEFAULT) Akismet Key is invalid! [ DISABLED ]')
         } else {
+          antiSpamState = 'verified'
           wiki.logger.info('(COMMENTS/DEFAULT) Akismet key is valid. [ OK ]')
         }
       } catch (err: unknown) {
@@ -245,65 +256,26 @@ const plugin = {
   /**
    * Create New Comment
    */
-  async create({ page, replyTo, content, user }: CreateCommentInput) {
-    // -> Build New Comment
-    const newComment = {
-      content,
-      render: DOMPurify.sanitize(mkdown.render(content)),
-      replyTo,
-      pageId: page.id,
-      authorId: user.id,
-      name: user.name,
-      email: user.email,
-      ip: user.ip
-    }
-
-    // -> Check for Spam with Akismet
-    if (akismetClient) {
-      let userRole = 'user'
-      if (user.groups.indexOf(1) >= 0) {
-        userRole = 'administrator'
-      } else if (user.groups.indexOf(2) >= 0) {
-        userRole = 'guest'
-      }
-
-      let isSpam = false
-      try {
-        const spamCheck: AkismetComment = {
-          ip: user.ip,
-          ...(user.agentagent === undefined ? {} : { useragent: user.agentagent }),
-          content,
-          name: user.name,
-          email: user.email,
-          permalink: `${wiki.config.host}/${page.localeCode}/${page.path}`,
-          permalinkDate: page.updatedAt instanceof Date ? page.updatedAt.toISOString() : page.updatedAt,
-          type: (replyTo ?? 0) > 0 ? 'reply' : 'comment',
-          role: userRole
+  getAntiSpamStatus() { return { state: antiSpamState, checkedAt: antiSpamCheckedAt } },
+  async create({ page, replyTo, content, user, requester, sessionId }: CreateCommentInput) {
+    const context = WIKI as unknown as { models: { knex: Knex }; config: { features: Record<string, unknown> }; auth: { checkAccess(user: PagePrincipal, permissions: string[], context: unknown): boolean } }
+    return createDiscussionPostingStore({
+      db: context.models.knex,
+      fallbackFeatures: () => context.config.features,
+      canPost: (principal, currentPage) => context.auth.checkAccess(principal, ['write:comments'], { path: currentPage.path, locale: currentPage.localeCode, tags: currentPage.tags }),
+      async checkSpam({ page: currentPage, providerConfig }) {
+        const client = akismetClient
+        if (!client || client.key !== providerConfig.akismet) return
+        let isSpam = false
+        try {
+          isSpam = await client.checkSpam({ ip: user.ip, ...(user.agentagent ? { useragent: user.agentagent } : {}), content, name: user.name, email: user.email,
+            permalink: `${wiki.config.host}/${String(currentPage.localeCode)}/${String(currentPage.path)}`, permalinkDate: String(currentPage.updatedAt), type: (replyTo ?? 0) > 0 ? 'reply' : 'comment', role: user.groups.includes(1) ? 'administrator' : user.id === 2 ? 'guest' : 'user' })
+        } catch {
+          wiki.logger.warn('Akismet comment check failed; the comment will remain available for local moderation.')
         }
-        isSpam = await akismetClient.checkSpam(spamCheck)
-      } catch (err: unknown) {
-        wiki.logger.warn('Akismet Comment Validation: [ FAILED ]')
-        wiki.logger.warn(err instanceof Error ? err.message : String(err))
+        if (isSpam) throw new Error('Comment was rejected because it is marked as spam.')
       }
-
-      if (isSpam) {
-        throw new Error('Comment was rejected because it is marked as spam.')
-      }
-    }
-
-    // -> Check for minimum delay between posts
-    if (wiki.data.commentProvider.config.minDelay > 0) {
-      const lastComment = await comments.query().select('updatedAt').orderBy('updatedAt', 'desc').findOne({ authorId: user.id })
-      if (lastComment && moment().subtract(wiki.data.commentProvider.config.minDelay, 'seconds').isBefore(lastComment.updatedAt)) {
-        throw new Error('Your administrator has set a time limit before you can post another comment. Try again later.')
-      }
-    }
-
-    // -> Save Comment to DB
-    const cm = await comments.query().insert(newComment)
-
-    // -> Return Comment ID
-    return cm.id
+    }).post({ pageId: page.id, replyTo: replyTo ?? 0, content, render: DOMPurify.sanitize(mkdown.render(content)), user, requester, sessionId })
   },
   /**
    * Update an existing comment
@@ -339,7 +311,7 @@ const plugin = {
    * Get the total comments count for a page ID
    */
   async count(pageId: number) {
-    const result = await comments.query().count('* as total').where('pageId', pageId).first()
+    const result = await comments.query().count('* as total').where('pageId', pageId).where('isHidden', false).first()
     return _.toSafeInteger(result.total)
   }
 }

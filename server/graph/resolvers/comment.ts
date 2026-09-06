@@ -5,7 +5,7 @@ type ResolverArgs = Record<string, unknown>
 interface CommentListArgs { pageId: number }
 interface CommentIdArgs { id: number }
 interface ProviderArgs { providers?: unknown }
-interface ResolverContext { req: { user: Express.User, ip: string } }
+interface ResolverContext { req: { user: Express.User, ip: string, sessionID: string } }
 
 export default {
   Query: {
@@ -18,18 +18,18 @@ export default {
     providers: commentOperations.listProviders,
     list (_obj: unknown, args: CommentListArgs, context: ResolverContext) {
       return commentOperations.list({
-        requester: context.req.user,
+        requester: context.req.user, sessionId: context.req.sessionID,
         pageId: args.pageId
       })
     },
     single (_obj: unknown, args: CommentIdArgs, context: ResolverContext) {
-      return commentOperations.get({ requester: context.req.user, id: args.id })
+      return commentOperations.get({ requester: context.req.user, sessionId: context.req.sessionID, id: args.id })
     }
   },
   CommentMutation: {
     async create (_obj: unknown, args: ResolverArgs, context: ResolverContext) {
       try {
-        const id = await commentOperations.create({ requester: context.req.user, ip: context.req.ip, input: args })
+        const id = await commentOperations.create({ requester: context.req.user, sessionId: context.req.sessionID, ip: context.req.ip, input: args })
         return { responseResult: graphHelper.generateSuccess('New comment posted successfully'), id }
       } catch (err: unknown) {
         return graphHelper.generateError(err)
@@ -37,7 +37,7 @@ export default {
     },
     async update (_obj: unknown, args: ResolverArgs, context: ResolverContext) {
       try {
-        const render = await commentOperations.update({ requester: context.req.user, ip: context.req.ip, input: args })
+        const render = await commentOperations.update({ requester: context.req.user, sessionId: context.req.sessionID, ip: context.req.ip, input: args })
         return { responseResult: graphHelper.generateSuccess('Comment updated successfully'), render }
       } catch (err: unknown) {
         return graphHelper.generateError(err)
@@ -45,7 +45,7 @@ export default {
     },
     async delete (_obj: unknown, args: CommentIdArgs, context: ResolverContext) {
       try {
-        await commentOperations.remove({ requester: context.req.user, ip: context.req.ip, id: args.id })
+        await commentOperations.remove({ requester: context.req.user, sessionId: context.req.sessionID, ip: context.req.ip, id: args.id })
         return { responseResult: graphHelper.generateSuccess('Comment deleted successfully') }
       } catch (err: unknown) {
         return graphHelper.generateError(err)

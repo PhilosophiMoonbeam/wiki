@@ -1,6 +1,8 @@
 import _ from 'lodash'
 import { canReadPage, principalId, type PagePrincipal } from '../helpers/page-access.ts'
 
+import { assertPageUnlocked } from './page-protection.ts'
+import { writeLegacyDiscussionProviders } from './discussion-settings.ts'
 import configuration, { validateRows } from './configuration.ts'
 
 const { parseConfig, serializeConfig } = configuration
@@ -73,7 +75,7 @@ const getWiki = () =>
 const COMMENT_CREATE_WINDOW_MILLISECONDS = 15_000
 const commentCreateKey = (requester: Requester, ip: string): string => `comment-create:${principalId(requester) ?? 'guest'}:${ip || 'unknown'}`
 const commentReadDto = (comment: Comment, includeAuditFields: boolean): Record<string, unknown> => {
-  const { email, ip, ...dto } = comment
+  const { email, ip, moderationReason: _reason, moderationRevision: _revision, moderatedAt: _at, moderatedBy: _by, ...dto } = comment
   return {
     ...dto,
     authorName: comment.name,
@@ -125,25 +127,17 @@ const listProviders = async () => {
       ...definition,
       ...provider,
       isEnabled: Boolean(provider.isEnabled),
-      config: serializeConfig({ config: provider.config as Record<string, unknown>, definition, knownOnly: true })
+      config: serializeConfig({ config: provider.config as Record<string, unknown>, definition, knownOnly: true, maskSensitive: true })
     }
   })
 }
 
 const updateProviders = async (providers: unknown): Promise<void> => {
-  const { models } = getWiki()
   validateRows(providers, validProvider, 'Invalid comment providers payload')
-  for (const provider of providers.map(provider => ({
-    key: provider.key,
-    isEnabled: provider.isEnabled,
-    config: parseConfig(provider.config, { errorMessage: 'Invalid comment providers payload' })
-  }))) {
-    await models.commentProviders.query().patch({ isEnabled: provider.isEnabled, config: provider.config }).where('key', provider.key)
-  }
-  await models.commentProviders.initProvider()
+  await writeLegacyDiscussionProviders(providers.map(provider => ({ key: provider.key, isEnabled: provider.isEnabled, config: parseConfig(provider.config, { errorMessage: 'Invalid comment providers payload' }) })))
 }
 
-const list = async ({ requester, pageId }: { requester: Requester; pageId: number }) => {
+const list = async ({ requester, pageId, sessionId = '' }: { requester: Requester; pageId: number; sessionId?: string }) => {
   const { models, auth, Error: errors } = getWiki()
   if (!Number.isSafeInteger(pageId) || pageId < 1) throw new errors.CommentNotFound()
   const page = await models.pages
@@ -163,14 +157,15 @@ const list = async ({ requester, pageId }: { requester: Requester; pageId: numbe
   ) {
     throw new errors.CommentViewForbidden()
   }
+  await assertPageUnlocked({ requester, pageId, sessionId })
   const includeAuditFields = auth.checkAccess(requester, ['manage:system'])
-  return (await models.comments.query().where('pageId', page.id).orderBy('createdAt')).map(comment => commentReadDto(comment, includeAuditFields))
+  return (await models.comments.query().where('pageId', page.id).orderBy('createdAt')).filter(comment => !comment.isHidden).map(comment => commentReadDto(comment, includeAuditFields))
 }
 
-const get = async ({ requester, id }: { requester: Requester; id: number }) => {
-  const { models, data: definitions, auth, Error: errors, logger } = getWiki()
-  const comment = await definitions.commentProvider.getCommentById(id)
-  if (!comment || !comment.pageId) throw new errors.CommentNotFound()
+const get = async ({ requester, id, sessionId = '' }: { requester: Requester; id: number; sessionId?: string }) => {
+  const { models, auth, Error: errors, logger } = getWiki()
+  const comment = await models.comments.query().findById(id) as unknown as Comment | undefined
+  if (!comment || !comment.pageId || comment.isHidden) throw new errors.CommentNotFound()
   const page = await models.pages
     .query()
     .select('localeCode', 'path', 'visibility', 'ownerId')
@@ -192,10 +187,11 @@ const get = async ({ requester, id }: { requester: Requester; id: number }) => {
   ) {
     throw new errors.CommentViewForbidden()
   }
+  await assertPageUnlocked({ requester, pageId: comment.pageId, sessionId })
   return commentReadDto(comment, auth.checkAccess(requester, ['manage:system']))
 }
 
-const create = async ({ requester, ip, input }: { requester: Requester; ip: string; input: Record<string, unknown> }): Promise<unknown> => {
+const create = async ({ requester, ip, input, sessionId = '' }: { requester: Requester; ip: string; input: Record<string, unknown>; sessionId?: string }): Promise<unknown> => {
   const retryAfterMilliseconds = await consumeCommentCreate(requester, ip)
   if (retryAfterMilliseconds !== null) {
     throw Object.assign(new (getWiki().Error.BruteTooManyAttempts)(), {
@@ -203,11 +199,11 @@ const create = async ({ requester, ip, input }: { requester: Requester; ip: stri
       retryAfterMilliseconds
     })
   }
-  return getWiki().models.comments.postNewComment({ ...input, user: requester, ip })
+  return getWiki().models.comments.postNewComment({ ...input, user: requester, ip, sessionId })
 }
-const update = ({ requester, ip, input }: { requester: Requester; ip: string; input: Record<string, unknown> }): unknown =>
-  getWiki().models.comments.updateComment({ ...input, user: requester, ip })
-const remove = ({ requester, ip, id }: { requester: Requester; ip: string; id: number }): unknown =>
-  getWiki().models.comments.deleteComment({ id, user: requester, ip })
+const update = ({ requester, ip, input, sessionId = '' }: { requester: Requester; ip: string; input: Record<string, unknown>; sessionId?: string }): unknown =>
+  getWiki().models.comments.updateComment({ ...input, user: requester, ip, sessionId })
+const remove = ({ requester, ip, id, sessionId = '' }: { requester: Requester; ip: string; id: number; sessionId?: string }): unknown =>
+  getWiki().models.comments.deleteComment({ id, user: requester, ip, sessionId })
 
 export default { create, get, list, listProviders, remove, update, updateProviders }

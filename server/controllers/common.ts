@@ -303,8 +303,9 @@ export default function createCommonController(wiki: CommonWiki): express.Router
       head: wiki.config.theming.injectHead,
       body: wiki.config.theming.injectBody
     }
+    const commentsEnabled = wiki.config.features.featurePageComments && (!wiki.data.commentProvider.codeTemplate || (page.visibility === 'public' && !await isPageProtected(page.id)))
     const spaNavigation =
-      _.isEmpty(page.extra?.css) && _.isEmpty(page.extra?.js) && !(wiki.config.features.featurePageComments && wiki.data.commentProvider.codeTemplate)
+      _.isEmpty(page.extra?.css) && _.isEmpty(page.extra?.js) && !(commentsEnabled && wiki.data.commentProvider.codeTemplate)
     page.extra = page.extra || { css: '', js: '' }
     if (!_.isEmpty(page.extra.css)) injectCode.css = `${injectCode.css}\n${page.extra.css}`
     if (!_.isEmpty(page.extra.js)) injectCode.body = `${injectCode.body}\n${page.extra.js}`
@@ -312,19 +313,11 @@ export default function createCommonController(wiki: CommonWiki): express.Router
 
     const commentTmpl = {
       codeTemplate: wiki.data.commentProvider.codeTemplate,
-      head: wiki.data.commentProvider.head,
-      body: wiki.data.commentProvider.body,
-      main: wiki.data.commentProvider.main
+      head: '', body: '', main: commentsEnabled ? wiki.data.commentProvider.main : ''
     }
-    if (wiki.config.features.featurePageComments && wiki.data.commentProvider.codeTemplate) {
-      for (const cfg of [
-        { key: 'pageUrl', value: `${wiki.config.host}/i/${page.id}` },
-        { key: 'pageId', value: page.id }
-      ]) {
-        commentTmpl.head = _.replace(commentTmpl.head, new RegExp(`{{${cfg.key}}}`, 'g'), String(cfg.value))
-        commentTmpl.body = _.replace(commentTmpl.body, new RegExp(`{{${cfg.key}}}`, 'g'), String(cfg.value))
-        commentTmpl.main = _.replace(commentTmpl.main, new RegExp(`{{${cfg.key}}}`, 'g'), String(cfg.value))
-      }
+    if (commentsEnabled && wiki.data.commentProvider.codeTemplate) {
+      const renderForPage = Reflect.get(wiki.data.commentProvider, 'renderForPage') as ((id: number, url: string) => { head: string; body: string; main: string }) | undefined
+      if (renderForPage) Object.assign(commentTmpl, renderForPage(page.id, `${wiki.config.host}/i/${page.id}`))
     }
 
     let pageFilename = wiki.config.lang.namespacing ? `${pageArgs.locale}/${page.path}` : page.path
@@ -335,6 +328,7 @@ export default function createCommonController(wiki: CommonWiki): express.Router
       sidebar,
       injectCode,
       comments: commentTmpl,
+      commentsEnabled,
       effectivePermissions,
       spaNavigation,
       pageFilename
