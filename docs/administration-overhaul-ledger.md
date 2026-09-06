@@ -17,7 +17,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | Security | Sessions, protections and policies | Pending |
 | Wiki Agent | Providers/models, skills, browser, tools, memory, MCP and runtime | Implemented; first milestone verified |
 | Search | Providers, retrieval, index lifecycle and evaluation | Implemented; first milestone verified |
-| API | Credentials/scopes, integration setup and reference | Implemented; deployment verification pending |
+| API | Credentials/scopes, integration setup and reference | Implemented; first milestone verified |
 | Webhooks | Events, endpoints, deliveries, tests and recovery | Implemented; first milestone verified |
 | General | Identity, announcements, features and defaults | Pending |
 | Theme | Appearance, previews and reversible editing | Pending |
@@ -32,7 +32,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | Extensions | Availability, configuration and dependencies | Pending |
 | Utilities | Import, export and maintenance workflows | Pending |
 | Developer flags | Constraints, dependencies and activation | Pending |
-| GraphQL explorer | Integration, authentication and exploration | Implemented; deployment verification pending |
+| GraphQL explorer | Integration, authentication and exploration | Implemented; first milestone verified |
 
 ## Wiki Agent findings
 
@@ -113,3 +113,12 @@ Validation: 48 controlled browser cases across three widths and both themes, inc
 - Responsive workspace chrome, readable dark editor annotations, visible documentation links and theme-aware guide controls. No external script/style dependency is needed to open the editor.
 
 Validation: six responsive/theme browser cases with no overflow, JavaScript errors or WCAG A/AA violations; actual permission-filtered page query, schema documentation, multiple documents and keyboard selection. Asset lifecycle/version mismatch tests, schema validation, subscription configuration regression tests, dependency and license checks passed. Production verification is pending deployment.
+
+
+API/GraphQL deployment `09d11068` is healthy and its container revision matches the committed source. The production Docker build, bundle gates, dependency policy and 809-record license inventory passed. Unintercepted API browser verification covered Credentials, Connect and Explorer at desktop, tablet and phone widths in both themes with no overflow, JavaScript errors or WCAG A/AA violations. A temporary scoped credential was issued through the UI, authenticated a real REST page-list request (HTTP 200), and was revoked through the UI; a subsequent request was rejected. A second temporary scoped credential verified explicit MCP resource binding and successful MCP initialization. Both credentials were revoked, and the original global API state was preserved. Revoked verification rows remain as lifecycle records.
+
+The live GraphQL workspace passed the six width/theme cases, a real page inventory query, schema documentation and keyboard selection across multiple documents. It loaded its scripts/styles from the same container with no external UI dependency. Verification browser authentication state was removed after testing. Rollback configuration is retained locally as `compose.before-09d11068.yml`.
+
+## Pages initial findings
+
+The inventory supports basic local text, locale and publication filtering, but omits available visibility, private ownership, content type and taxonomy context. It has no selection or bulk workflow. The detail page mixes operational metadata and destructive actions with authorship, privacy and knowledge metadata, making routine review difficult. The list API already applies requester access and returns visibility, owner ID, content type and tags; these must remain permission-filtered as the administration view becomes richer. Next work should build an information-rich inventory, contextual detail sections and justified bulk/review capabilities with explicit scope and recovery. Pages remains pending substantive implementation and live verification.
