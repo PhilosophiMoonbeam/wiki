@@ -32,7 +32,7 @@ interface SshConnectionConfig extends SSHConfig {
 }
 
 interface SftpStorageContext extends StorageContext<SftpStorageConfig> {
-  client: SSH2Promise
+  client: SSH2Promise | null
   sftp: SFTP
   ensureDirectory(filePath: string): Promise<void>
 }
@@ -157,7 +157,11 @@ const plugin: SftpStoragePlugin = {
   client: null,
   sftp: null,
   async activated() {},
-  async deactivated() {},
+  async deactivated() {
+    const client = this.client
+    this.client = null
+    if (client) await client.close()
+  },
   async init() {
     wiki.logger.info(`(STORAGE/SFTP) Initializing...`)
     const connectionConfig: SshConnectionConfig = {
@@ -172,7 +176,7 @@ const plugin: SftpStoragePlugin = {
           }
         : {})
     }
-    this.client = new SSH2Promise(connectionConfig)
+    this.client = new SSH2Promise(connectionConfig, true)
     await this.client.connect()
     this.sftp = this.client.sftp()
     try {

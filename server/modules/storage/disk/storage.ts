@@ -149,18 +149,27 @@ const plugin: StoragePlugin<StorageConfig, DiskStorageContext> = {
       const dirPath = storagePath(this.config, manual ? '_manual' : '_daily')
       await fs.ensureDir(dirPath)
 
-      const dateFilename = moment().format(manual ? 'YYYYMMDD-HHmmss' : 'DD')
-
+      const dateFilename = manual ? `${moment().format('YYYYMMDD-HHmmss')}-${randomUUID()}` : moment().format('DD')
+      const archivePath = path.join(dirPath, `wiki-${dateFilename}.tar.gz`)
+      const temporaryPath = `${archivePath}.${randomUUID()}.tmp`
+      const root = storageRoot(this.config)
       wiki.logger.info(`(STORAGE/DISK) Creating backup archive...`)
-      await pipeline(
-        tar.pack(storageRoot(this.config), {
-          ignore: (filePath: string) => {
-            return filePath.indexOf('_daily') >= 0 || filePath.indexOf('_manual') >= 0
-          }
-        }),
-        zlib.createGzip(),
-        fs.createWriteStream(storagePath(this.config, `${manual ? '_manual' : '_daily'}/wiki-${dateFilename}.tar.gz`))
-      )
+      try {
+        await pipeline(
+          tar.pack(root, {
+            ignore: (filePath: string) => {
+              const first = path.relative(root, filePath).split(path.sep)[0]
+              return first === '_daily' || first === '_manual'
+            }
+          }),
+          zlib.createGzip(),
+          fs.createWriteStream(temporaryPath, { flags: 'wx', mode: 0o600 })
+        )
+        await fs.rename(temporaryPath, archivePath)
+      } catch (error) {
+        await fs.remove(temporaryPath)
+        throw error
+      }
       wiki.logger.info('(STORAGE/DISK) Backup archive created successfully.')
     }
   },

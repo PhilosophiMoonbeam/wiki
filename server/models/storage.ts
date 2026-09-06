@@ -1,6 +1,8 @@
 import { Model } from 'objection'
 import type { Knex } from 'knex'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { createStorageRuntimeQueue } from '../helpers/storage-runtime-queue.ts'
 import fs from 'fs-extra'
 import _ from 'lodash'
 import * as yaml from 'js-yaml'
@@ -329,9 +331,10 @@ async function recordTargetState(
   target: StatefulStorageTarget,
   status: string,
   message = '',
-  lastOperation?: StorageLastOperation | null
+  lastOperation?: StorageLastOperation | null,
+  force = false
 ): Promise<void> {
-  if (lastOperation === undefined && target.state?.status === status && target.state.message === message && isRecentStorageAttempt(target.state.lastAttempt)) return
+  if (!force && lastOperation === undefined && target.state?.status === status && target.state.message === message && isRecentStorageAttempt(target.state.lastAttempt)) return
   const state: StorageState = {
     status,
     message,
@@ -356,9 +359,11 @@ export default class Storage extends Model {
   declare config: ModuleConfig
   declare state: StorageState
   declare fn: RuntimeStoragePlugin
+  declare runtimeGeneration: string
 
   declare static targets: Storage[]
   static activeTargets: Storage[] = []
+  private static runtimeQueue = createStorageRuntimeQueue()
 
   static override get tableName() {
     return 'storage'
@@ -462,22 +467,34 @@ export default class Storage extends Model {
    * Initialize active storage targets
    */
   static async initTargets(): Promise<void> {
+    const stopped: Promise<unknown>[] = []
+    try { await this.runtimeQueue.run(() => this.initializeTargets(stopped)) }
+    finally {
+      // Cancelled timer invocations queued after replacement must be able to leave the runtime queue first.
+      for (const result of await Promise.allSettled(stopped)) if (result.status === 'rejected') getWiki().logger.warn(result.reason)
+    }
+  }
+
+  private static async initializeTargets(stopped: Promise<unknown>[]): Promise<void> {
     const wiki = getWiki()
+    const nextTargets = await wiki.models.storage.query().where('isEnabled', true).orderBy('key')
+    const previousTargets = this.activeTargets
     this.activeTargets = []
-    this.targets = await wiki.models.storage.query().where('isEnabled', true).orderBy('key')
+    this.targets = nextTargets
     try {
       const scheduler = wiki.scheduler
       if (scheduler === undefined) throw new Error('WIKI scheduler is not initialized')
       // -> Stop and delete existing jobs
       const previousJobs = _.remove(scheduler.jobs, job => job.name === 'sync-storage')
-      if (previousJobs.length > 0) {
-        previousJobs.forEach(job => {
-          void job.stop()
-        })
+      for (const job of previousJobs) stopped.push(job.stop())
+      for (const target of previousTargets) {
+        try { if (isStorageAction(target.fn.deactivated)) await target.fn.deactivated.call(target.fn) }
+        catch (error) { wiki.logger.warn(error) }
       }
 
       // -> Initialize targets
       for (const target of this.targets) {
+        const scheduled: StorageJob[] = []
         try {
           const targetDef = wiki.data.storage?.find(candidate => candidate.key === target.key)
           if (!targetDef) {
@@ -485,42 +502,49 @@ export default class Storage extends Model {
           }
           // Target key is selected from the enabled runtime module registry.
           const source = `../modules/storage/${target.key}/storage.ts`
-          target.fn = Object.assign(readStoragePlugin(await import(source), source), {
-            config: target.config,
+          target.runtimeGeneration = randomUUID()
+          target.fn = Object.assign(_.cloneDeep(readStoragePlugin(await import(source), source)), {
+            config: _.cloneDeep(target.config),
             mode: target.mode
           })
           await target.fn.init()
-          this.activeTargets.push(target)
 
           // -> Save succeeded init state
           await recordTargetState(target, 'operational')
 
           // -> Set recurring sync job
           if (targetDef.schedule && target.syncInterval !== 'P0D') {
-            scheduler.registerJob(
+            scheduled.push(scheduler.registerJob(
               {
                 name: 'sync-storage',
                 immediate: false,
                 schedule: target.syncInterval,
                 repeat: true
               },
-              target.key
-            )
+              { targetKey: target.key, generation: target.runtimeGeneration }
+            ))
           }
 
           // -> Set internal recurring sync job
           if (targetDef.internalSchedule && targetDef.internalSchedule !== 'P0D') {
-            scheduler.registerJob(
+            scheduled.push(scheduler.registerJob(
               {
                 name: 'sync-storage',
                 immediate: false,
-                ...(target.internalSchedule === undefined ? {} : { schedule: target.internalSchedule }),
+                schedule: targetDef.internalSchedule,
                 repeat: true
               },
-              target.key
-            )
+              { targetKey: target.key, generation: target.runtimeGeneration }
+            ))
           }
+          this.activeTargets.push(target)
         } catch (err) {
+          for (const job of _.remove(scheduler.jobs, job => scheduled.includes(job))) stopped.push(job.stop())
+          try {
+            if (target.fn && isStorageAction(target.fn.deactivated)) await target.fn.deactivated.call(target.fn)
+          } catch (cleanupError) {
+            wiki.logger.warn(cleanupError)
+          }
           // -> Save initialization error
           try {
             await recordTargetState(target, 'error', errorMessage(err))
@@ -536,6 +560,10 @@ export default class Storage extends Model {
   }
 
   static async pageEvent(payload: StoragePageEvent): Promise<void> {
+    return this.runtimeQueue.run(() => this.dispatchPageEvent(payload))
+  }
+
+  private static async dispatchPageEvent(payload: StoragePageEvent): Promise<void> {
     const wiki = getWiki()
     for (const target of this.activeTargets) {
       try {
@@ -566,6 +594,10 @@ export default class Storage extends Model {
   }
 
   static async assetEvent(payload: StorageAssetEvent): Promise<void> {
+    return this.runtimeQueue.run(() => this.dispatchAssetEvent(payload))
+  }
+
+  private static async dispatchAssetEvent(payload: StorageAssetEvent): Promise<void> {
     const wiki = getWiki()
     for (const target of this.activeTargets) {
       try {
@@ -592,7 +624,11 @@ export default class Storage extends Model {
     }
   }
 
-  static async getLocalLocations({ asset }: { asset: { path: string } }): Promise<Array<{ path: string | void; key: string }>> {
+  static async getLocalLocations(input: { asset: { path: string } }): Promise<Array<{ path: string | void; key: string }>> {
+    return this.runtimeQueue.run(() => this.resolveLocalLocations(input))
+  }
+
+  private static async resolveLocalLocations({ asset }: { asset: { path: string } }): Promise<Array<{ path: string | void; key: string }>> {
     const wiki = getWiki()
     const locations: Array<{ path: string | void; key: string }> = []
     const promises = this.activeTargets.map(async target => {
@@ -611,6 +647,26 @@ export default class Storage extends Model {
   }
 
   static async executeAction(targetKey: string, handler: string): Promise<StorageActionSummary> {
+    return this.runtimeQueue.run(() => this.dispatchAction(targetKey, handler))
+  }
+
+  static async syncTarget(targetKey: string, generation: string): Promise<boolean> {
+    return this.runtimeQueue.run(async () => {
+      const target = this.activeTargets.find(candidate => candidate.key === targetKey && candidate.runtimeGeneration === generation)
+      if (!target || !isStorageAction(target.fn.sync)) return false
+      try {
+        await target.fn.sync.call(target.fn)
+        await recordTargetState(target, 'operational', '', undefined, true)
+        return true
+      } catch (error) {
+        try { await recordTargetState(target, 'error', errorMessage(error), undefined, true) }
+        catch (statusError) { getWiki().logger.warn(statusError) }
+        throw error
+      }
+    })
+  }
+
+  private static async dispatchAction(targetKey: string, handler: string): Promise<StorageActionSummary> {
     const wiki = getWiki()
     const target = this.targets.find(candidate => candidate.key === targetKey)
     if (!target) {

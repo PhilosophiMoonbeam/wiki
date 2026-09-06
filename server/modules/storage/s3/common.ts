@@ -119,7 +119,7 @@ export default class S3CompatibleStorage {
     // not used
   }
   async deactivated() {
-    // not used
+    this.s3?.destroy()
   }
   async init() {
     wiki.logger.info(`(STORAGE/${this.storageName}) Initializing...`)

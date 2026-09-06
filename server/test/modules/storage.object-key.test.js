@@ -16,6 +16,15 @@ describe('cloud storage object keys', () => {
     expect(storageObjectKey('', 'guide/start.md')).toBe('guide/start.md')
   })
 
+  it('releases a replaced S3 client and tolerates initialization that never allocated a client', async () => {
+    const S3CompatibleStorage = (await vi.importFresh('../../modules/storage/s3/common.ts', import.meta.url)).default
+    const storage = new S3CompatibleStorage('S3')
+    await storage.deactivated()
+    storage.s3 = { destroy: vi.fn() }
+    await storage.deactivated()
+    expect(storage.s3.destroy).toHaveBeenCalledTimes(1)
+  })
+
   it('encodes every S3 copy-source segment while preserving path separators', () => {
     expect(encodeS3CopySource('wiki-bucket', 'archive/a #+b.md')).toBe('wiki-bucket/archive/a%20%23%2Bb.md')
   })

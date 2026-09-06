@@ -24,6 +24,15 @@ describe('SFTP storage target paths', () => {
   let context
   let sftp
 
+  it('closes the SSH connection exactly once when the runtime is deactivated', async () => {
+    const close = vi.fn().mockResolvedValue([])
+    context.client = {close}
+    await plugin.deactivated.call(context)
+    await plugin.deactivated.call(context)
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(context.client).toBeNull()
+  })
+
   beforeEach(async () => {
     vi.resetModules()
     global.WIKI = {

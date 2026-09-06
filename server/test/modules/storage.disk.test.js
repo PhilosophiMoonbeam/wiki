@@ -2,6 +2,10 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import zlib from 'node:zlib'
+import tar from 'tar-fs'
+import moment from 'moment'
 
 describe('disk storage target', () => {
   let plugin
@@ -38,6 +42,46 @@ describe('disk storage target', () => {
 
   afterEach(async () => {
     await fs.rm(rootPath, { recursive: true, force: true })
+  })
+
+  it('archives content beneath paths containing backup markers and excludes only root backup folders', async () => {
+    context.config.path = 'content_manual_daily'
+    await plugin.init.call(context)
+    for (const name of ['read_manual.txt', 'docs/_daily/note.txt', '_daily/previous.tar.gz', '_manual/previous.tar.gz']) {
+      const file = path.join(rootPath, context.config.path, name)
+      await fs.mkdir(path.dirname(file), { recursive: true })
+      await fs.writeFile(file, name)
+    }
+    await plugin.sync.call(context, { manual: true })
+    await plugin.sync.call(context, { manual: true })
+    const folder = path.join(rootPath, context.config.path, '_manual')
+    const archives = (await fs.readdir(folder)).filter(name => name.startsWith('wiki-'))
+    expect(archives).toHaveLength(2)
+    for (const archive of archives) {
+      expect(archive.endsWith('.tar.gz')).toBe(true)
+      expect((await fs.stat(path.join(folder, archive))).mode & 0o777).toBe(0o600)
+      const destination = path.join(rootPath, archive)
+      await pipeline(Readable.from([await fs.readFile(path.join(folder, archive))]), zlib.createGunzip(), tar.extract(destination))
+      expect(await fs.readFile(path.join(destination, 'read_manual.txt'), 'utf8')).toBe('read_manual.txt')
+      expect(await fs.readFile(path.join(destination, 'docs/_daily/note.txt'), 'utf8')).toBe('docs/_daily/note.txt')
+      expect((await fs.readdir(destination)).sort()).toEqual(['docs', 'read_manual.txt'])
+    }
+  })
+
+  it('preserves the previous daily archive and removes temporary output when packing fails', async () => {
+    context.config.createDailyBackups = true
+    await plugin.assetUploaded.call(context, { path: 'page.txt', data: Buffer.from('content') })
+    await plugin.sync.call(context)
+    const directory = path.join(rootPath, 'content', '_daily')
+    const name = `wiki-${moment().format('DD')}.tar.gz`
+    const previous = await fs.readFile(path.join(directory, name))
+    const pack = vi.spyOn(tar, 'pack').mockImplementationOnce(() => Readable.from((async function * () {
+      yield Buffer.from('partial archive')
+      throw new Error('read failed')
+    })()))
+    try { await expect(plugin.sync.call(context)).rejects.toThrow('read failed') } finally { pack.mockRestore() }
+    expect(await fs.readdir(directory)).toEqual([name])
+    expect(await fs.readFile(path.join(directory, name))).toEqual(previous)
   })
 
   it('atomically replaces assets inside the configured root', async () => {
