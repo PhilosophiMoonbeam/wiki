@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs-then'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from '../bun-test.mts'
 import { createAccountAdministrationStore } from '../../operations/account-administration.ts'
 import { up, down } from '../../db/migrations/tsepistle-000017-account-administration.ts'
+import { up as groupUp } from '../../db/migrations/tsepistle-000018-group-administration.ts'
 const database = process.env.WIKI_TEST_POSTGRES_DATABASE ?? ''
 const password = process.env.WIKI_TEST_POSTGRES_PASSWORD
 const connection = database.endsWith('_account_test') && password ? { host: '127.0.0.1', port: Number(process.env.WIKI_TEST_POSTGRES_PORT ?? 5432), user: 'wiki', database, password } : null
@@ -17,16 +18,20 @@ suite('PostgreSQL account administration', () => {
     db = knexModule({ client: 'pg', connection: connection ?? undefined, pool: { min: 0, max: 8 } })
     await db.schema.createTable('users', t => { t.increments('id'); for (const name of ['name', 'email', 'providerKey', 'password', 'tfaSecret', 'location', 'jobTitle', 'timezone', 'createdAt', 'updatedAt', 'lastLoginAt']) t.string(name); for (const name of ['isActive', 'isSystem', 'isVerified', 'tfaIsActive', 'mustChangePwd']) t.boolean(name).notNullable().defaultTo(false); t.unique(['providerKey', 'email']) })
     await db.schema.createTable('userKeys', t => { t.increments('id'); t.string('validUntil'); t.string('createdAt'); t.integer('userId').references('id').inTable('users'); t.string('kind'); t.string('token') })
-    await db.schema.createTable('groups', t => { t.integer('id').primary(); t.string('name'); t.jsonb('permissions'); t.jsonb('pageRules'); t.string('redirectOnLogin'); t.boolean('isSystem') })
+    await db.schema.createTable('groups', t => { t.integer('id').primary(); t.string('name'); t.jsonb('permissions'); t.jsonb('pageRules').defaultTo('[]'); t.string('createdAt').defaultTo('2026-09-01T00:00:00Z'); t.string('updatedAt').defaultTo('2026-09-01T00:00:00Z'); t.string('redirectOnLogin').defaultTo('/'); t.boolean('isSystem') })
     await db.schema.createTable('userGroups', t => { t.integer('userId').references('id').inTable('users').onDelete('CASCADE'); t.integer('groupId').references('id').inTable('groups').onDelete('CASCADE'); t.unique(['userId', 'groupId']) })
-    await db.schema.createTable('authentication', t => { t.string('key').primary(); t.string('displayName'); t.string('strategyKey'); t.boolean('isEnabled'); t.integer('order'); t.jsonb('config') })
+    await db.schema.createTable('authentication', t => { t.string('key').primary(); t.string('displayName'); t.string('strategyKey'); t.boolean('isEnabled'); t.integer('order'); t.jsonb('config'); t.jsonb('autoEnrollGroups').defaultTo('[]') })
     for (const table of ['pages', 'pageHistory']) await db.schema.createTable(table, t => { t.integer('id'); t.integer('ownerId'); t.integer('authorId'); t.integer('creatorId'); t.string('visibility') })
     for (const table of ['comments', 'assets']) await db.schema.createTable(table, t => { t.integer('id'); t.integer('authorId') })
     await up(db); await down(db); await up(db)
+    await groupUp(db)
+    await db.schema.createTable('apiKeys', t => { t.increments('id'); t.text('key'); t.boolean('isRevoked'); t.string('expiration') })
+    await db.schema.createTable('navigation', t => { t.string('key').primary(); t.json('config') })
+    for (const name of ['agentProviderGrants', 'agentSkillGrants']) await db.schema.createTable(name, t => { t.integer('groupId') })
     store = createAccountAdministrationStore({ db, definitions: () => [{ key: 'local', useForm: true }, { key: 'oidc', useForm: false }], enforceTwoFactor: () => enforce })
   })
   beforeEach(async () => {
-    for (const table of ['userAdministrationEvents', 'userKeys', 'userGroups', 'users', 'groups', 'authentication', 'pages', 'pageHistory', 'comments', 'assets']) await db(table).delete()
+    for (const table of ['groupAdministrationEvents', 'apiKeys', 'navigation', 'agentProviderGrants', 'agentSkillGrants', 'userAdministrationEvents', 'userKeys', 'userGroups', 'users', 'groups', 'authentication', 'pages', 'pageHistory', 'comments', 'assets']) await db(table).delete()
     await db('groups').insert([{ id: 1, name: 'Administrators', permissions: JSON.stringify(['manage:system']), isSystem: true }, { id: 2, name: 'Guests', permissions: JSON.stringify(['read:pages']), isSystem: true }, { id: 3, name: 'Authors', permissions: JSON.stringify(['read:pages', 'write:pages']), isSystem: false }, { id: 4, name: 'Account operators', permissions: JSON.stringify(['manage:users']), isSystem: false }, { id: 5, name: 'Group managers', permissions: JSON.stringify(['manage:users', 'manage:groups']), isSystem: false }])
     await db('users').insert([account(1), account(2), account(3), account(4), account(5, { providerKey: 'oidc' }), account(6)])
     await db('userGroups').insert([{ userId: 1, groupId: 1 }, { userId: 2, groupId: 2 }, { userId: 3, groupId: 3 }, { userId: 4, groupId: 4 }, { userId: 5, groupId: 3 }, { userId: 6, groupId: 5 }])
@@ -34,7 +39,7 @@ suite('PostgreSQL account administration', () => {
     await db.raw("SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT MAX(id) FROM users))")
     enforce = false
   })
-  afterAll(async () => { if (db) { for (const table of ['userAdministrationEvents', 'userKeys', 'userGroups', 'users', 'groups', 'authentication', 'pages', 'pageHistory', 'comments', 'assets']) await db.schema.dropTableIfExists(table); await db.destroy() }; globalThis.WIKI = previousWiki as never })
+  afterAll(async () => { if (db) { for (const table of ['groupAdministrationEvents', 'apiKeys', 'navigation', 'agentProviderGrants', 'agentSkillGrants', 'userAdministrationEvents', 'userKeys', 'userGroups', 'users', 'groups', 'authentication', 'pages', 'pageHistory', 'comments', 'assets']) await db.schema.dropTableIfExists(table); await db.destroy() }; globalThis.WIKI = previousWiki as never })
   const review = async (id = 3, requester = admin) => ({ fingerprint: (await store.inspect(requester, id)).fingerprint, reason: 'Account lifecycle verification' })
   it('returns a bounded directory with literal search, filters and no credentials', async () => {
     await db('users').where('id', 3).update({ name: 'An_Example%', password: 'SECRET-HASH', tfaSecret: 'AUTHENTICATOR-SECRET' })

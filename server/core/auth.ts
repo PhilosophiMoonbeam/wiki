@@ -1,5 +1,5 @@
 import { accountSessionIsCurrent, sessionVersion } from '../helpers/account-session.ts'
-import { tagAliasMap, resolveTagName, type TagIdentity } from '../helpers/tag-aliases.ts'
+import { tagAliasMap, type TagIdentity } from '../helpers/tag-aliases.ts'
 import passport from 'passport'
 import passportJwt from 'passport-jwt'
 import jwt from 'jsonwebtoken'
@@ -14,7 +14,7 @@ import commonHelper from '../helpers/common.ts'
 import securityHelper from '../helpers/security.ts'
 import cache from './cache.ts'
 import { apiAccessContract, isApiKeyTransportPath } from '../../shared/api-access.ts'
-import { pageRuleRegexMatches } from '../helpers/page-access.ts'
+import { evaluateGroupAccess } from '../helpers/group-access.ts'
 
 type UnknownRecord = Record<string, unknown>
 type PageRuleMatch = 'START' | 'END' | 'REGEX' | 'TAG' | 'EXACT'
@@ -560,36 +560,12 @@ const auth: AuthService = {
     if (!page) return true
     if (!user.groups) return false
 
-    let checkState: RuleState = { deny: false, match: false, specificity: '' }
-    for (const group of user.groups) {
-      const groupId = getGroupId(group)
-      if (groupId === null) continue
-      for (const rule of this.groups[String(groupId)]?.pageRules ?? []) {
-        if (rule.locales?.length && (!page.locale || !rule.locales.includes(page.locale))) continue
-        if (!rule.roles.some(role => permissions.includes(role))) continue
-        switch (rule.match) {
-          case 'START':
-            if (`/${page.path}`.startsWith(`/${rule.path}`))
-              checkState = this._applyPageRuleSpecificity({ rule, checkState, higherPriority: ['END', 'REGEX', 'EXACT', 'TAG'] })
-            break
-          case 'END':
-            if (page.path.endsWith(rule.path)) checkState = this._applyPageRuleSpecificity({ rule, checkState, higherPriority: ['REGEX', 'EXACT', 'TAG'] })
-            break
-          case 'REGEX':
-            if (pageRuleRegexMatches(rule.path, page.path)) checkState = this._applyPageRuleSpecificity({ rule, checkState, higherPriority: ['EXACT', 'TAG'] })
-            break
-          case 'TAG':
-            for (const tag of page.tags ?? []) {
-              if (resolveTagName(this.tagAliases, rule.path) !== null && resolveTagName(this.tagAliases, tag.tag) === resolveTagName(this.tagAliases, rule.path)) checkState = this._applyPageRuleSpecificity({ rule, checkState, higherPriority: ['EXACT'] })
-            }
-            break
-          case 'EXACT':
-            if (`/${page.path}` === `/${rule.path}`) checkState = this._applyPageRuleSpecificity({ rule, checkState })
-            break
-        }
-      }
-    }
-    return checkState.match !== false && !checkState.deny
+    const groups = user.groups.flatMap(group => {
+      const id = getGroupId(group)
+      const record = id === null ? undefined : this.groups[String(id)]
+      return record ? [record] : []
+    })
+    return evaluateGroupAccess(userPermissions, permissions, groups, page, this.tagAliases, false).allowed
   },
 
   checkExclusiveAccess(user, includePermissions = [], excludePermissions = []) {

@@ -31,7 +31,7 @@ describe('database migration namespace contract', () => {
     const files = (await readdir(path.resolve('server/db/migrations'))).filter(file => file.endsWith('.ts'))
     const ordered = orderMigrationFiles(files)
 
-    expect(ordered.at(-1)).toBe('tsepistle-000017-account-administration')
+    expect(ordered.at(-1)).toBe('tsepistle-000018-group-administration')
     expect(ordered).toHaveLength(files.length)
   })
 

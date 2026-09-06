@@ -2,6 +2,7 @@ import express from 'express'
 import { errorStatus, objectValue, type NextFunction, type Request, type Response, getWikiAuth } from '../_types.ts'
 
 import groupOperations from '../../operations/groups.ts'
+import { getGroupAdministrationStore } from '../../operations/group-administration.ts'
 import { isValidPageRuleRegex } from '../../helpers/page-access.ts'
 
 const router = express.Router()
@@ -131,6 +132,96 @@ const normalizeGroupUpdatePayload = (body: unknown, res: Response): GroupUpdateP
   }
 }
 
+// Reviewed workspace routes precede legacy /:id routes.
+const workspaceError = (err: unknown, res: Response) => {
+  const status = errorStatus(err) ?? 500
+  return res.status(status).json({ error: status < 500 && err instanceof Error ? err.message : 'The group operation could not be completed.' })
+}
+router.get('/workspace', async (req, res) => {
+  if (!requireGroupsListAccess(req, res)) return
+  try {
+    res.json(await getGroupAdministrationStore().list(req.user, req.query))
+  } catch (err) {
+    workspaceError(err, res)
+  }
+})
+router.get('/workspace/creation-options', async (req, res) => {
+  if (!requireGroupsListAccess(req, res)) return
+  try {
+    res.json(await getGroupAdministrationStore().creationOptions(req.user))
+  } catch (err) {
+    workspaceError(err, res)
+  }
+})
+router.post('/workspace', async (req, res) => {
+  if (!requireGroupsListAccess(req, res)) return
+  try {
+    res.status(201).json(await getGroupAdministrationStore().create(req.user, req.body))
+  } catch (err) {
+    workspaceError(err, res)
+  }
+})
+router.get('/workspace/:id', async (req, res) => {
+  if (!requireGroupsListAccess(req, res)) return
+  const id = normalizePositiveIntegerParam(req.params.id, 'group id', res)
+  if (id === null) return
+  try {
+    res.json(await getGroupAdministrationStore().inspect(req.user, id))
+  } catch (err) {
+    workspaceError(err, res)
+  }
+})
+router.get('/workspace/:id/members', async (req, res) => {
+  if (!requireGroupUserAssignmentAccess(req, res)) return
+  const id = normalizePositiveIntegerParam(req.params.id, 'group id', res)
+  if (id === null) return
+  try {
+    res.json(await getGroupAdministrationStore().members(req.user, id, req.query))
+  } catch (err) {
+    workspaceError(err, res)
+  }
+})
+router.put('/workspace/:id/policy', async (req, res) => {
+  if (!requireGroupsListAccess(req, res)) return
+  const id = normalizePositiveIntegerParam(req.params.id, 'group id', res)
+  if (id === null) return
+  try {
+    res.json(await getGroupAdministrationStore().savePolicy(req.user, id, req.body))
+  } catch (err) {
+    workspaceError(err, res)
+  }
+})
+router.post('/workspace/:id/members', async (req, res) => {
+  if (!requireGroupUserAssignmentAccess(req, res)) return
+  const id = normalizePositiveIntegerParam(req.params.id, 'group id', res)
+  if (id === null) return
+  try {
+    res.json(await getGroupAdministrationStore().changeMembers(req.user, id, req.body))
+  } catch (err) {
+    workspaceError(err, res)
+  }
+})
+router.post('/workspace/:id/evaluate', async (req, res) => {
+  if (!requireGroupsListAccess(req, res)) return
+  const id = normalizePositiveIntegerParam(req.params.id, 'group id', res)
+  if (id === null) return
+  try {
+    res.json(await getGroupAdministrationStore().evaluate(req.user, id, req.body))
+  } catch (err) {
+    workspaceError(err, res)
+  }
+})
+router.delete('/workspace/:id', async (req, res) => {
+  if (!requireGroupsListAccess(req, res)) return
+  const id = normalizePositiveIntegerParam(req.params.id, 'group id', res)
+  if (id === null) return
+  try {
+    res.json(await getGroupAdministrationStore().remove(req.user, id, req.body))
+  } catch (err) {
+    workspaceError(err, res)
+  }
+})
+
 router.post('/', async (req, res, next) => {
   if (!requireGroupsListAccess(req, res)) return
   const groupName = objectValue(req.body, 'name')
@@ -138,7 +229,7 @@ router.post('/', async (req, res, next) => {
   if (!name) return res.status(400).json({ error: 'group name is required' })
 
   try {
-    const group = await groupOperations.create(name)
+    const group = await groupOperations.create(name, req.user)
     res.json({
       succeeded: true,
       message: 'Group created successfully.',

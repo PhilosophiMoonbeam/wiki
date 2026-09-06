@@ -28,8 +28,8 @@ export default {
       await groupOperations.assignUser({ requester: context.req.user, groupId: args.groupId, userId: args.userId })
       return { responseResult: graphHelper.generateSuccess('User has been assigned to group.') }
     },
-    async create(_obj: unknown, args: ResolverArgs) {
-      const group = await groupOperations.create(args.name)
+    async create(_obj: unknown, args: ResolverArgs, context: ResolverContext) {
+      const group = await groupOperations.create(args.name, context.req.user)
       return { responseResult: graphHelper.generateSuccess('Group created successfully.'), group }
     },
     async delete(_obj: unknown, args: ResolverArgs, context: ResolverContext) {
