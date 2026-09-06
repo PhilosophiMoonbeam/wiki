@@ -1464,6 +1464,46 @@ describe('Agent session mutation transitions', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
+  it('discovers an accepted run after the same conversation is reopened during submission', async () => {
+    setActivePinia(createPinia())
+    const store = useAgentsStore()
+    store.csrfToken = 'csrf-token'
+    const active = activeThread()
+    const empty = { ...active, session: { ...active.session, currentRun: null } }
+    store.thread = empty
+    store.setDraft(active.session.id, 'Pending question')
+    store.connectCurrentRun = vi.fn()
+    const pending = deferred<Response>()
+    let accepted = false
+    let threadReads = 0
+    vi.spyOn(window, 'fetch').mockImplementation((input, init) => {
+      const path = String(input)
+      if (init?.method === 'POST') return pending.promise
+      if (path === '/_api/agents/sessions') return Promise.resolve(Response.json({ sessions: [], nextCursor: null }))
+      if (path === '/_api/agents/profiles') return Promise.resolve(Response.json({ profiles: [] }))
+      if (path === '/_api/agents/skills') return Promise.resolve(Response.json({ skills: [] }))
+      if (path === '/_api/agents/conversation-folders') return Promise.resolve(Response.json({ folders: [] }))
+      if (path === `/_api/agents/sessions/${active.session.id}`) {
+        threadReads += 1
+        return Promise.resolve(Response.json(accepted ? active : empty))
+      }
+      return Promise.reject(new Error(`Unexpected request: ${path}`))
+    })
+
+    const sending = store.send('Pending question')
+    store.closeWorkspace()
+    await store.initialize('csrf-token', { routeSync: false })
+    expect(store.thread?.session.currentRun).toBeNull()
+    accepted = true
+    pending.resolve(Response.json({ run: active.session.currentRun, replayed: false }))
+    expect(await sending).toBe(true)
+    expect(threadReads).toBe(2)
+    expect(store.thread?.session.currentRun?.id).toBe(active.session.currentRun?.id)
+    expect(store.drafts[active.session.id]).toBeUndefined()
+    expect(store.sessionMutationBusy).toBe(false)
+    store.closeWorkspace()
+  })
+
   it('returns a committed send separately from its authoritative refresh failure', async () => {
     setActivePinia(createPinia())
     const store = useAgentsStore()

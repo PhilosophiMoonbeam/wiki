@@ -8,7 +8,7 @@ History and memory occupy independent columns at desktop widths. Between 1024px 
 
 The visual language uses the application's local display typeface, warm accent, and light/dark surface tokens. The transcript and composer share a reading measure. Assistant text sits directly on the workspace; sources, activity, approvals, and goals retain their explicit disclosures. Page context sits above the composer. Keyboard focus outlines the entire composer so the inner textarea does not clip the indicator.
 
-Unsent text belongs to its conversation and stays in the in-memory workspace when switching between Search and Agent or closing and reopening the overlay. It is not written to browser storage and does not survive a page reload. Starting a new conversation opens a clean composer. The existing conversation is only replaced after creation succeeds; a failed request preserves its draft. Accepted submissions clear their matching stored draft even if the composer has unmounted.
+Unsent text belongs to its conversation and stays in the in-memory workspace when switching between Search and Agent or closing and reopening the overlay. It is not written to browser storage and does not survive a page reload. Starting a new conversation opens a clean composer. The existing conversation is only replaced after creation succeeds; a failed request preserves its draft. Accepted submissions clear their matching stored draft even if the composer has unmounted. If the same conversation reopens before submission completes, the store refreshes it in the current workspace to discover the accepted run.
 
 Search results show available match fields (for example, title, tags, or page text) without presenting internal rank scores.
 

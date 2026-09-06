@@ -593,11 +593,13 @@ export const useAgentsStore = defineStore('agents', {
             })
           }
         } catch (error) {
-          if (this.isSessionContextCurrent(workspaceVersion, sessionId)) this.error = error instanceof Error ? error.message : 'Message could not be sent.'
+          if (this.isSessionContextCurrent(this.workspaceVersion, sessionId)) this.error = error instanceof Error ? error.message : 'Message could not be sent.'
           return false
         }
         if (this.drafts[sessionId]?.trim() === trimmed) delete this.drafts[sessionId]
-        await this.refreshCommittedMutation(workspaceVersion, sessionId, 'The message was sent, but the conversation could not be refreshed.')
+        // Reopening the same conversation while POST is pending must discover its accepted run.
+        // Refresh authoritative state in the current workspace; never replay an old thread response.
+        await this.refreshCommittedMutation(this.workspaceVersion, sessionId, 'The message was sent, but the conversation could not be refreshed.')
         return true
       } finally {
         if (this.isWorkspaceCurrent(workspaceVersion)) this.sending = false
