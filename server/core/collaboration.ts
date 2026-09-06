@@ -1,3 +1,4 @@
+import { sessionVersion } from '../helpers/account-session.ts'
 import { randomUUID } from 'node:crypto'
 import type http from 'node:http'
 import type https from 'node:https'
@@ -38,6 +39,7 @@ type EventBus = {
 interface CollaborationPrincipal extends Express.User {
   id: number
   isActive?: boolean
+  authVersion?: number
   getGlobalPermissions?: () => string[]
   permissions: string[]
 }
@@ -53,6 +55,7 @@ interface CollaborationPage extends CollaborationPageRecord {
 
 interface CollaborationClaims extends JwtPayload {
   kind: 'collaboration'
+  authVersion?: number
   userId: number
   pageId: number
   format: typeof COLLABORATION_FORMAT
@@ -66,6 +69,7 @@ interface CollaborationClaims extends JwtPayload {
 const MAX_PENDING_MESSAGES_PER_CLIENT = 8
 
 interface CollaborationSocket {
+  authVersion: number
   socket: WebSocket
   pageId: number
   userId: number
@@ -222,10 +226,11 @@ class CollaborationServiceImpl implements CollaborationService {
     return user
   }
 
-  private async authorized(pageId: number, userId: number): Promise<{ page: CollaborationPage, principal: CollaborationPrincipal } | null> {
+  private async authorized(pageId: number, userId: number, expectedAuthVersion?: number): Promise<{ page: CollaborationPage, principal: CollaborationPrincipal } | null> {
     if (!this.enabled()) return null
     const [page, principal] = await Promise.all([this.loadPage(pageId), this.loadPrincipal(userId)])
     if (!page || !principal || page.editorKey !== COLLABORATION_FORMAT || !canWritePage(principal, page)) return null
+    if (expectedAuthVersion !== undefined && expectedAuthVersion !== sessionVersion(principal.authVersion)) return null
     return { page, principal }
   }
 
@@ -236,7 +241,7 @@ class CollaborationServiceImpl implements CollaborationService {
     }
     const userId = requester && isPositiveInteger(requester.id) ? requester.id : null
     if (!userId) throw new ApplicationError('Authentication is required.', { code: 'AUTH_REQUIRED', status: 401 })
-    const authorization = await this.authorized(pageId, userId)
+    const authorization = await this.authorized(pageId, userId, sessionVersion(requester && Reflect.get(requester, 'authVersion')) ?? -1)
     if (!authorization) throw new ApplicationError('This page does not exist.', { code: 'PAGE_NOT_FOUND', status: 404 })
     const pageUpdatedAt = timestamp(authorization.page.updatedAt)
     if (pageUpdatedAt !== timestamp(expectedUpdatedAt)) {
@@ -246,6 +251,7 @@ class CollaborationServiceImpl implements CollaborationService {
     const wiki = getWiki()
     const token = jwt.sign({
       kind: 'collaboration',
+      authVersion: sessionVersion(authorization.principal.authVersion),
       userId,
       pageId,
       format: COLLABORATION_FORMAT,
@@ -335,7 +341,7 @@ class CollaborationServiceImpl implements CollaborationService {
     const rawToken = this.tokenFromRequest(request)
     if (!rawToken) throw new Error('Collaboration token is missing')
     const claims = this.verifyToken(rawToken)
-    const authorization = await this.authorized(claims.pageId, claims.userId)
+    const authorization = await this.authorized(claims.pageId, claims.userId, sessionVersion(claims.authVersion) ?? -1)
     if (!authorization) throw new Error('Collaboration permission was denied')
     if (timestamp(authorization.page.updatedAt) !== timestamp(claims.baseUpdatedAt) ||
       String(authorization.page.sourceRevision) !== claims.baseSourceRevision) {
@@ -346,6 +352,7 @@ class CollaborationServiceImpl implements CollaborationService {
 
     const client: CollaborationSocket = {
       socket,
+      authVersion: sessionVersion(claims.authVersion) ?? -1,
       pageId: claims.pageId,
       userId: claims.userId,
       generation: claims.generation,
@@ -436,7 +443,7 @@ class CollaborationServiceImpl implements CollaborationService {
       return
     }
     try {
-      const authorization = await this.authorized(client.pageId, client.userId)
+      const authorization = await this.authorized(client.pageId, client.userId, sessionVersion(client.authVersion) ?? -1)
       if (!authorization) {
         this.conflict(client, this.enabled() ? 'permission-revoked' : 'disabled')
         return
@@ -550,7 +557,7 @@ class CollaborationServiceImpl implements CollaborationService {
     }
     for (const client of [...roomClients]) {
       const principal = await this.loadPrincipal(client.userId)
-      if (!principal || !canWritePage(principal, page)) this.conflict(client, 'permission-revoked')
+      if (!principal || sessionVersion(client.authVersion) !== sessionVersion(principal.authVersion) || !canWritePage(principal, page)) this.conflict(client, 'permission-revoked')
     }
   }
 

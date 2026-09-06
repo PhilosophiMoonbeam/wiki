@@ -1,3 +1,4 @@
+import { accountSessionIsCurrent, sessionVersion } from '../helpers/account-session.ts'
 import { tagAliasMap, resolveTagName, type TagIdentity } from '../helpers/tag-aliases.ts'
 import passport from 'passport'
 import passportJwt from 'passport-jwt'
@@ -48,6 +49,7 @@ interface AccessUser extends Express.User {
 interface StoredUser extends AccessUser {
   id: number
   isActive: boolean
+  authVersion?: number
   email: string
   name: string
   pictureUrl: string | null
@@ -64,6 +66,7 @@ interface GuestState extends AccessUser {
 interface JwtUser extends Express.User {
   id: number
   iat: number
+  authVersion?: number
   groups: number[]
   permissions?: string[]
 }
@@ -154,7 +157,7 @@ interface WikiModels {
   users: {
     getGuestUser(): Promise<StoredUser>
     query(): UsersQuery
-    refreshToken(id: number): Promise<{ token: string; user: StoredUser }>
+    refreshToken(id: number, options?: { expectedAuthVersion: number }): Promise<{ token: string; user: StoredUser }>
   }
 }
 
@@ -287,10 +290,6 @@ const getExpiredAt = (info: unknown): string | null => {
   if (expiredAt instanceof Date) return expiredAt.toISOString()
   return typeof expiredAt === 'string' ? expiredAt : null
 }
-const getDecodedUserId = (token: string): number | null => {
-  const payload = jwt.decode(token)
-  return isRecord(payload) && typeof payload.id === 'number' ? payload.id : null
-}
 const randomBytesPromise = (size: number): Promise<Buffer> => {
   const { promise, resolve, reject } = Promise.withResolvers<Buffer>()
   randomBytes(size, (error, buffer) => (error ? reject(error) : resolve(buffer)))
@@ -315,12 +314,13 @@ const loadCurrentUser = (wiki: WikiContext, id: unknown): UserLookup =>
     .modifyGraph('groups', builder => {
       builder.select('groups.id', 'permissions')
     })
-const verifyUserToken = (wiki: WikiContext, token: string): JwtUser | null => {
+const verifyUserToken = (wiki: WikiContext, token: string, allowExpired = false): JwtUser | null => {
   try {
     const user = jwt.verify(token, wiki.config.certs.public, {
       audience: wiki.config.auth.audience,
       issuer: 'urn:wiki.js',
-      algorithms: ['RS256']
+      algorithms: ['RS256'],
+      ...(allowExpired ? { ignoreExpiration: true } : {})
     })
     return isJwtUser(user) ? user : null
   } catch {
@@ -431,12 +431,27 @@ const auth: AuthService = {
         mustRevalidate = true
       }
 
-      if (mustRevalidate) {
+      let claims = isJwtUser(user) ? user : null
+      if (!claims && mustRevalidate) {
         const token = securityHelper.extractJWT(req)
-        const userId = token ? getDecodedUserId(token) : null
-        if (userId === null) return next()
+        claims = token ? verifyUserToken(wiki, token, true) : null
+      }
+      if (claims) {
         try {
-          const refreshed = await wiki.models.users.refreshToken(userId)
+          const account = Number.isSafeInteger(claims.id) && claims.id > 0 && claims.id <= 2147483647 ? await wiki.models.users.query().findById(claims.id) : undefined
+          if (!accountSessionIsCurrent(claims, account)) { claims = null; user = false; mustRevalidate = false }
+        } catch (stateError) { return next(asError(stateError)) }
+      } else if (mustRevalidate) {
+        // Renewal must have a verified user token, including its session version.
+        user = false; mustRevalidate = false
+      } else if (user && !isApiPrincipal(user)) {
+        user = false
+      }
+
+      if (mustRevalidate && claims) {
+        const userId = claims.id, expectedAuthVersion = sessionVersion(claims.authVersion)!
+        try {
+          const refreshed = await wiki.models.users.refreshToken(userId, { expectedAuthVersion })
           user = refreshed.user
           refreshed.user.permissions = refreshed.user.getGlobalPermissions?.() ?? []
           refreshed.user.groups = refreshed.user.getGroups?.() ?? []
@@ -530,7 +545,8 @@ const auth: AuthService = {
       return null
 
     const user = await loadCurrentUser(wiki, claims.id)
-    if (!user?.isActive) return null
+    if (!accountSessionIsCurrent(claims, user)) return null
+    if (!user) return null
     user.permissions = user.getGlobalPermissions?.() ?? []
     user.groups = user.getGroups?.() ?? []
     return user

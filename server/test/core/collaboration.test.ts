@@ -125,6 +125,25 @@ afterEach(async () => {
 })
 
 describe('collaboration service multi-instance transport', () => {
+  it.each(['notification', 'next message'])('ends live collaboration authority on account revocation via %s', async mode => {
+    const wiki = globalWithWiki.WIKI as { models: { users: { getRootUser(): Promise<{ authVersion?: number }> } }; events: { outbound: { emit(event: string, data: unknown): void } } }
+    const principal = await wiki.models.users.getRootUser()
+    collaboration.init(); collaboration.install(server)
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing address')
+    const session = await collaboration.issueSession({ pageId: 42, expectedUpdatedAt: '2026-08-15T12:00:00.000Z', requester: { id: 1 } as Express.User })
+    socket = new WebSocket(`ws://127.0.0.1:${address.port}/collaboration`, [COLLABORATION_WEBSOCKET_PROTOCOL, session.token], { headers: { Origin: `http://127.0.0.1:${address.port}` } })
+    const sync = waitForMessage(socket, 'sync'); await once(socket, 'open'); await sync
+    const conflict = waitForMessage(socket, 'conflict'), closed = once(socket, 'close')
+    principal.authVersion = 1
+    if (mode === 'notification') wiki.events.outbound.emit('addAuthRevoke', { id: 1, kind: 'u' })
+    else socket.send(JSON.stringify({ type: 'update', protocolVersion: session.protocolVersion, updateVersion: session.updateVersion, generation: session.generation, update: 'AAA=' }))
+    expect(await conflict).toMatchObject({ reason: 'permission-revoked' }); await closed
+    await expect(collaboration.issueSession({ pageId: 42, expectedUpdatedAt: '2026-08-15T12:00:00.000Z', requester: { id: 1, authVersion: 0 } as Express.User })).rejects.toMatchObject({ status: 404 })
+    const fresh = await collaboration.issueSession({ pageId: 42, expectedUpdatedAt: '2026-08-15T12:00:00.000Z', requester: { id: 1, authVersion: 1 } as Express.User })
+    expect(JSON.parse(Buffer.from(fresh.token.split('.')[1]!, 'base64url').toString()).authVersion).toBe(1)
+  })
+
   it('broadcasts durable updates written by an independent instance without sticky sessions', async () => {
     collaboration.init()
     collaboration.install(server)

@@ -1,1137 +1,134 @@
-<template lang='pug'>
-  v-container(fluid)
-    v-row(v-if='userLoadState !== `ready`')
-      v-col(cols='12')
-        v-alert(v-if='userLoadState === `loading`', type='info', variant='tonal', role='status') Loading user details...
-        v-alert(v-else, type='error', variant='tonal', role='alert')
-          span Unable to load this user.
-          v-btn.ml-2(variant="text", @click='loadUser') Retry
-        v-skeleton-loader.mt-3(v-if='userLoadState === `loading`', type='article')
-    v-row(v-if='recordReady')
-      v-col(cols='12')
-        AdminHero(
-          :title='$t(`admin:users.edit`)'
-          :description='user.name'
-          icon='mdi-account-edit-outline'
-          heading-id='admin-users-edit-heading'
-        )
-          template(v-slot:extra)
-            .text-body-small.text-orange(v-if='hasUnsavedChanges') Unsaved changes — saved with Update User
-          template(v-slot:status)
-            i18next.pr-4.text-body-small.text-grey(path='admin:users.id', tag='div')
-              strong(place='id') {{user.id}}
-            template(v-if='user.isActive')
-              status-indicator.mr-3(positive, pulse)
-              .text-body-small.text-green {{$t('admin:users.active')}}
-            template(v-else)
-              status-indicator.mr-3(negative, pulse)
-              .text-body-small.text-red {{$t('admin:users.inactive')}}
-            template(v-if='user.isVerified')
-              status-indicator.mr-3.ml-4(active, pulse)
-              .text-body-small.text-blue {{$t('admin:users.verified')}}
-            template(v-else)
-              status-indicator.mr-3.ml-4(intermediary, pulse)
-              .text-body-small.text-deep-orange {{$t('admin:users.unverified')}}
-          template(v-slot:actions)
-            v-btn(color='grey' icon variant="outlined" @click='navigateBack' aria-label='Back to users')
-              v-icon mdi-arrow-left
-            v-menu(location='bottom end')
-              template(v-slot:activator='{ props }')
-                v-btn(color='primary' v-bind='props' variant="tonal" :disabled='!recordReady || actionLoading !== ``')
-                  span Actions
-                  v-icon(end) mdi-chevron-down
-              v-list(density="compact" nav)
-                v-list-item(v-if='!user.isActive' @click='activateUser' :disabled='actionLoading !== ``')
-                  template(v-slot:prepend)
-                    v-icon(color='primary') mdi-account-key
-                  v-list-item-title Activate
-                v-list-item(v-else @click='deactivateUser' :disabled='user.id === currentUserId || user.isSystem || actionLoading !== ``')
-                  template(v-slot:prepend)
-                    v-icon(color='primary') mdi-account-cancel
-                  v-list-item-title Deactivate
-                v-list-item(@click='verifyUser' :disabled='user.isVerified || actionLoading !== ``')
-                  template(v-slot:prepend)
-                    v-icon(color='info') mdi-account-check
-                  v-list-item-title Set as Verified
-                v-list-item(@click='deleteUserConfirm' :disabled='user.id === currentUserId || user.isSystem || actionLoading !== ``')
-                  template(v-slot:prepend)
-                    v-icon(color='error') mdi-trash-can-outline
-                  v-list-item-title Delete
-            v-btn(color='primary' size="large" variant="flat" @click='updateUser' :disabled='!hasUnsavedChanges || actionLoading !== ``' :loading='actionLoading === `update`')
-              v-icon(start) mdi-check
-              span {{$t('admin:users.updateUser')}}
-      v-col(cols='12', lg='6')
-        v-card.animated.fadeInUp
-          v-toolbar(color='primary', density="compact", flat)
-            v-icon.mr-2 mdi-information-variant
-            span {{$t('admin:users.basicInfo')}}
-          v-list.py-0(lines="two", density="compact")
-            v-list-item
-              template(v-slot:prepend)
-                v-avatar(size='32')
-                  v-icon mdi-email-variant
-              v-list-item-title {{$t('admin:users.email')}}
-              v-list-item-subtitle {{ user.email }}
-              template(v-slot:append, v-if='!user.isSystem && user.providerKey === `local`')
-                v-menu(
-                  v-model='editPop.email'
-                  :close-on-content-click='false'
-                  width='350'
-                  max-width='calc(100vw - 32px)'
-                  )
-                  template(v-slot:activator='{ props }')
-                    v-btn(icon, color='grey', size="x-small", v-bind='props', @click='focusField(`iptEmail`)', :disabled='actionLoading !== ``', aria-label='Edit email')
-                      v-icon mdi-pencil
-                  v-card
-                    v-text-field(
-                      ref='iptEmail'
-                      v-model='user.email'
-                      type='email'
-                      autocomplete='email'
-                      :label='$t(`admin:users.email`)'
-                      variant="solo"
-                      hide-details
-                      :disabled='actionLoading !== ``'
-                      append-icon='mdi-check'
-                      @click:append='editPop.email = false'
-                      @keydown.enter='editPop.email = false'
-                      @keydown.esc='editPop.email = false'
-                    )
-
-            v-divider
-            v-list-item
-              template(v-slot:prepend)
-                v-avatar(size='32')
-                  v-icon mdi-account
-              v-list-item-title {{$t('admin:users.displayName')}}
-              v-list-item-subtitle {{ user.name }}
-              template(v-slot:append)
-                v-menu(
-                  v-model='editPop.name'
-                  :close-on-content-click='false'
-                  width='350'
-                  max-width='calc(100vw - 32px)'
-                  )
-                  template(v-slot:activator='{ props }')
-                    v-btn(icon, color='grey', size="x-small", v-bind='props', @click='focusField(`iptDisplayName`)', :disabled='actionLoading !== ``', aria-label='Edit display name')
-                      v-icon mdi-pencil
-                  v-card
-                    v-text-field(
-                      ref='iptDisplayName'
-                      v-model='user.name'
-                      :label='$t(`admin:users.displayName`)'
-                      variant="solo"
-                      hide-details
-                      :disabled='actionLoading !== ``'
-                      append-icon='mdi-check'
-                      @click:append='editPop.name = false'
-                      @keydown.enter='editPop.name = false'
-                      @keydown.esc='editPop.name = false'
-                    )
-
-        v-card.mt-3.animated.fadeInUp.wait-p2s(v-if='!user.isSystem')
-          v-toolbar(color='primary', density="compact", flat)
-            v-icon.mr-2 mdi-lock-outline
-            span {{$t('admin:users.authentication')}}
-          v-list.py-0(lines="two", density="compact")
-            v-list-item
-              template(v-slot:prepend)
-                v-avatar(size='32')
-                  v-icon mdi-domain
-              v-list-item-title {{$t('admin:users.authProvider')}}
-              v-list-item-subtitle {{ user.providerName }} #[em.text-body-small ({{ user.providerKey }})]
-            template(v-if='user.providerKey === `local`')
-              v-divider
-              v-list-item
-                template(v-slot:prepend)
-                  v-avatar(size='32')
-                    v-icon mdi-form-textbox-password
-                v-list-item-title {{$t('admin:users.password')}}
-                v-list-item-subtitle &bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;
-                template(v-slot:append)
-                  v-menu(
-                    v-model='editPop.newPassword'
-                    :close-on-content-click='false'
-                    width='350'
-                    max-width='calc(100vw - 32px)'
-                    )
-                    template(v-slot:activator='{ props: menuProps }')
-                      v-tooltip(location="top")
-                        template(v-slot:activator='{ props: tooltipProps }')
-                          v-btn(icon, color='grey', size="x-small", v-bind='mergeActivatorProps(menuProps, tooltipProps)', @click='focusField(`iptNewPassword`)', :disabled='actionLoading !== ``', aria-label='Change password')
-                            v-icon mdi-pencil
-                        span {{$t('admin:users.changePassword')}}
-                    v-card
-                      v-text-field(
-                        ref='iptNewPassword'
-                        v-model='newPassword'
-                        :label='$t(`admin:users.newPassword`)'
-                        variant="solo"
-                        hide-details
-                        :disabled='actionLoading !== ``'
-                        append-icon='mdi-check'
-                        type='password'
-                        autocomplete='new-password'
-                        @click:append='editPop.newPassword = false'
-                        @keydown.enter='editPop.newPassword = false'
-                        @keydown.esc='editPop.newPassword = false'
-                      )
-                  v-tooltip(location="top")
-                    template(v-slot:activator='{ props }')
-                      v-btn(
-                        icon
-                        color='grey'
-                        size='x-small'
-                        v-bind='props'
-                        :loading='actionLoading === `welcomeEmail`'
-                        :disabled='actionLoading !== ``'
-                        aria-label='Send Welcome Email'
-                        @click='sendWelcomeEmail'
-                        )
-                        v-icon mdi-email
-                    span Send Welcome Email
-            template(v-if='user.providerIs2FACapable')
-              v-divider
-              v-list-item
-                template(v-slot:prepend)
-                  v-avatar(size='32')
-                    v-icon mdi-two-factor-authentication
-                v-list-item-title {{$t('admin:users.tfa')}}
-                v-list-item-subtitle.text-green(v-if='user.tfaIsActive') Active
-                v-list-item-subtitle.text-red(v-else) Inactive
-                template(v-slot:append)
-                  v-tooltip(location="top")
-                    template(v-slot:activator='{ props }')
-                      v-btn(icon, color='grey', size="x-small", v-bind='props', @click='toggle2FA', :disabled='actionLoading !== ``', :loading='actionLoading === `toggle2fa`', aria-label='Toggle two-factor authentication')
-                        v-icon mdi-power
-                    span {{$t('admin:users.toggle2FA')}}
-            template(v-if='user.providerId')
-              v-divider
-              v-list-item
-                template(v-slot:prepend)
-                  v-avatar(size='32')
-                    v-icon mdi-music-accidental-sharp
-                v-list-item-title {{$t('admin:users.authProviderId')}}
-                v-list-item-subtitle {{ user.providerId }}
-        v-card.mt-3.animated.fadeInUp.wait-p4s
-          v-toolbar(color='primary', density="compact", flat)
-            v-icon.mr-2 mdi-account-group
-            span {{$t('admin:users.groups')}}
-          v-list(density="compact")
-            template(v-for='(group, idx) in user.groups', :key='`group-` + group.id')
-              v-list-item
-                template(v-slot:prepend)
-                  v-avatar(size='32')
-                    v-icon mdi-account-group-outline
-                v-list-item-title {{group.name}}
-                template(v-slot:append, v-if='!user.isSystem')
-                  v-btn(icon, color='red', size="x-small", @click='unassignGroup(group.id)', :disabled='actionLoading !== ``', :aria-label='`Remove from ${group.name}`')
-                    v-icon mdi-close
-              v-divider(v-if='idx < user.groups.length - 1')
-          v-alert.mx-3(v-if='user.groups.length < 1', variant="outlined", color="grey-darken-1", icon='mdi-alert')
-            .text-body-small {{$t('admin:users.noGroupAssigned')}}
-          v-card-chin(v-if='!user.isSystem')
-            v-spacer
-            v-select(
-              :items='groups'
-              v-model='newGroup'
-              :label='$t(`admin:users.selectGroup`)'
-              item-value='id'
-              item-title='name'
-              :item-props='group => ({ disabled: group.isSystem })'
-              variant="solo"
-              flat
-              hide-details
-              style='max-width: 300px;'
-              density="compact"
-            )
-            v-btn.ml-2.px-4(variant="flat", color='primary', @click='assignGroup', :disabled='newGroup <= 0 || actionLoading !== ``')
-              v-icon(start) mdi-clipboard-account-outline
-              span {{$t('admin:users.groupAssign')}}
-          .text-body-small.text-orange.px-4.pb-2 Membership changes are staged until you select Update User.
-          v-system-bar(window, color="surface-variant")
-            v-spacer
-            .text-body-small {{$t('admin:users.groupAssignNotice')}}
-
-      v-col(cols='12', lg='6')
-        v-card.animated.fadeInUp.wait-p2s
-          v-toolbar(color='primary', density="compact", flat)
-            v-icon.mr-2 mdi-account-badge-outline
-            span {{$t('admin:users.extendedMetadata')}}
-          v-list.py-0(lines="two", density="compact")
-            v-list-item
-              template(v-slot:prepend)
-                v-avatar(size='32')
-                  v-icon mdi-map-marker
-              v-list-item-title {{$t('admin:users.location')}}
-              v-list-item-subtitle {{ user.location }}
-              template(v-slot:append)
-                v-menu(
-                  v-model='editPop.location'
-                  :close-on-content-click='false'
-                  width='350'
-                  max-width='calc(100vw - 32px)'
-                  )
-                  template(v-slot:activator='{ props }')
-                    v-btn(icon, color='grey', size="x-small", v-bind='props', @click='focusField(`iptLocation`)', :disabled='actionLoading !== ``', aria-label='Edit location')
-                      v-icon mdi-pencil
-                  v-card
-                    v-text-field(
-                      ref='iptLocation'
-                      v-model='user.location'
-                      :label='$t(`admin:users.location`)'
-                      variant="solo"
-                      hide-details
-                      :disabled='actionLoading !== ``'
-                      append-icon='mdi-check'
-                      @click:append='editPop.location = false'
-                      @keydown.enter='editPop.location = false'
-                      @keydown.esc='editPop.location = false'
-                    )
-            v-divider
-            v-list-item
-              template(v-slot:prepend)
-                v-avatar(size='32')
-                  v-icon mdi-briefcase
-              v-list-item-title {{$t('admin:users.jobTitle')}}
-              v-list-item-subtitle {{ user.jobTitle }}
-              template(v-slot:append)
-                v-menu(
-                  v-model='editPop.jobTitle'
-                  :close-on-content-click='false'
-                  width='350'
-                  max-width='calc(100vw - 32px)'
-                  )
-                  template(v-slot:activator='{ props }')
-                    v-btn(icon, color='grey', size="x-small", v-bind='props', @click='focusField(`iptJobTitle`)', :disabled='actionLoading !== ``', aria-label='Edit job title')
-                      v-icon mdi-pencil
-                  v-card
-                    v-text-field(
-                      ref='iptJobTitle'
-                      v-model='user.jobTitle'
-                      :label='$t(`admin:users.jobTitle`)'
-                      variant="solo"
-                      hide-details
-                      :disabled='actionLoading !== ``'
-                      append-icon='mdi-check'
-                      @click:append='editPop.jobTitle = false'
-                      @keydown.enter='editPop.jobTitle = false'
-                      @keydown.esc='editPop.jobTitle = false'
-                    )
-            v-divider
-            v-list-item
-              template(v-slot:prepend)
-                v-avatar(size='32')
-                  v-icon mdi-map-clock-outline
-              v-list-item-title {{$t('admin:users.timezone')}}
-              v-list-item-subtitle {{ user.timezone }}
-              template(v-slot:append)
-                v-menu(
-                  v-model='editPop.timezone'
-                  :close-on-content-click='false'
-                  width='350'
-                  max-width='calc(100vw - 32px)'
-                  )
-                  template(v-slot:activator='{ props }')
-                    v-btn(icon, color='grey', size="x-small", v-bind='props', @click='focusField(`iptTimezone`)', :disabled='actionLoading !== ``', aria-label='Edit timezone')
-                      v-icon mdi-pencil
-                  v-card
-                    v-select(
-                      ref='iptTimezone'
-                      :items='timezones'
-                      v-model='user.timezone'
-                      :label='$t(`admin:users.timezone`)'
-                      variant="solo"
-                      density="compact"
-                      hide-details
-                      :disabled='actionLoading !== ``'
-                      append-icon='mdi-check'
-                      @click:append='editPop.timezone = false'
-                      @keydown.enter='editPop.timezone = false'
-                      @keydown.esc='editPop.timezone = false'
-                    )
-
-        v-card.mt-3.animated.fadeInUp.wait-p4s
-          v-toolbar(color='teal', density="compact", flat)
-            v-toolbar-title
-              .text-body-large {{$t('profile:activity.title')}}
-          v-card-text.text-grey-darken-2
-            .text-body-small.text-grey {{$t('profile:activity.joinedOn')}}
-            .text-body-medium: strong {{ $helpers.formatMoment(user.createdAt, 'LLLL') }}
-            .text-body-small.text-grey.mt-3 {{$t('profile:activity.lastUpdatedOn')}}
-            .text-body-medium: strong {{ $helpers.formatMoment(user.updatedAt, 'LLLL') }}
-            .text-body-small.text-grey.mt-3 {{$t('profile:activity.lastLoginOn')}}
-            .text-body-medium: strong {{ $helpers.formatMoment(user.lastLoginAt, 'LLLL') }}
-    v-dialog(v-model='deleteUserDialog', max-width='500', aria-label='Delete user')
-      v-card
-        .dialog-header.is-red {{$t('admin:users.deleteConfirmTitle')}}
-        v-card-text.pt-5
-          i18next(path='admin:users.deleteConfirmText', tag='span')
-            strong(place='username') {{ user.email }}
-          .mt-3 {{$t('admin:users.deleteConfirmReplaceWarn')}}
-          v-divider.my-3
-          .d-flex.align-center.mt-3
-            v-btn.text-none(color='primary', variant="flat", @click='deleteSearchUserDialog = true', :disabled='actionLoading !== ``')
-              v-icon(start) mdi-clipboard-account
-              | Select User...
-            .text-body-small.pl-3
-              strong ID {{deleteReplaceUser.id}}
-              .text-body-small {{deleteReplaceUser.name}}
-              em {{deleteReplaceUser.email}}
-        v-card-chin
-          v-spacer
-          v-btn(variant="text", @click='deleteUserDialog = false', :disabled='actionLoading !== ``') {{$t('common:actions.cancel')}}
-          v-btn(color='red', @click='deleteUser', :disabled='actionLoading !== ``', :loading='actionLoading === `delete`') {{$t('common:actions.delete')}}
-
-        user-search(v-model='deleteSearchUserDialog', @select='assignDeleteUser')
+<template>
+  <v-container fluid class="account-workspace">
+    <admin-hero :title="saved?.name || 'Account workspace'" :description="saved?.email || 'Identity, membership and account lifecycle.'" eyebrow="People & access" icon="mdi-account-outline"><template #actions><v-btn :to="directoryPath" variant="text" prepend-icon="mdi-arrow-left">All accounts</v-btn><v-btn variant="text" prepend-icon="mdi-refresh" :loading="loading" :disabled="busy || dialog" @click="reload">Reload account</v-btn></template></admin-hero>
+    <v-alert v-if="notice" type="success" variant="tonal" closable class="mt-5" @click:close="notice = ''">{{ notice }}</v-alert>
+    <async-state v-if="loading" state="loading" title="Opening the account workspace" />
+    <async-state v-else-if="loadError" state="error" title="This account is unavailable" :message="loadError" retry-label="Try again" @retry="reload" />
+    <template v-else-if="saved">
+      <header class="account-identity"><div class="account-portrait" aria-hidden="true">{{ initials(saved.name) }}</div><div class="account-identity-name"><span class="account-eyebrow">Account #{{ saved.id }}{{ self ? ' · Your account' : '' }}</span><p>{{ saved.providerTitle }}</p></div><div class="account-identity-status"><span><i :class="{ paused: !saved.isActive }" />{{ saved.isActive ? 'Active account' : 'Inactive account' }}</span><small>{{ saved.isVerified ? 'Email verified' : 'Email unverified' }}</small></div></header>
+      <div class="account-tabs-row"><div role="tablist" aria-label="Account workspace sections" class="account-tabs"><button v-for="tab in tabs" :id="`account-tab-${tab.key}`" :key="tab.key" role="tab" :aria-selected="section === tab.key" :aria-controls="`account-panel-${tab.key}`" :tabindex="section === tab.key ? 0 : -1" @click="setSection(tab.key)" @keydown="tabKey($event, tab.key)">{{ tab.title }}</button></div><span aria-live="polite">{{ dirty ? 'Unsaved profile changes' : 'Showing saved account' }}</span></div>
+      <v-alert v-if="saved.capabilities.explanation" type="info" variant="tonal" class="mb-5">{{ saved.capabilities.explanation }}</v-alert>
+      <section v-show="section === 'profile'" id="account-panel-profile" role="tabpanel" aria-labelledby="account-tab-profile">
+        <div class="account-profile-layout"><div class="account-main-column"><section class="account-surface"><header><span class="account-eyebrow">Personal details</span><h3>The person behind the account</h3><p>Keep their name and contact information recognizable to your team.</p></header><div class="account-profile-form"><v-text-field v-model="draft.name" label="Display name" variant="outlined" maxlength="255" :disabled="profileLocked" /><v-text-field v-model="draft.email" label="Email address" type="email" variant="outlined" maxlength="255" :disabled="profileLocked" /><v-text-field v-model="draft.jobTitle" label="Role or job title" variant="outlined" maxlength="255" :disabled="profileLocked" /><v-text-field v-model="draft.location" label="Location" variant="outlined" maxlength="255" :disabled="profileLocked" /><v-text-field v-model="draft.timezone" label="Time zone" variant="outlined" hint="For example, Europe/London or UTC." persistent-hint :disabled="profileLocked" /></div><div v-if="emailChanged" class="account-impact-note"><v-icon icon="mdi-email-sync-outline" /><p>Changing the email address clears its verified status and ends this account’s sign-in sessions. Confirm the new address before marking it verified.</p></div></section>
+          <section class="account-surface"><header><span class="account-eyebrow">Membership</span><h3>Access through belonging</h3><p>Permissions from these groups are combined. Page rules and private ownership still determine access to individual pages.</p></header><div class="account-membership-grid"><label v-for="group in saved.availableGroups" :key="group.id" :class="{ selected: draft.groups.includes(group.id), locked: profileLocked || self || !group.canAssign }"><input v-model="draft.groups" type="checkbox" :value="group.id" :disabled="profileLocked || self || !group.canAssign || (saved.id === 1 && group.id === 1)" /><span><strong>{{ group.name }}</strong><small>{{ group.permissions.length }} {{ group.permissions.length === 1 ? 'permission' : 'permissions' }}{{ !group.canAssign ? ' · Restricted' : '' }}</small></span><v-icon v-if="!group.canAssign" icon="mdi-lock-outline" size="16" /></label></div><p v-if="self" class="account-footnote">Another administrator must change your own memberships here.</p><p v-if="!draft.groups.length" class="account-footnote">This account has no group-granted permissions.</p><details class="account-permissions"><summary>{{ dirty ? 'Draft' : 'Saved' }} combined permissions · {{ draftPermissions.length }}</summary><ul><li v-for="permission in draftPermissions" :key="permission">{{ permission }}</li></ul><p v-if="!draftPermissions.length">No permissions granted by these groups.</p></details><div v-if="groupsChanged" class="account-impact-note"><v-icon icon="mdi-shield-account-outline" /><p>Saving membership changes ends existing sign-in sessions. The next sign-in uses the new group access.</p></div></section>
+        </div><aside class="account-context-column"><section class="account-context-card"><span class="account-eyebrow">Account context</span><dl><div><dt>Sign-in provider</dt><dd>{{ saved.providerTitle }}</dd></div><div><dt>Created</dt><dd>{{ date(saved.createdAt) }}</dd></div><div><dt>Profile last changed</dt><dd>{{ date(saved.updatedAt) }}</dd></div><div><dt>Last sign-in or renewal</dt><dd>{{ saved.lastLoginAt ? date(saved.lastLoginAt) : 'Not recorded' }}</dd></div></dl><p>Renewals update this timestamp. It is not a live presence indicator.</p></section><section class="account-context-card"><span class="account-eyebrow">Contributions</span><dl class="account-contributions"><div><dt>Pages created</dt><dd>{{ saved.contributionCounts.pagesCreated }}</dd></div><div><dt>Pages last authored</dt><dd>{{ saved.contributionCounts.pagesAuthored }}</dd></div><div><dt>Local comments</dt><dd>{{ saved.contributionCounts.comments }}</dd></div><div><dt>Assets attributed</dt><dd>{{ saved.contributionCounts.assets }}</dd></div></dl><p>These are current attribution counts, not a complete activity history.</p><div v-if="saved.privateOwnershipBlocksDeletion" class="account-private-note"><v-icon icon="mdi-lock-outline" size="17" />Private page ownership or history prevents deletion.</div></section></aside></div>
+        <div v-if="saved.capabilities.edit" class="account-draft-bar"><div><strong>{{ dirty ? changes.length + (changes.length === 1 ? ' field changed' : ' fields changed') : 'Profile matches the saved account' }}</strong><span>Review changes before they affect this person.</span></div><div><v-btn variant="text" :disabled="!dirty || busy || dialog" @click="reset">Reset draft</v-btn><v-btn color="primary" variant="flat" :disabled="!dirty || busy || profileIssues.length > 0" @click="open('profile')">Review profile changes</v-btn></div></div>
+        <v-alert v-if="dirty && profileIssues.length" type="warning" variant="tonal" class="mt-4"><ul><li v-for="issue in profileIssues" :key="issue">{{ issue }}</li></ul></v-alert>
+      </section>
+      <section v-show="section === 'security'" id="account-panel-security" role="tabpanel" aria-labelledby="account-tab-security">
+        <div class="account-section-heading"><div><span class="account-eyebrow">Sign-in & security</span><h3>Sign-in controls</h3><p>Review each action and its effects before applying it to the saved account.</p></div><v-btn to="/auth" variant="text" append-icon="mdi-arrow-top-right">Authentication settings</v-btn></div>
+        <v-alert v-if="dirty" type="info" variant="tonal" class="mb-5">Security actions are paused while you have unsaved profile changes.<v-btn variant="text" @click="setSection('profile')">Return to profile</v-btn></v-alert>
+        <div class="account-security-grid"><section class="account-security-card"><v-icon icon="mdi-login" size="26" /><span class="account-eyebrow">Account availability</span><h4>{{ saved.isActive ? 'Open for sign-in' : 'Sign-in is suspended' }}</h4><p>{{ saved.isActive ? 'The account is active. Provider, verification and authenticator policies still apply.' : 'This person cannot sign in. Their profile, memberships and contributions are retained.' }}</p><v-btn v-if="can('deactivate')" variant="outlined" :disabled="actionLocked" @click="open('deactivate')">Deactivate account</v-btn><v-btn v-if="can('activate')" variant="outlined" :disabled="actionLocked" @click="open('activate')">Activate account</v-btn><small v-if="!can('deactivate') && !can('activate')">Availability is protected for this account.</small></section>
+          <section class="account-security-card"><v-icon icon="mdi-email-check-outline" size="26" /><span class="account-eyebrow">Email ownership</span><h4>{{ saved.isVerified ? 'Address is verified' : 'Address needs verification' }}</h4><p>{{ saved.isVerified ? 'The account is marked as having a verified email address.' : 'Confirm that this person controls the address before marking it verified.' }}</p><v-btn v-if="can('verify')" variant="outlined" :disabled="actionLocked" @click="open('verify')">Verify email address</v-btn><small v-else>Changing the address clears this status.</small></section>
+          <section class="account-security-card"><v-icon icon="mdi-two-factor-authentication" size="26" /><span class="account-eyebrow">Authenticator</span><h4>{{ twoFactorTitle }}</h4><p>{{ twoFactorDescription }}</p><div class="account-security-actions"><v-btn v-if="can('require-2fa')" variant="outlined" :disabled="actionLocked" @click="open('require-2fa')">Require enrollment</v-btn><v-btn v-if="can('reset-2fa')" variant="outlined" :disabled="actionLocked" @click="open('reset-2fa')">Reset authenticator</v-btn><v-btn v-if="can('disable-2fa')" variant="text" :disabled="actionLocked" @click="open('disable-2fa')">Remove account requirement</v-btn></div></section>
+          <section class="account-security-card"><v-icon icon="mdi-key-outline" size="26" /><span class="account-eyebrow">Password</span><h4>{{ saved.provider?.localPassword ? saved.mustChangePassword ? 'Change required at sign-in' : 'Managed by this workspace' : 'Managed by the identity provider' }}</h4><p>{{ saved.provider?.localPassword ? 'A replacement password ends existing sessions and invalidates pending recovery links. You can require the person to choose their own at the next sign-in.' : 'Manage credentials in ' + saved.providerTitle + '. This workspace does not store or replace that provider’s password.' }}</p><v-btn v-if="saved.capabilities.password" variant="outlined" :disabled="actionLocked" @click="open('password')">Replace password</v-btn><v-btn v-else-if="self && saved.provider?.localPassword" href="/p" variant="outlined">Open my profile</v-btn></section>
+          <section class="account-security-card"><v-icon icon="mdi-devices" size="26" /><span class="account-eyebrow">Sign-in sessions</span><h4>Require a fresh sign-in</h4><p>Invalidate existing sign-in tokens and pending recovery or sign-in links. People can sign in again with their current credentials.</p><small>Last ended: {{ saved.sessionsRevokedAt ? date(saved.sessionsRevokedAt) : 'Not recorded' }}. Individual devices are not tracked here.</small><v-btn v-if="can('end-sessions')" variant="outlined" :disabled="actionLocked" @click="open('end-sessions')">End sign-in sessions</v-btn><p class="account-footnote">Workspace API keys have their own lifecycle in <router-link to="/api">API access</router-link>.</p></section>
+          <section class="account-security-card"><v-icon icon="mdi-email-fast-outline" size="26" /><span class="account-eyebrow">Welcome email</span><h4>A useful first step</h4><p>Send the workspace’s welcome message and a link to sign in. It contains no password or verification token.</p><small>Sending uses the saved address. Mail acceptance does not confirm delivery.</small><v-btn v-if="saved.capabilities.edit && saved.isActive" variant="outlined" :disabled="actionLocked" @click="open('welcome')">Review welcome email</v-btn></section>
+        </div>
+        <section class="account-deletion"><div><span class="account-eyebrow">Account retirement</span><h4>Delete this account</h4><p>Remove the account and its sign-in recovery keys. Contribution attribution must move to another active person.</p><p v-if="!saved.capabilities.delete" class="account-footnote">{{ saved.capabilities.explanation || 'Deletion is unavailable for this account.' }}</p></div><v-btn v-if="saved.capabilities.delete" color="error" variant="outlined" :disabled="actionLocked" @click="open('delete')">Review deletion</v-btn></section>
+      </section>
+      <section v-show="section === 'activity'" id="account-panel-activity" role="tabpanel" aria-labelledby="account-tab-activity"><div class="account-section-heading"><div><span class="account-eyebrow">Administrative history</span><h3>A record of considered changes.</h3><p>The latest 50 recorded account actions. Reasons are visible to administrators; passwords and authenticator secrets are never included.</p></div></div><async-state v-if="!saved.history.length" state="empty" title="No administrative actions recorded yet" message="New changes made through this workspace and the administration API will appear here. Earlier activity is not reconstructed." /><ol v-else class="account-activity"><li v-for="event in saved.history" :key="event.id"><span class="account-event-dot" aria-hidden="true" /><div><div class="account-event-heading"><h4>{{ eventTitle(event.action) }}</h4><time :datetime="event.createdAt">{{ date(event.createdAt) }}</time></div><small>{{ event.actorId ? 'Administrator account #' + event.actorId : 'Workspace credential' }}</small><p>{{ event.reason }}</p><ul v-if="eventFields(event.details).length"><li v-for="field in eventFields(event.details)" :key="field">{{ field }}</li></ul></div></li></ol></section>
+    </template>
+    <v-dialog v-model="dialog" max-width="760" :persistent="busy" :aria-label="dialogTitle"><v-card class="account-review-dialog"><v-card-title><span class="account-eyebrow">Account #{{ saved?.id }} · Review</span><h2>{{ dialogTitle }}</h2></v-card-title><v-card-text v-if="saved"><div class="account-review-person"><strong>{{ saved.name }}</strong><span>{{ saved.email }}</span></div><p class="account-review-description">{{ dialogDescription }}</p>
+      <dl v-if="operation === 'profile'" class="account-review-changes"><div v-for="change in changes" :key="change.key"><dt>{{ change.title }}</dt><dd><span>{{ change.before || 'Empty' }}</span><v-icon icon="mdi-arrow-right" size="16" /><strong>{{ change.after || 'Empty' }}</strong></dd></div></dl>
+      <template v-if="operation === 'password'"><v-text-field v-model="password" label="New temporary password" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" variant="outlined" hint="At least 12 characters; at most 72 UTF-8 bytes." persistent-hint :disabled="busy"><template #append-inner><v-btn variant="text" size="small" :icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" :aria-label="showPassword ? 'Hide new password' : 'Show new password'" @click="showPassword = !showPassword" /></template></v-text-field><v-checkbox v-model="mustChangePassword" label="Require a different password at the next sign-in" hide-details :disabled="busy" /></template>
+      <template v-if="operation === 'delete'"><v-alert type="warning" variant="tonal" class="mb-4">Deletion is permanent. Deactivation preserves the account and is reversible.</v-alert><dl class="account-delete-counts"><div><dt>Pages created</dt><dd>{{ saved.contributionCounts.pagesCreated }}</dd></div><div><dt>Pages last authored</dt><dd>{{ saved.contributionCounts.pagesAuthored }}</dd></div><div><dt>Local comments</dt><dd>{{ saved.contributionCounts.comments }}</dd></div><div><dt>Assets</dt><dd>{{ saved.contributionCounts.assets }}</dd></div></dl><v-autocomplete v-model="replaceId" v-model:search="replacementSearch" :items="replacementOptions" label="Reassign contribution attribution to" item-title="title" item-value="id" variant="outlined" :loading="replacementLoading" :disabled="busy" no-filter clearable hide-no-data hint="Search for another active account in your administrative scope." persistent-hint @update:search="searchReplacements" /><v-alert v-if="replacementError" type="error" variant="tonal" class="my-3">{{ replacementError }}<v-btn variant="text" @click="searchReplacements">Try again</v-btn></v-alert><v-text-field v-model="deleteConfirmation" :label="`Type ${saved.id} to confirm account deletion`" variant="outlined" class="mt-4" autocomplete="off" :disabled="busy" /></template>
+      <v-alert v-if="endsOwnSessions" type="warning" variant="tonal" class="my-4">This also ends your current sign-in. You will return to the sign-in page.</v-alert>
+      <v-textarea v-model="reason" label="Administrative reason" variant="outlined" rows="2" auto-grow maxlength="1000" class="mt-5" :disabled="busy" hint="3–1,000 characters. Do not include credentials or private recovery information." persistent-hint />
+      <v-alert v-if="actionError" type="error" variant="tonal" class="mt-4">{{ actionError }}<v-btn v-if="conflict" variant="text" :disabled="busy" @click="reloadReview">Reload account</v-btn></v-alert>
+    </v-card-text><v-card-actions><v-btn variant="text" :disabled="busy" @click="dialog = false; password = ''">{{ operation === 'profile' ? 'Keep editing' : 'Cancel' }}</v-btn><v-spacer /><v-btn :color="operation === 'delete' ? 'error' : 'primary'" variant="flat" :disabled="!canConfirm || conflict" :loading="busy" @click="confirm">{{ operation === 'profile' ? 'Save profile changes' : operation === 'welcome' ? 'Send welcome email' : dialogTitle }}</v-btn></v-card-actions></v-card></v-dialog>
+  </v-container>
 </template>
-<script lang='ts'>
-import { markRaw, mergeProps } from 'vue'
-import _ from 'lodash'
+<script lang="ts">
+import AsyncState from '@/components/common/async-state.vue'
+import { accountActionTitle, accountProfileIssues, type AccountAction, type AccountProfileDraft, type AccountWorkspace } from '../../../shared/account-policy.ts'
+import { fetchAccount, fetchAccountDirectory, saveAccountProfile, actOnAccount, replaceAccountPassword, deleteAccount, sendAccountWelcomeEmail, accountRequestStatus } from '../../helpers/account-api.ts'
+import { getErrorMessage } from '../../helpers/root-ui-store.ts'
 import { wikiStore } from '@/store/index.ts'
-import StatusIndicator from '@/components/common/status-indicator.vue'
-
-import UserSearch from '../common/user-search.vue'
-
-import { fetchGroupOptions, type GroupOption } from '../../helpers/groups-api'
-import { getErrorMessage } from '../../helpers/root-ui-store'
-import {
-  deleteAdminUser,
-  fetchUserDetails,
-  setAdminUserActive,
-  sendAdminUserWelcomeEmail,
-  setAdminUserTfa,
-  updateAdminUser,
-  verifyAdminUser,
-  type AdminUserDetail,
-  type UserGroup,
-  type UserSearchRow
-} from '../../helpers/users-api'
-
-type EditableAdminUser = Omit<AdminUserDetail, 'createdAt' | 'updatedAt'> & {
-  createdAt: string | null
-  updatedAt: string | null
-}
-
-type UserEditorFieldRef = 'iptEmail' | 'iptDisplayName' | 'iptNewPassword' | 'iptLocation' | 'iptJobTitle' | 'iptTimezone'
-
-type FocusableRef = {
-  focus: () => void
-}
-
-const getRouteUserId = (routeId: string | string[]): string => Array.isArray(routeId) ? routeId[0] || '' : routeId
-
-const createEmptyUser = (): EditableAdminUser => ({
-  id: 0,
-  email: '',
-  name: '',
-  location: '',
-  jobTitle: '',
-  timezone: '',
-  groups: [] as UserGroup[],
-  isActive: false,
-  isVerified: false,
-  providerKey: '',
-  providerName: '',
-  providerId: null,
-  providerIs2FACapable: false,
-  isSystem: false,
-  createdAt: null,
-  updatedAt: null,
-  lastLoginAt: null,
-  tfaIsActive: false
-})
-
-const TIMEZONES = Object.freeze([
-  { title: '(GMT-11:00) Niue', value: 'Pacific/Niue' },
-  { title: '(GMT-11:00) Pago Pago', value: 'Pacific/Pago_Pago' },
-  { title: '(GMT-10:00) Hawaii Time', value: 'Pacific/Honolulu' },
-  { title: '(GMT-10:00) Rarotonga', value: 'Pacific/Rarotonga' },
-  { title: '(GMT-10:00) Tahiti', value: 'Pacific/Tahiti' },
-  { title: '(GMT-09:30) Marquesas', value: 'Pacific/Marquesas' },
-  { title: '(GMT-09:00) Alaska Time', value: 'America/Anchorage' },
-  { title: '(GMT-09:00) Gambier', value: 'Pacific/Gambier' },
-  { title: '(GMT-08:00) Pacific Time', value: 'America/Los_Angeles' },
-  { title: '(GMT-08:00) Pacific Time - Tijuana', value: 'America/Tijuana' },
-  { title: '(GMT-08:00) Pacific Time - Vancouver', value: 'America/Vancouver' },
-  { title: '(GMT-08:00) Pacific Time - Whitehorse', value: 'America/Whitehorse' },
-  { title: '(GMT-08:00) Pitcairn', value: 'Pacific/Pitcairn' },
-  { title: '(GMT-07:00) Mountain Time', value: 'America/Denver' },
-  { title: '(GMT-07:00) Mountain Time - Arizona', value: 'America/Phoenix' },
-  { title: '(GMT-07:00) Mountain Time - Chihuahua, Mazatlan', value: 'America/Mazatlan' },
-  { title: '(GMT-07:00) Mountain Time - Dawson Creek', value: 'America/Dawson_Creek' },
-  { title: '(GMT-07:00) Mountain Time - Edmonton', value: 'America/Edmonton' },
-  { title: '(GMT-07:00) Mountain Time - Hermosillo', value: 'America/Hermosillo' },
-  { title: '(GMT-07:00) Mountain Time - Yellowknife', value: 'America/Yellowknife' },
-  { title: '(GMT-06:00) Belize', value: 'America/Belize' },
-  { title: '(GMT-06:00) Central Time', value: 'America/Chicago' },
-  { title: '(GMT-06:00) Central Time - Mexico City', value: 'America/Mexico_City' },
-  { title: '(GMT-06:00) Central Time - Regina', value: 'America/Regina' },
-  { title: '(GMT-06:00) Central Time - Tegucigalpa', value: 'America/Tegucigalpa' },
-  { title: '(GMT-06:00) Central Time - Winnipeg', value: 'America/Winnipeg' },
-  { title: '(GMT-06:00) Costa Rica', value: 'America/Costa_Rica' },
-  { title: '(GMT-06:00) El Salvador', value: 'America/El_Salvador' },
-  { title: '(GMT-06:00) Galapagos', value: 'Pacific/Galapagos' },
-  { title: '(GMT-06:00) Guatemala', value: 'America/Guatemala' },
-  { title: '(GMT-06:00) Managua', value: 'America/Managua' },
-  { title: '(GMT-05:00) America Cancun', value: 'America/Cancun' },
-  { title: '(GMT-05:00) Bogota', value: 'America/Bogota' },
-  { title: '(GMT-05:00) Easter Island', value: 'Pacific/Easter' },
-  { title: '(GMT-05:00) Eastern Time', value: 'America/New_York' },
-  { title: '(GMT-05:00) Eastern Time - Iqaluit', value: 'America/Iqaluit' },
-  { title: '(GMT-05:00) Eastern Time - Toronto', value: 'America/Toronto' },
-  { title: '(GMT-05:00) Guayaquil', value: 'America/Guayaquil' },
-  { title: '(GMT-05:00) Havana', value: 'America/Havana' },
-  { title: '(GMT-05:00) Jamaica', value: 'America/Jamaica' },
-  { title: '(GMT-05:00) Lima', value: 'America/Lima' },
-  { title: '(GMT-05:00) Nassau', value: 'America/Nassau' },
-  { title: '(GMT-05:00) Panama', value: 'America/Panama' },
-  { title: '(GMT-05:00) Port-au-Prince', value: 'America/Port-au-Prince' },
-  { title: '(GMT-05:00) Rio Branco', value: 'America/Rio_Branco' },
-  { title: '(GMT-04:00) Atlantic Time - Halifax', value: 'America/Halifax' },
-  { title: '(GMT-04:00) Barbados', value: 'America/Barbados' },
-  { title: '(GMT-04:00) Bermuda', value: 'Atlantic/Bermuda' },
-  { title: '(GMT-04:00) Boa Vista', value: 'America/Boa_Vista' },
-  { title: '(GMT-04:00) Caracas', value: 'America/Caracas' },
-  { title: '(GMT-04:00) Curacao', value: 'America/Curacao' },
-  { title: '(GMT-04:00) Grand Turk', value: 'America/Grand_Turk' },
-  { title: '(GMT-04:00) Guyana', value: 'America/Guyana' },
-  { title: '(GMT-04:00) La Paz', value: 'America/La_Paz' },
-  { title: '(GMT-04:00) Manaus', value: 'America/Manaus' },
-  { title: '(GMT-04:00) Martinique', value: 'America/Martinique' },
-  { title: '(GMT-04:00) Port of Spain', value: 'America/Port_of_Spain' },
-  { title: '(GMT-04:00) Porto Velho', value: 'America/Porto_Velho' },
-  { title: '(GMT-04:00) Puerto Rico', value: 'America/Puerto_Rico' },
-  { title: '(GMT-04:00) Santo Domingo', value: 'America/Santo_Domingo' },
-  { title: '(GMT-04:00) Thule', value: 'America/Thule' },
-  { title: '(GMT-03:30) Newfoundland Time - St. Johns', value: 'America/St_Johns' },
-  { title: '(GMT-03:00) Araguaina', value: 'America/Araguaina' },
-  { title: '(GMT-03:00) Asuncion', value: 'America/Asuncion' },
-  { title: '(GMT-03:00) Belem', value: 'America/Belem' },
-  { title: '(GMT-03:00) Buenos Aires', value: 'America/Argentina/Buenos_Aires' },
-  { title: '(GMT-03:00) Campo Grande', value: 'America/Campo_Grande' },
-  { title: '(GMT-03:00) Cayenne', value: 'America/Cayenne' },
-  { title: '(GMT-03:00) Cuiaba', value: 'America/Cuiaba' },
-  { title: '(GMT-03:00) Fortaleza', value: 'America/Fortaleza' },
-  { title: '(GMT-03:00) Godthab', value: 'America/Godthab' },
-  { title: '(GMT-03:00) Maceio', value: 'America/Maceio' },
-  { title: '(GMT-03:00) Miquelon', value: 'America/Miquelon' },
-  { title: '(GMT-03:00) Montevideo', value: 'America/Montevideo' },
-  { title: '(GMT-03:00) Palmer', value: 'Antarctica/Palmer' },
-  { title: '(GMT-03:00) Paramaribo', value: 'America/Paramaribo' },
-  { title: '(GMT-03:00) Punta Arenas', value: 'America/Punta_Arenas' },
-  { title: '(GMT-03:00) Recife', value: 'America/Recife' },
-  { title: '(GMT-03:00) Rothera', value: 'Antarctica/Rothera' },
-  { title: '(GMT-03:00) Salvador', value: 'America/Bahia' },
-  { title: '(GMT-03:00) Santiago', value: 'America/Santiago' },
-  { title: '(GMT-03:00) Sao Paulo', value: 'America/Sao_Paulo' },
-  { title: '(GMT-03:00) Stanley', value: 'Atlantic/Stanley' },
-  { title: '(GMT-02:00) Noronha', value: 'America/Noronha' },
-  { title: '(GMT-02:00) South Georgia', value: 'Atlantic/South_Georgia' },
-  { title: '(GMT-01:00) Azores', value: 'Atlantic/Azores' },
-  { title: '(GMT-01:00) Cape Verde', value: 'Atlantic/Cape_Verde' },
-  { title: '(GMT-01:00) Scoresbysund', value: 'America/Scoresbysund' },
-  { title: '(GMT+00:00) Abidjan', value: 'Africa/Abidjan' },
-  { title: '(GMT+00:00) Accra', value: 'Africa/Accra' },
-  { title: '(GMT+00:00) Bissau', value: 'Africa/Bissau' },
-  { title: '(GMT+00:00) Canary Islands', value: 'Atlantic/Canary' },
-  { title: '(GMT+00:00) Casablanca', value: 'Africa/Casablanca' },
-  { title: '(GMT+00:00) Danmarkshavn', value: 'America/Danmarkshavn' },
-  { title: '(GMT+00:00) Dublin', value: 'Europe/Dublin' },
-  { title: '(GMT+00:00) El Aaiun', value: 'Africa/El_Aaiun' },
-  { title: '(GMT+00:00) Faeroe', value: 'Atlantic/Faroe' },
-  { title: '(GMT+00:00) GMT (no daylight saving)', value: 'Etc/GMT' },
-  { title: '(GMT+00:00) Lisbon', value: 'Europe/Lisbon' },
-  { title: '(GMT+00:00) London', value: 'Europe/London' },
-  { title: '(GMT+00:00) Monrovia', value: 'Africa/Monrovia' },
-  { title: '(GMT+00:00) Reykjavik', value: 'Atlantic/Reykjavik' },
-  { title: '(GMT+01:00) Algiers', value: 'Africa/Algiers' },
-  { title: '(GMT+01:00) Amsterdam', value: 'Europe/Amsterdam' },
-  { title: '(GMT+01:00) Andorra', value: 'Europe/Andorra' },
-  { title: '(GMT+01:00) Berlin', value: 'Europe/Berlin' },
-  { title: '(GMT+01:00) Brussels', value: 'Europe/Brussels' },
-  { title: '(GMT+01:00) Budapest', value: 'Europe/Budapest' },
-  { title: '(GMT+01:00) Central European Time - Belgrade', value: 'Europe/Belgrade' },
-  { title: '(GMT+01:00) Central European Time - Prague', value: 'Europe/Prague' },
-  { title: '(GMT+01:00) Ceuta', value: 'Africa/Ceuta' },
-  { title: '(GMT+01:00) Copenhagen', value: 'Europe/Copenhagen' },
-  { title: '(GMT+01:00) Gibraltar', value: 'Europe/Gibraltar' },
-  { title: '(GMT+01:00) Lagos', value: 'Africa/Lagos' },
-  { title: '(GMT+01:00) Luxembourg', value: 'Europe/Luxembourg' },
-  { title: '(GMT+01:00) Madrid', value: 'Europe/Madrid' },
-  { title: '(GMT+01:00) Malta', value: 'Europe/Malta' },
-  { title: '(GMT+01:00) Monaco', value: 'Europe/Monaco' },
-  { title: '(GMT+01:00) Ndjamena', value: 'Africa/Ndjamena' },
-  { title: '(GMT+01:00) Oslo', value: 'Europe/Oslo' },
-  { title: '(GMT+01:00) Paris', value: 'Europe/Paris' },
-  { title: '(GMT+01:00) Rome', value: 'Europe/Rome' },
-  { title: '(GMT+01:00) Stockholm', value: 'Europe/Stockholm' },
-  { title: '(GMT+01:00) Tirane', value: 'Europe/Tirane' },
-  { title: '(GMT+01:00) Tunis', value: 'Africa/Tunis' },
-  { title: '(GMT+01:00) Vienna', value: 'Europe/Vienna' },
-  { title: '(GMT+01:00) Warsaw', value: 'Europe/Warsaw' },
-  { title: '(GMT+01:00) Zurich', value: 'Europe/Zurich' },
-  { title: '(GMT+02:00) Amman', value: 'Asia/Amman' },
-  { title: '(GMT+02:00) Athens', value: 'Europe/Athens' },
-  { title: '(GMT+02:00) Beirut', value: 'Asia/Beirut' },
-  { title: '(GMT+02:00) Bucharest', value: 'Europe/Bucharest' },
-  { title: '(GMT+02:00) Cairo', value: 'Africa/Cairo' },
-  { title: '(GMT+02:00) Chisinau', value: 'Europe/Chisinau' },
-  { title: '(GMT+02:00) Damascus', value: 'Asia/Damascus' },
-  { title: '(GMT+02:00) Gaza', value: 'Asia/Gaza' },
-  { title: '(GMT+02:00) Helsinki', value: 'Europe/Helsinki' },
-  { title: '(GMT+02:00) Jerusalem', value: 'Asia/Jerusalem' },
-  { title: '(GMT+02:00) Johannesburg', value: 'Africa/Johannesburg' },
-  { title: '(GMT+02:00) Khartoum', value: 'Africa/Khartoum' },
-  { title: '(GMT+02:00) Kyiv', value: 'Europe/Kyiv' },
-  { title: '(GMT+02:00) Maputo', value: 'Africa/Maputo' },
-  { title: '(GMT+02:00) Moscow-01 - Kaliningrad', value: 'Europe/Kaliningrad' },
-  { title: '(GMT+02:00) Nicosia', value: 'Asia/Nicosia' },
-  { title: '(GMT+02:00) Riga', value: 'Europe/Riga' },
-  { title: '(GMT+02:00) Sofia', value: 'Europe/Sofia' },
-  { title: '(GMT+02:00) Tallinn', value: 'Europe/Tallinn' },
-  { title: '(GMT+02:00) Tripoli', value: 'Africa/Tripoli' },
-  { title: '(GMT+02:00) Vilnius', value: 'Europe/Vilnius' },
-  { title: '(GMT+02:00) Windhoek', value: 'Africa/Windhoek' },
-  { title: '(GMT+03:00) Baghdad', value: 'Asia/Baghdad' },
-  { title: '(GMT+03:00) Istanbul', value: 'Europe/Istanbul' },
-  { title: '(GMT+03:00) Minsk', value: 'Europe/Minsk' },
-  { title: '(GMT+03:00) Moscow+00 - Moscow', value: 'Europe/Moscow' },
-  { title: '(GMT+03:00) Nairobi', value: 'Africa/Nairobi' },
-  { title: '(GMT+03:00) Qatar', value: 'Asia/Qatar' },
-  { title: '(GMT+03:00) Riyadh', value: 'Asia/Riyadh' },
-  { title: '(GMT+03:00) Syowa', value: 'Antarctica/Syowa' },
-  { title: '(GMT+03:30) Tehran', value: 'Asia/Tehran' },
-  { title: '(GMT+04:00) Baku', value: 'Asia/Baku' },
-  { title: '(GMT+04:00) Dubai', value: 'Asia/Dubai' },
-  { title: '(GMT+04:00) Mahe', value: 'Indian/Mahe' },
-  { title: '(GMT+04:00) Mauritius', value: 'Indian/Mauritius' },
-  { title: '(GMT+04:00) Moscow+01 - Samara', value: 'Europe/Samara' },
-  { title: '(GMT+04:00) Reunion', value: 'Indian/Reunion' },
-  { title: '(GMT+04:00) Tbilisi', value: 'Asia/Tbilisi' },
-  { title: '(GMT+04:00) Yerevan', value: 'Asia/Yerevan' },
-  { title: '(GMT+04:30) Kabul', value: 'Asia/Kabul' },
-  { title: '(GMT+05:00) Aqtau', value: 'Asia/Aqtau' },
-  { title: '(GMT+05:00) Aqtobe', value: 'Asia/Aqtobe' },
-  { title: '(GMT+05:00) Ashgabat', value: 'Asia/Ashgabat' },
-  { title: '(GMT+05:00) Dushanbe', value: 'Asia/Dushanbe' },
-  { title: '(GMT+05:00) Karachi', value: 'Asia/Karachi' },
-  { title: '(GMT+05:00) Kerguelen', value: 'Indian/Kerguelen' },
-  { title: '(GMT+05:00) Maldives', value: 'Indian/Maldives' },
-  { title: '(GMT+05:00) Mawson', value: 'Antarctica/Mawson' },
-  { title: '(GMT+05:00) Moscow+02 - Yekaterinburg', value: 'Asia/Yekaterinburg' },
-  { title: '(GMT+05:00) Tashkent', value: 'Asia/Tashkent' },
-  { title: '(GMT+05:30) Colombo', value: 'Asia/Colombo' },
-  { title: '(GMT+05:30) India Standard Time', value: 'Asia/Kolkata' },
-  { title: '(GMT+05:45) Kathmandu', value: 'Asia/Kathmandu' },
-  { title: '(GMT+06:00) Almaty', value: 'Asia/Almaty' },
-  { title: '(GMT+06:00) Bishkek', value: 'Asia/Bishkek' },
-  { title: '(GMT+06:00) Chagos', value: 'Indian/Chagos' },
-  { title: '(GMT+06:00) Dhaka', value: 'Asia/Dhaka' },
-  { title: '(GMT+06:00) Moscow+03 - Omsk', value: 'Asia/Omsk' },
-  { title: '(GMT+06:00) Thimphu', value: 'Asia/Thimphu' },
-  { title: '(GMT+06:00) Vostok', value: 'Antarctica/Vostok' },
-  { title: '(GMT+06:30) Cocos', value: 'Indian/Cocos' },
-  { title: '(GMT+06:30) Rangoon', value: 'Asia/Yangon' },
-  { title: '(GMT+07:00) Bangkok', value: 'Asia/Bangkok' },
-  { title: '(GMT+07:00) Christmas', value: 'Indian/Christmas' },
-  { title: '(GMT+07:00) Davis', value: 'Antarctica/Davis' },
-  { title: '(GMT+07:00) Hanoi', value: 'Asia/Saigon' },
-  { title: '(GMT+07:00) Hovd', value: 'Asia/Hovd' },
-  { title: '(GMT+07:00) Jakarta', value: 'Asia/Jakarta' },
-  { title: '(GMT+07:00) Moscow+04 - Krasnoyarsk', value: 'Asia/Krasnoyarsk' },
-  { title: '(GMT+08:00) Brunei', value: 'Asia/Brunei' },
-  { title: '(GMT+08:00) China Time - Beijing', value: 'Asia/Shanghai' },
-  { title: '(GMT+08:00) Choibalsan', value: 'Asia/Choibalsan' },
-  { title: '(GMT+08:00) Hong Kong', value: 'Asia/Hong_Kong' },
-  { title: '(GMT+08:00) Kuala Lumpur', value: 'Asia/Kuala_Lumpur' },
-  { title: '(GMT+08:00) Macau', value: 'Asia/Macau' },
-  { title: '(GMT+08:00) Makassar', value: 'Asia/Makassar' },
-  { title: '(GMT+08:00) Manila', value: 'Asia/Manila' },
-  { title: '(GMT+08:00) Moscow+05 - Irkutsk', value: 'Asia/Irkutsk' },
-  { title: '(GMT+08:00) Singapore', value: 'Asia/Singapore' },
-  { title: '(GMT+08:00) Taipei', value: 'Asia/Taipei' },
-  { title: '(GMT+08:00) Ulaanbaatar', value: 'Asia/Ulaanbaatar' },
-  { title: '(GMT+08:00) Western Time - Perth', value: 'Australia/Perth' },
-  { title: '(GMT+08:30) Pyongyang', value: 'Asia/Pyongyang' },
-  { title: '(GMT+09:00) Dili', value: 'Asia/Dili' },
-  { title: '(GMT+09:00) Jayapura', value: 'Asia/Jayapura' },
-  { title: '(GMT+09:00) Moscow+06 - Yakutsk', value: 'Asia/Yakutsk' },
-  { title: '(GMT+09:00) Palau', value: 'Pacific/Palau' },
-  { title: '(GMT+09:00) Seoul', value: 'Asia/Seoul' },
-  { title: '(GMT+09:00) Tokyo', value: 'Asia/Tokyo' },
-  { title: '(GMT+09:30) Central Time - Darwin', value: 'Australia/Darwin' },
-  { title: '(GMT+10:00) Dumont D\'Urville', value: 'Antarctica/DumontDUrville' },
-  { title: '(GMT+10:00) Eastern Time - Brisbane', value: 'Australia/Brisbane' },
-  { title: '(GMT+10:00) Guam', value: 'Pacific/Guam' },
-  { title: '(GMT+10:00) Moscow+07 - Vladivostok', value: 'Asia/Vladivostok' },
-  { title: '(GMT+10:00) Port Moresby', value: 'Pacific/Port_Moresby' },
-  { title: '(GMT+10:00) Truk', value: 'Pacific/Chuuk' },
-  { title: '(GMT+10:30) Central Time - Adelaide', value: 'Australia/Adelaide' },
-  { title: '(GMT+11:00) Casey', value: 'Antarctica/Casey' },
-  { title: '(GMT+11:00) Eastern Time - Hobart', value: 'Australia/Hobart' },
-  { title: '(GMT+11:00) Eastern Time - Melbourne, Sydney', value: 'Australia/Sydney' },
-  { title: '(GMT+11:00) Efate', value: 'Pacific/Efate' },
-  { title: '(GMT+11:00) Guadalcanal', value: 'Pacific/Guadalcanal' },
-  { title: '(GMT+11:00) Kosrae', value: 'Pacific/Kosrae' },
-  { title: '(GMT+11:00) Moscow+08 - Magadan', value: 'Asia/Magadan' },
-  { title: '(GMT+11:00) Norfolk', value: 'Pacific/Norfolk' },
-  { title: '(GMT+11:00) Noumea', value: 'Pacific/Noumea' },
-  { title: '(GMT+11:00) Ponape', value: 'Pacific/Pohnpei' },
-  { title: '(GMT+12:00) Funafuti', value: 'Pacific/Funafuti' },
-  { title: '(GMT+12:00) Kwajalein', value: 'Pacific/Kwajalein' },
-  { title: '(GMT+12:00) Majuro', value: 'Pacific/Majuro' },
-  { title: '(GMT+12:00) Moscow+09 - Petropavlovsk-Kamchatskiy', value: 'Asia/Kamchatka' },
-  { title: '(GMT+12:00) Nauru', value: 'Pacific/Nauru' },
-  { title: '(GMT+12:00) Tarawa', value: 'Pacific/Tarawa' },
-  { title: '(GMT+12:00) Wake', value: 'Pacific/Wake' },
-  { title: '(GMT+12:00) Wallis', value: 'Pacific/Wallis' },
-  { title: '(GMT+13:00) Auckland', value: 'Pacific/Auckland' },
-  { title: '(GMT+13:00) Enderbury', value: 'Pacific/Enderbury' },
-  { title: '(GMT+13:00) Fakaofo', value: 'Pacific/Fakaofo' },
-  { title: '(GMT+13:00) Fiji', value: 'Pacific/Fiji' },
-  { title: '(GMT+13:00) Tongatapu', value: 'Pacific/Tongatapu' },
-  { title: '(GMT+14:00) Apia', value: 'Pacific/Apia' },
-  { title: '(GMT+14:00) Kiritimati', value: 'Pacific/Kiritimati' }
-])
-
+type Operation = AccountAction | 'profile' | 'password' | 'delete' | 'welcome'
+const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+const fieldTitles: Record<keyof AccountProfileDraft, string> = { name: 'Display name', email: 'Email address', jobTitle: 'Role or job title', location: 'Location', timezone: 'Time zone', groups: 'Group membership' }
+const descriptions: Record<AccountAction, string> = {
+  activate: 'Allow this person to sign in again under the provider’s current policies. Existing revoked sessions stay invalid.', deactivate: 'Suspend sign-in and end existing sessions. The account, memberships and contributions remain available for future reactivation.', verify: 'Mark the saved email address as verified after confirming that this person controls it. This action does not send a verification link.', 'require-2fa': 'Require authenticator enrollment during the next supported sign-in and end existing sessions. Any unfinished setup is cleared.', 'reset-2fa': 'Clear the current authenticator and require fresh enrollment at the next sign-in. Existing sessions will end. Confirm the person’s identity before proceeding.', 'disable-2fa': 'Remove this account’s authenticator and its account-specific requirement, then end existing sessions. This action is unavailable while the workspace requires two-factor authentication.', 'end-sessions': 'Invalidate existing sign-in tokens and pending recovery or sign-in links for this account. Current credentials remain usable for a new sign-in. Workspace API keys are unaffected.' }
 export default {
-  i18nOptions: {
-    namespaces: ['admin', 'profile']
-  },
-  components: {
-    StatusIndicator,
-    UserSearch
-  },
-  data () {
-    return {
-      userLoadRequestId: 0,
-      groupsLoadRequestId: 0,
-      userLoadState: 'loading' as 'loading' | 'ready' | 'error',
-      actionLoading: '',
-      userSnapshot: '',
-      deleteUserDialog: false,
-      deleteSearchUserDialog: false,
-      deleteReplaceUser: {
-        id: 1,
-        name: '',
-        email: ''
-      },
-      editPop: {
-        email: false,
-        name: false,
-        location: false,
-        jobTitle: false,
-        timezone: false,
-        newPassword: false,
-      },
-      newGroup: 0,
-      groups: [] as GroupOption[],
-      newPassword: '',
-      user: createEmptyUser(),
-      timezones: TIMEZONES
-    }
-  },
+  components: { AsyncState },
+  data() { return { saved: null as AccountWorkspace | null, draft: { name: '', email: '', location: '', jobTitle: '', timezone: 'UTC', groups: [] } as AccountProfileDraft, loading: false, loadError: '', sequence: 0, disposed: false, notice: '', section: 'profile', tabs: [{ key: 'profile', title: 'Profile & membership' }, { key: 'security', title: 'Sign-in & security' }, { key: 'activity', title: 'Activity' }], dialog: false, operation: 'profile' as Operation, reason: '', password: '', showPassword: false, mustChangePassword: true, busy: false, actionError: '', conflict: false, replacementSearch: '', replaceId: null as number | null, replacementOptions: [] as Array<{ id: number; title: string }>, replacementLoading: false, replacementError: '', replacementSequence: 0, replacementTimer: null as ReturnType<typeof setTimeout> | null, deleteConfirmation: '' } },
   computed: {
-    currentUserId(): number { return wikiStore.user.id },
-    recordReady(): boolean { return this.userLoadState === 'ready' && this.user.id > 0 },
-    hasUnsavedChanges(): boolean {
-      return this.recordReady && this.userSnapshot !== JSON.stringify({
-        email: this.user.email,
-        name: this.user.name,
-        newPassword: this.newPassword,
-        groups: this.user.groups.map(group => group.id),
-        location: this.user.location,
-        jobTitle: this.user.jobTitle,
-        timezone: this.user.timezone
-      })
-    }
-  },
-  watch: {
-    '$route.params.id' () {
-      this.resetUserEditorState()
-      this.user = createEmptyUser()
-      this.loadUser()
-    }
+    directoryPath(): string { const from = this.$route.query.from; return typeof from === 'string' && (from === '/users' || from.startsWith('/users?')) ? from : '/users' },
+    self(): boolean { return this.saved?.id === wikiStore.user.id },
+    dirty(): boolean { return Boolean(this.saved && JSON.stringify({ ...this.draft, groups: [...this.draft.groups].sort((a,b) => a-b) }) !== JSON.stringify(this.saved.profile)) },
+    emailChanged(): boolean { return Boolean(this.saved && this.draft.email.trim().toLowerCase() !== this.saved.email) },
+    groupsChanged(): boolean { return Boolean(this.saved && JSON.stringify([...this.draft.groups].sort((a,b) => a-b)) !== JSON.stringify(this.saved.profile.groups)) },
+    profileLocked(): boolean { return this.busy || this.dialog || !this.saved?.capabilities.edit },
+    actionLocked(): boolean { return this.dirty || this.busy || this.dialog },
+    profileIssues() { return accountProfileIssues(this.draft) },
+    draftPermissions() { return [...new Set((this.saved?.availableGroups ?? []).filter(group => this.draft.groups.includes(group.id)).flatMap(group => group.permissions))].sort() },
+    changes(): Array<{ key: string; title: string; before: string; after: string }> { if (!this.saved) return []; return (Object.keys(fieldTitles) as Array<keyof AccountProfileDraft>).flatMap(key => { const before = this.saved!.profile[key], after = this.draft[key]; if (key === 'groups' ? !this.groupsChanged : before === after) return []; const value = (input: string | number[]) => Array.isArray(input) ? input.map(id => this.saved?.availableGroups.find(group => group.id === id)?.name ?? '#' + id).join(', ') : input; return [{ key, title: fieldTitles[key], before: value(before), after: value(after) }] }) },
+    twoFactorTitle(): string { return ({ enrolled: 'Authenticator enrolled', 'enrollment-required': 'Enrollment required', off: 'No account requirement', 'provider-managed': 'Managed by the provider' })[this.saved?.twoFactor ?? 'off'] },
+    twoFactorDescription(): string { return ({ enrolled: 'An authenticator is enrolled for this account’s supported sign-in flow.', 'enrollment-required': 'This person must complete authenticator enrollment during their next supported sign-in.', off: 'This account does not currently require an authenticator in the workspace.', 'provider-managed': 'This provider handles its own sign-in challenges. Check the identity provider for its authentication policies.' })[this.saved?.twoFactor ?? 'off'] },
+    dialogTitle(): string { return this.operation === 'profile' ? 'Review profile changes' : this.operation === 'password' ? 'Replace password' : this.operation === 'delete' ? 'Delete account' : this.operation === 'welcome' ? 'Send a welcome email' : accountActionTitle[this.operation] },
+    dialogDescription(): string { return this.operation === 'profile' ? 'Apply the following changes to the saved account. Group or email changes end existing sign-in sessions.' : this.operation === 'password' ? 'Set a new local password and end existing sign-in sessions. Share it privately; the welcome email never contains a password.' : this.operation === 'delete' ? 'Private pages and history owned by this account must be resolved before deletion. Existing authorship and creation attribution will move to the selected person; content remains.' : this.operation === 'welcome' ? 'Send the configured workspace welcome template to this saved email address, including a link to sign in. This does not create a password, verify ownership or bypass sign-in requirements.' : descriptions[this.operation] },
+    endsOwnSessions(): boolean { return this.self && (this.operation === 'profile' ? this.emailChanged || this.groupsChanged : !['activate', 'verify', 'welcome', 'delete'].includes(this.operation)) },
+    canConfirm(): boolean { if (this.busy || this.reason.trim().length < 3 || this.reason.trim().length > 1000) return false; if (this.operation === 'profile') return this.dirty && this.profileIssues.length === 0; if (this.operation === 'password') return this.password.length >= 12 && new TextEncoder().encode(this.password).length <= 72; if (this.operation === 'delete') return Boolean(this.replaceId && this.deleteConfirmation === String(this.saved?.id)); return true }
   },
   methods: {
-    isCurrentUserAction (requestId: number, userId: number): boolean {
-      return requestId === this.userLoadRequestId && this.recordReady && this.user.id === userId
-    },
-    navigateBack () {
-      if (this.hasUnsavedChanges && !window.confirm('Discard unsaved user changes?')) return
-      this.$router.push('/users')
-    },
-    resetUserEditorState () {
-      this.userLoadState = 'loading'
-      this.userSnapshot = ''
-      this.actionLoading = ''
-      this.newPassword = ''
-      this.newGroup = 0
-      this.deleteUserDialog = false
-      this.deleteSearchUserDialog = false
-      this.deleteReplaceUser = {
-        id: 1,
-        name: '',
-        email: ''
-      }
-      this.editPop = {
-        email: false,
-        name: false,
-        location: false,
-        jobTitle: false,
-        timezone: false,
-        newPassword: false,
-      }
-    },
-    async loadUser () {
-      const requestId = ++this.userLoadRequestId
-      const routeUserId = getRouteUserId(this.$route.params.id)
-      this.userLoadState = 'loading'
-
-      wikiStore.startLoading('admin-users-refresh')
-      try {
-        const user = await fetchUserDetails(window.fetch.bind(window), routeUserId, 'User detail response is invalid')
-        if (requestId !== this.userLoadRequestId || routeUserId !== getRouteUserId(this.$route.params.id)) return false
-        this.user = user
-        this.newPassword = ''
-        this.userSnapshot = JSON.stringify({
-          email: user.email,
-          name: user.name,
-          newPassword: '',
-          groups: user.groups.map(group => group.id),
-          location: user.location,
-          jobTitle: user.jobTitle,
-          timezone: user.timezone
-        })
-        this.userLoadState = user.id > 0 ? 'ready' : 'error'
-        return this.userLoadState === 'ready'
-      } catch (err) {
-        if (requestId !== this.userLoadRequestId || routeUserId !== getRouteUserId(this.$route.params.id)) return false
-        this.user = createEmptyUser()
-        this.userLoadState = 'error'
-        wikiStore.showError(err)
-        return false
-      } finally {
-        wikiStore.stopLoading('admin-users-refresh')
-      }
-    },
-    async loadGroups() {
-      const requestId = ++this.groupsLoadRequestId
-      wikiStore.startLoading('admin-groups-refresh')
-      try {
-        const groups = await fetchGroupOptions(window.fetch.bind(window), 'Groups response is invalid')
-        if (requestId !== this.groupsLoadRequestId) return
-        this.groups = markRaw(groups)
-      } catch (err) {
-        if (requestId !== this.groupsLoadRequestId) return
-        wikiStore.showNotification({
-          style: 'red',
-          message: getErrorMessage(err),
-          icon: 'alert'
-        })
-      } finally {
-        wikiStore.stopLoading('admin-groups-refresh')
-      }
-    },
-    /**
-     * Activate a user (if previously deactivated)
-     */
-    async activateUser () {
-      if (!this.recordReady || this.actionLoading !== '') return
-      this.actionLoading = 'activate'
-      const requestId = this.userLoadRequestId
-      const userId = this.user.id
-      wikiStore.startLoading('admin-users-activate')
-      try {
-        await setAdminUserActive(window.fetch.bind(window), userId, true)
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'success',
-          message: this.$t('admin:users.userActivateSuccess'),
-          icon: 'check'
-        })
-        this.user.isActive = true
-      } catch (err) {
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'red',
-          message: getErrorMessage(err),
-          icon: 'warning'
-        })
-      } finally {
-        wikiStore.stopLoading('admin-users-activate')
-        if (this.isCurrentUserAction(requestId, userId)) this.actionLoading = ''
-      }
-    },
-    /**
-     * Deactivate a currently active user
-     */
-    async deactivateUser () {
-      if (!this.recordReady || this.actionLoading !== '') return
-      this.actionLoading = 'deactivate'
-      const requestId = this.userLoadRequestId
-      const userId = this.user.id
-      wikiStore.startLoading('admin-users-deactivate')
-      try {
-        await setAdminUserActive(window.fetch.bind(window), userId, false)
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'success',
-          message: this.$t('admin:users.userDeactivateSuccess'),
-          icon: 'check'
-        })
-        this.user.isActive = false
-      } catch (err) {
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'red',
-          message: getErrorMessage(err),
-          icon: 'warning'
-        })
-      } finally {
-        wikiStore.stopLoading('admin-users-deactivate')
-        if (this.isCurrentUserAction(requestId, userId)) this.actionLoading = ''
-      }
-    },
-    /**
-     * Delete a user
-     */
-    deleteUserConfirm () {
-      if (!this.recordReady || this.actionLoading !== '') return
-      this.deleteReplaceUser = {
-        id: this.currentUserId,
-        name: wikiStore.user.name,
-        email: wikiStore.user.email
-      }
-      this.deleteUserDialog = true
-    },
-    async deleteUser () {
-      if (!this.recordReady || this.actionLoading !== '') return
-      this.actionLoading = 'delete'
-      const requestId = this.userLoadRequestId
-      const userId = this.user.id
-      wikiStore.startLoading('admin-users-delete')
-      try {
-        await deleteAdminUser(window.fetch.bind(window), userId, this.deleteReplaceUser.id)
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'success',
-          message: this.$t('admin:users.userDeleteSuccess'),
-          icon: 'check'
-        })
-        this.$router.push('/users')
-      } catch (err) {
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'red',
-          message: getErrorMessage(err),
-          icon: 'warning'
-        })
-      } finally {
-        if (this.isCurrentUserAction(requestId, userId)) {
-          this.deleteUserDialog = false
-          this.actionLoading = ''
-        }
-        wikiStore.stopLoading('admin-users-delete')
-      }
-    },
-    assignDeleteUser (selUsr: UserSearchRow) {
-      if (this.actionLoading !== '') return
-      if (selUsr.id === this.user.id) {
-        wikiStore.showNotification({
-          style: 'red',
-          message: 'You cannot select the account you\'re about to delete!',
-          icon: 'warning'
-        })
-      } else if (selUsr.id === 2) {
-        wikiStore.showNotification({
-          style: 'red',
-          message: 'You cannot use the guest account for this operation.',
-          icon: 'warning'
-        })
-      } else {
-        this.deleteReplaceUser = selUsr
-      }
-    },
-    /**
-     * Update a user
-     */
-    async updateUser() {
-      if (!this.recordReady || !this.hasUnsavedChanges || this.actionLoading !== '') return
-      this.actionLoading = 'update'
-      const requestId = this.userLoadRequestId
-      const userId = this.user.id
-      wikiStore.startLoading('admin-users-update')
-      try {
-        await updateAdminUser(window.fetch.bind(window), userId, {
-          email: this.user.email,
-          name: this.user.name,
-          newPassword: this.newPassword,
-          groups: this.user.groups.map(group => group.id),
-          location: this.user.location,
-          jobTitle: this.user.jobTitle,
-          timezone: this.user.timezone
-        })
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        this.newPassword = ''
-        wikiStore.showNotification({
-          style: 'success',
-          message: this.$t('admin:users.userUpdateSuccess'),
-          icon: 'check'
-        })
-        this.$router.push('/users')
-      } catch (err) {
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'red',
-          message: getErrorMessage(err),
-          icon: 'warning'
-        })
-      } finally {
-        wikiStore.stopLoading('admin-users-update')
-        if (this.isCurrentUserAction(requestId, userId)) this.actionLoading = ''
-      }
-    },
-    /**
-     * Focus an input after delay
-     */
-    focusField (ipt: UserEditorFieldRef) {
-      this.$nextTick(() => {
-        _.delay(() => {
-          ;(this.$refs[ipt] as FocusableRef | undefined)?.focus()
-        }, 200)
-      })
-    },
-    mergeActivatorProps(menuProps: Parameters<typeof mergeProps>[number], tooltipProps: Parameters<typeof mergeProps>[number]) {
-      return mergeProps(menuProps, tooltipProps)
-    },
-    /**
-     * Assign group to user
-     */
-    assignGroup() {
-      if (!this.recordReady || this.newGroup <= 0 || this.actionLoading !== '') return
-      if (_.some(this.user.groups, ['id', this.newGroup])) {
-        wikiStore.showNotification({
-          message: this.$t('admin:users.userAlreadyAssignedToGroup'),
-          style: 'error',
-          icon: 'alert'
-        })
-      } else {
-        const group = this.groups.find(group => group.id === this.newGroup)
-        if (group) {
-          this.user.groups.push(group)
-        }
-        this.newGroup = 0
-      }
-    },
-    /**
-     * Unassign group from user
-     */
-    unassignGroup(gid: number) {
-      if (!this.recordReady || gid <= 0 || this.actionLoading !== '') return
-      this.user.groups = this.user.groups.filter(group => group.id !== gid)
-    },
-    /**
-     * Manually set user as verified
-     */
-    async verifyUser () {
-      if (!this.recordReady || this.actionLoading !== '') return
-      this.actionLoading = 'verify'
-      const requestId = this.userLoadRequestId
-      const userId = this.user.id
-      wikiStore.startLoading('admin-users-verify')
-      try {
-        await verifyAdminUser(window.fetch.bind(window), userId)
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'success',
-          message: this.$t('admin:users.userVerifySuccess'),
-          icon: 'check'
-        })
-        this.user.isVerified = true
-      } catch (err) {
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'red',
-          message: getErrorMessage(err),
-          icon: 'warning'
-        })
-      } finally {
-        wikiStore.stopLoading('admin-users-verify')
-        if (this.isCurrentUserAction(requestId, userId)) this.actionLoading = ''
-      }
-    },
-    /**
-     * Send or resend the account invitation without changing the user.
-     */
-    async sendWelcomeEmail () {
-      if (!this.recordReady || this.actionLoading !== '') return
-      this.actionLoading = 'welcomeEmail'
-      const requestId = this.userLoadRequestId
-      const userId = this.user.id
-      try {
-        await sendAdminUserWelcomeEmail(window.fetch.bind(window), userId)
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'success',
-          message: 'Welcome email sent successfully.',
-          icon: 'email-check'
-        })
-      } catch (err) {
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'red',
-          message: getErrorMessage(err),
-          icon: 'email-alert'
-        })
-      } finally {
-        if (this.isCurrentUserAction(requestId, userId)) this.actionLoading = ''
-      }
-    },
-    /**
-     * Toggle 2FA State
-     */
-    async toggle2FA () {
-      if (!this.recordReady || this.actionLoading !== '') return
-      this.actionLoading = 'toggle2fa'
-      const requestId = this.userLoadRequestId
-      const userId = this.user.id
-      wikiStore.startLoading('admin-users-toggle2fa')
-      const enabled = !this.user.tfaIsActive
-      try {
-        await setAdminUserTfa(window.fetch.bind(window), userId, enabled)
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'success',
-          message: this.$t(enabled ? 'admin:users.userTFAEnableSuccess' : 'admin:users.userTFADisableSuccess'),
-          icon: 'check'
-        })
-        this.user.tfaIsActive = enabled
-      } catch (err) {
-        if (!this.isCurrentUserAction(requestId, userId)) return
-        wikiStore.showNotification({
-          style: 'red',
-          message: getErrorMessage(err),
-          icon: 'warning'
-        })
-      } finally {
-        wikiStore.stopLoading('admin-users-toggle2fa')
-        if (this.isCurrentUserAction(requestId, userId)) this.actionLoading = ''
-      }
-    }
+    async reload() { if (this.busy || (this.dirty && !window.confirm('Discard unsaved profile changes and reload this account?'))) return; const sequence = ++this.sequence; this.loading = true; this.loadError = ''; this.saved = null; try { const value = await fetchAccount(Number(this.$route.params.id)); if (!this.disposed && sequence === this.sequence) { this.saved = value; this.draft = copy(value.profile) } } catch (error) { if (!this.disposed && sequence === this.sequence) this.loadError = getErrorMessage(error) } finally { if (!this.disposed && sequence === this.sequence) this.loading = false } },
+    reset() { if (this.saved && !this.busy && !this.dialog) this.draft = copy(this.saved.profile) },
+    can(action: AccountAction): boolean { return this.saved?.capabilities.actions.includes(action) ?? false },
+    open(operation: Operation) { if (this.busy || (operation !== 'profile' && this.dirty)) return; this.operation = operation; this.reason = ''; this.password = ''; this.showPassword = false; this.mustChangePassword = true; this.actionError = ''; this.conflict = false; this.deleteConfirmation = ''; this.replaceId = null; this.replacementSearch = ''; this.replacementOptions = []; this.dialog = true; if (operation === 'delete') this.searchReplacements() },
+    async reloadReview() { this.dialog = false; this.password = ''; await this.reload() },
+    async confirm() { if (!this.saved || !this.canConfirm) return; const id = this.saved.id, operation = this.operation, ownSessions = this.endsOwnSessions; this.busy = true; this.actionError = ''; try { let next: AccountWorkspace | null = null; if (operation === 'profile') next = await saveAccountProfile(id, copy(this.draft), this.reason.trim(), this.saved.fingerprint); else if (operation === 'password') next = await replaceAccountPassword(id, this.password, this.mustChangePassword, this.reason.trim(), this.saved.fingerprint); else if (operation === 'delete') { await deleteAccount(id, this.replaceId!, this.reason.trim(), this.saved.fingerprint); this.dialog = false; this.busy = false; this.draft = copy(this.saved.profile); await this.$router.push(this.directoryPath); return } else if (operation === 'welcome') { await sendAccountWelcomeEmail(id, this.reason.trim(), this.saved.fingerprint); this.notice = 'Welcome email accepted by the mail service. Delivery is not confirmed.'; try { next = await fetchAccount(id) } catch { this.notice += ' Reload to refresh account history.' } } else next = await actOnAccount(id, operation, this.reason.trim(), this.saved.fingerprint); if (this.disposed) return; if (next) { this.saved = next; this.draft = copy(next.profile); if (operation !== 'welcome') this.notice = operation === 'profile' ? 'Profile changes saved.' : this.dialogTitle + ' completed.' } this.dialog = false; this.password = ''; if (ownSessions) window.location.assign('/login') } catch (error) { if (!this.disposed) { this.conflict = accountRequestStatus(error) === 409; this.actionError = getErrorMessage(error) + (accountRequestStatus(error) === 0 ? ' The outcome is unconfirmed. Reload the account before repeating this action.' : '') } } finally { if (!this.disposed) this.busy = false } },
+    searchReplacements() { if (this.replacementTimer) clearTimeout(this.replacementTimer); const sequence = ++this.replacementSequence, search = this.replacementSearch || ''; this.replacementTimer = setTimeout(async () => { this.replacementLoading = true; this.replacementError = ''; try { const value = await fetchAccountDirectory(new URLSearchParams({ search, state: 'active', limit: '25' })); if (!this.disposed && sequence === this.replacementSequence) this.replacementOptions = value.items.filter(row => row.id !== this.saved?.id && row.id !== 2 && row.groups.every(group => this.saved?.availableGroups.some(option => option.id === group.id && option.canAssign))).map(row => ({ id: row.id, title: `${row.name} · ${row.email}` })) } catch (error) { if (!this.disposed && sequence === this.replacementSequence) this.replacementError = getErrorMessage(error) } finally { if (!this.disposed && sequence === this.replacementSequence) this.replacementLoading = false } }, 250) },
+    setSection(key: string) { this.section = key; void this.$router.replace({ query: this.$route.query, hash: '#' + key }) },
+    tabKey(event: KeyboardEvent, key: string) { if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return; event.preventDefault(); const index = event.key === 'Home' ? 0 : event.key === 'End' ? this.tabs.length - 1 : (this.tabs.findIndex(tab => tab.key === key) + (event.key === 'ArrowRight' ? 1 : -1) + this.tabs.length) % this.tabs.length; const next = this.tabs[index]!.key; this.setSection(next); this.$nextTick(() => document.getElementById('account-tab-' + next)?.focus()) },
+    initials(value: string) { return value.trim().split(/\s+/).slice(0,2).map(part => part[0]).join('').toUpperCase() },
+    date(value: string) { const date = new Date(value); return Number.isNaN(date.valueOf()) ? 'Not recorded' : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) },
+    eventTitle(action: string): string { return (accountActionTitle as Record<string,string>)[action] ?? ({ 'profile-updated': 'Profile updated', 'account-created': 'Account created', 'account-deleted': 'Account deleted', 'password-replaced': 'Password replaced', 'welcome-email-requested': 'Welcome email requested · outcome not recorded', 'welcome-email-accepted': 'Welcome email accepted by mail service', 'welcome-email-failed': 'Welcome email failed' } as Record<string,string>)[action] ?? action },
+    eventFields(details: Record<string,unknown>): string[] { const fields = Array.isArray(details.fields) ? details.fields.filter((value): value is string => typeof value === 'string').map(value => fieldTitles[value as keyof AccountProfileDraft] ?? value) : []; return [...fields, ...(details.sessionsEnded === true ? ['Existing sign-in sessions ended'] : [])] },
+    canLeave(): boolean { return !this.busy && ((!this.dirty && !(this.dialog && (this.password || this.reason))) || window.confirm('Discard the unsaved account changes?')) },
+    beforeUnload(event: BeforeUnloadEvent) { if (this.dirty || this.busy || (this.dialog && (this.password || this.reason))) { event.preventDefault(); event.returnValue = '' } }
   },
-  created() {
-    this.loadGroups()
-    this.loadUser()
-  },
-  beforeUnmount() {
-    this.groupsLoadRequestId++
-    this.userLoadRequestId++
-  }
+  watch: { '$route.hash': { immediate: true, handler(hash: string) { this.section = this.tabs.some(tab => tab.key === hash.slice(1)) ? hash.slice(1) : 'profile' } }, '$route.params.id'() { if (this.saved) this.draft = copy(this.saved.profile); this.dialog = false; this.password = ''; this.notice = ''; void this.reload() }, dialog(value: boolean) { if (!value) { this.password = ''; this.replacementSequence++; if (this.replacementTimer) clearTimeout(this.replacementTimer) } } },
+  mounted() { void this.reload(); window.addEventListener('beforeunload', this.beforeUnload) },
+  beforeRouteLeave() { return this.canLeave() },
+  beforeRouteUpdate(to, from) { return to.params.id === from.params.id || this.canLeave() },
+  beforeUnmount() { this.disposed = true; this.sequence++; this.replacementSequence++; if (this.replacementTimer) clearTimeout(this.replacementTimer); this.password = ''; window.removeEventListener('beforeunload', this.beforeUnload) }
 }
 </script>
-
-<style lang='scss'>
-
+<style lang="scss">
+.account-workspace,.account-review-dialog { --account-line:rgba(var(--v-theme-on-surface),.12); --account-muted:rgba(var(--v-theme-on-surface),.68); .account-eyebrow { display:block; font-size:.66rem; letter-spacing:.12em; text-transform:uppercase; font-weight:650; color:var(--account-muted); } }
+.account-workspace .admin-hero__description { overflow-wrap:anywhere; }
+.account-identity { display:flex; gap:16px; align-items:center; padding:12px 0 22px; }
+.account-portrait { display:grid; place-items:center; width:44px; height:44px; flex-shrink:0; border:1px solid rgba(var(--v-theme-primary),.28); background:rgba(var(--v-theme-primary),.08); border-radius:50%; font-size:.9rem; letter-spacing:-.02em; }
+.account-identity-name { min-width:0; h2 { margin:6px 0; font-size:1.85rem; letter-spacing:-.035em; font-weight:500; line-height:1.2; overflow-wrap:anywhere; } p { margin:6px 0 0; font-size:.84rem; color:var(--account-muted); overflow-wrap:anywhere; } }
+.account-identity-status { margin-left:auto; display:flex; align-items:flex-end; flex-direction:column; gap:9px; span { display:flex; align-items:center; gap:7px; font-size:.83rem; } i { width:7px; height:7px; background:rgb(var(--v-theme-success)); border-radius:50%; &.paused { background:rgba(var(--v-theme-on-surface),.4); } } small { font-size:.72rem; color:var(--account-muted); } }
+.account-tabs-row { display:flex; justify-content:space-between; gap:18px; align-items:center; border-bottom:1px solid var(--account-line); margin-bottom:26px; >span { font-size:.72rem; color:var(--account-muted); } }
+.account-tabs { display:flex; gap:25px; button { background:transparent; border:0; border-bottom:3px solid transparent; color:var(--account-muted); padding:15px 0; cursor:pointer; font-size:.81rem; font-weight:550; &[aria-selected=true] { border-bottom-color:rgb(var(--v-theme-primary)); color:rgb(var(--v-theme-on-surface)); } &:focus-visible { outline:2px solid rgb(var(--v-theme-on-surface)); outline-offset:4px; } } }
+.account-profile-layout { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:24px; align-items:start; }
+.account-main-column { display:grid; gap:22px; min-width:0; }
+.account-surface { padding:26px; border:1px solid var(--account-line); border-radius:12px; background:rgb(var(--v-theme-surface)); header { margin-bottom:24px; h3 { margin:7px 0 8px; font-size:1.2rem; font-weight:500; letter-spacing:-.02em; } p { margin:0; font-size:.8rem; line-height:1.7; color:var(--account-muted); max-width:620px; } } }
+.account-profile-form { display:grid; grid-template-columns:1fr 1fr; gap:4px 18px; >* { min-width:0; } }
+.account-impact-note { display:flex; align-items:flex-start; gap:12px; padding:16px; background:rgba(var(--v-theme-primary),.06); border-left:2px solid rgb(var(--v-theme-primary)); margin-top:18px; p { margin:0; font-size:.8rem; line-height:1.6; } }
+.account-membership-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; label { border:1px solid var(--account-line); border-radius:8px; display:flex; gap:12px; align-items:flex-start; padding:15px; cursor:pointer; min-width:0; &.selected { border-color:rgba(var(--v-theme-primary),.6); background:rgba(var(--v-theme-primary),.04); } &.locked { cursor:default; } input { margin-top:3px; width:16px; height:16px; flex-shrink:0; accent-color:rgb(var(--v-theme-primary)); } span { min-width:0; } strong { display:block; font-size:.8rem; font-weight:600; overflow-wrap:anywhere; } small { display:block; font-size:.68rem; margin-top:5px; color:var(--account-muted); } } }
+.account-permissions { margin-top:20px; summary { font-size:.78rem; cursor:pointer; } >ul { display:flex; flex-wrap:wrap; gap:6px 18px; padding:16px 0 0; list-style:none; font-size:.73rem; } p { font-size:.76rem; margin-top:12px; color:var(--account-muted); } }
+.account-context-column { display:grid; gap:22px; }
+.account-context-card { padding:24px 20px; border:1px solid var(--account-line); border-radius:10px; dl { margin-top:22px; display:grid; gap:20px; } dt { font-size:.69rem; color:var(--account-muted); margin-bottom:6px; } dd { font-size:.8rem; overflow-wrap:anywhere; } >p { margin:20px 0 0; font-size:.71rem; line-height:1.6; color:var(--account-muted); } .account-contributions { gap:17px; >div { display:flex; justify-content:space-between; gap:12px; align-items:center; } dt { margin:0; } dd { font-size:1rem; font-variant-numeric:tabular-nums; } } }
+.account-private-note { display:flex; gap:8px; padding-top:18px; margin-top:18px; border-top:1px solid var(--account-line); font-size:.72rem; line-height:1.6; }
+.account-footnote { font-size:.74rem!important; line-height:1.65; color:var(--account-muted); margin:14px 0 0; a { color:inherit; text-underline-offset:3px; } }
+.account-draft-bar { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:20px 0; margin-top:5px; >div:last-child { display:flex; gap:8px; } strong { font-size:.82rem; display:block; font-weight:550; } span { display:block; font-size:.71rem; color:var(--account-muted); margin-top:5px; } }
+.account-section-heading { display:flex; gap:24px; justify-content:space-between; align-items:center; padding:4px 0 25px; h3 { font-size:1.45rem; margin:8px 0 10px; font-weight:500; letter-spacing:-.025em; } p { font-size:.82rem; max-width:620px; line-height:1.65; color:var(--account-muted); margin:0; } }
+.account-security-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+.account-security-card { display:flex; flex-direction:column; align-items:flex-start; padding:26px; border:1px solid var(--account-line); border-radius:12px; background:rgb(var(--v-theme-surface)); >.v-icon { margin-bottom:19px; color:var(--account-muted); } h4 { font-size:1.08rem; font-weight:550; margin:7px 0 10px; } >p { font-size:.8rem; line-height:1.7; color:var(--account-muted); margin:0 0 20px; } >small { font-size:.72rem; color:var(--account-muted); line-height:1.6; margin-bottom:18px; } >.v-btn,.account-security-actions { margin-top:auto; } .account-footnote { margin:14px 0 0; } }
+.account-security-actions { display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; .v-btn { max-width:100%; } }
+.account-deletion { margin-top:28px; border-top:1px solid var(--account-line); padding:30px 0 10px; display:flex; align-items:center; justify-content:space-between; gap:28px; h4 { font-size:1.1rem; font-weight:550; margin:8px 0; } p { font-size:.8rem; color:var(--account-muted); line-height:1.7; margin:0; max-width:650px; } }
+.account-activity { list-style:none; padding:0; margin:4px 0; >li { display:grid; grid-template-columns:20px 1fr; gap:16px; padding:0 0 28px; position:relative; &::before { content:''; position:absolute; top:9px; bottom:0; left:4px; border-left:1px solid var(--account-line); } &:last-child::before { bottom:calc(100% - 10px); } >div { border:1px solid var(--account-line); border-radius:10px; padding:22px 24px; background:rgb(var(--v-theme-surface)); } small { font-size:.72rem; color:var(--account-muted); display:block; margin-top:7px; } p { font-size:.83rem; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.7; margin:16px 0 0; } ul { list-style:none; padding:0; display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; li { font-size:.67rem; padding:4px 7px; border-radius:4px; background:rgba(var(--v-theme-on-surface),.045); } } } }
+.account-event-dot { height:9px; width:9px; margin-top:8px; border-radius:50%; background:rgb(var(--v-theme-primary)); z-index:1; }
+.account-event-heading { display:flex; justify-content:space-between; gap:20px; h4 { font-size:.92rem; font-weight:600; } time { font-size:.7rem; color:var(--account-muted); flex-shrink:0; } }
+.account-review-dialog { max-height:90dvh; .v-card-title { white-space:normal; padding:26px 28px 16px; h2 { font-size:1.45rem; margin-top:7px; font-weight:500; } } .v-card-text { padding:10px 28px 26px; overflow-y:auto; } .v-card-actions { padding:16px 22px; border-top:1px solid var(--account-line); flex-wrap:wrap; } }
+.account-review-person { display:flex; flex-direction:column; gap:5px; margin:0 0 18px; strong { font-size:1.1rem; font-weight:550; overflow-wrap:anywhere; } span { font-size:.83rem; color:var(--account-muted); overflow-wrap:anywhere; } }
+.account-review-description { font-size:.85rem; color:var(--account-muted); line-height:1.7; margin-bottom:24px; }
+.account-review-changes { display:grid; gap:18px; border-block:1px solid var(--account-line); padding:22px 0; dt { font-size:.72rem; color:var(--account-muted); margin-bottom:8px; } dd { display:flex; gap:14px; align-items:center; font-size:.85rem; overflow-wrap:anywhere; >span,>strong { flex:1; min-width:0; } >span { color:var(--account-muted); } strong { font-weight:550; } } }
+.account-delete-counts { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:22px 0; dt { font-size:.7rem; color:var(--account-muted); line-height:1.5; } dd { font-size:1.25rem; margin-top:8px; } }
+@media(max-width:1100px) { .account-profile-layout { grid-template-columns:1fr; } .account-context-column { grid-template-columns:1fr 1fr; } .account-tabs-row { align-items:flex-start; flex-direction:column; gap:0; >span { padding-bottom:12px; } } }
+@media(max-width:700px) { .account-identity { flex-wrap:wrap; gap:14px; padding:5px 0 20px; } .account-identity-name { flex:1; h2 { font-size:1.5rem; } } .account-identity-status { width:100%; align-items:center; flex-direction:row; flex-wrap:wrap; gap:10px 18px; margin-left:0; } .account-portrait { width:44px; height:44px; font-size:.9rem; } .account-tabs { gap:16px; width:100%; button { font-size:.73rem; } } .account-profile-form,.account-membership-grid,.account-context-column,.account-security-grid { grid-template-columns:1fr; } .account-surface,.account-security-card { padding:21px 18px; } .account-draft-bar,.account-section-heading,.account-deletion { align-items:flex-start; flex-direction:column; gap:17px; } .account-draft-bar>div:last-child { flex-wrap:wrap; } .account-security-card .v-btn { white-space:normal; height:auto; min-height:36px; padding-block:9px; .v-btn__content { white-space:normal; } } .account-event-heading { flex-direction:column; gap:8px; } .account-activity>li { gap:7px; >div { padding:18px; } } .account-review-dialog .v-card-title { padding:22px 20px 14px; } .account-review-dialog .v-card-text { padding:8px 20px 20px; } .account-delete-counts { grid-template-columns:1fr 1fr; } }
 </style>

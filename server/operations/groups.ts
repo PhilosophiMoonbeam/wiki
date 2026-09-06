@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { randomUUID } from 'node:crypto'
 
 import type { Knex } from 'knex'
 
@@ -237,6 +238,11 @@ const reload = async (): Promise<void> => {
 }
 const lockGroup = async (transaction: Knex.Transaction, id: number): Promise<GroupRecord | undefined> =>
   transaction<GroupRecord>('groups').where({ id }).forUpdate().first()
+const endMemberSessions = async (transaction: Knex.Transaction, userIds: number[]): Promise<void> => {
+  if (!userIds.length) return
+  await transaction('users').whereIn('id', userIds).orderBy('id').forUpdate().select('id')
+  await transaction('users').whereIn('id', userIds).update({ authVersion: transaction.raw('?? + 1', ['authVersion']), sessionsRevokedAt: new Date(), adminRevision: randomUUID() })
+}
 
 const list = (): GroupQuery =>
   wiki.models.groups
@@ -291,7 +297,7 @@ const assignUser = async ({ requester, groupId: groupIdValue, userId: userIdValu
       targetAuthorityErrors.assign
     )
 
-    const user = await transaction<UserRecord>('users').where({ id: userId }).first()
+    const user = await transaction<UserRecord>('users').where({ id: userId }).forUpdate().first()
     if (!user) {
       throw new ApplicationError('Invalid User ID', { code: 'USER_NOT_FOUND', status: 404 })
     }
@@ -302,6 +308,7 @@ const assignUser = async ({ requester, groupId: groupIdValue, userId: userIdValu
     }
 
     await transaction('userGroups').insert({ userId: user.id, groupId })
+    await endMemberSessions(transaction, [user.id])
   })
   revoke(userId, 'u')
 }
@@ -317,7 +324,8 @@ const unassignUser = async ({ requester, groupId: groupIdValue, userId: userIdVa
     throw new ApplicationError('Cannot unassign Administrator user from Administrators group.', { code: 'GROUP_UNASSIGN_ADMINISTRATOR' })
   }
 
-  const group = await get(groupId)
+  await wiki.models.knex.transaction(async transaction => {
+  const group = await lockGroup(transaction, groupId)
   if (!group) {
     throw new ApplicationError('Invalid Group ID', { code: 'GROUP_NOT_FOUND', status: 404 })
   }
@@ -330,13 +338,15 @@ const unassignUser = async ({ requester, groupId: groupIdValue, userId: userIdVa
     targetAuthorityErrors.unassign
   )
 
-  const user = await wiki.models.users.query().findById(userId)
+  const user = await transaction<UserRecord>('users').where({ id: userId }).forUpdate().first()
   if (!user) {
     throw new ApplicationError('Invalid User ID', { code: 'USER_NOT_FOUND', status: 404 })
   }
 
-  await group.$relatedQuery('users').unrelate().where('userId', user.id)
-  revoke(user.id, 'u')
+  const removed = await transaction('userGroups').where({ groupId, userId }).delete()
+  if (removed) await endMemberSessions(transaction, [userId])
+  })
+  revoke(userId, 'u')
 }
 
 const remove = async ({ requester, id: idValue }: GroupRemovalInput): Promise<void> => {
@@ -345,13 +355,18 @@ const remove = async ({ requester, id: idValue }: GroupRemovalInput): Promise<vo
   if (id === 1 || id === 2) {
     throw new ApplicationError('Cannot delete this group.', { code: 'GROUP_DELETE_PROTECTED' })
   }
-  const group = await get(id)
+  await wiki.models.knex.transaction(async transaction => {
+  const group = await lockGroup(transaction, id)
+  if (!group) throw new ApplicationError('Invalid Group ID', { code: 'GROUP_NOT_FOUND', status: 404 })
   if (group?.isSystem) {
     throw new ApplicationError('Cannot delete this group.', { code: 'GROUP_DELETE_PROTECTED' })
   }
   const permissions = Array.isArray(group?.permissions) ? group.permissions : []
   assertTargetAuthority(requester, hasAdministrativePermissions(permissions), hasSystemPermissions(permissions), ['write:groups'], targetAuthorityErrors.delete)
-  await wiki.models.groups.query().deleteById(id)
+  const members = await transaction<{ userId: number }>('userGroups').where('groupId', id).select('userId')
+  await endMemberSessions(transaction, members.map(row => row.userId))
+  await wiki.models.groups.query(transaction).deleteById(id)
+  })
   revoke(id, 'g')
   await reload()
 }
@@ -420,6 +435,10 @@ const update = async (input: GroupUpdateInput): Promise<void> => {
       .where('id', id)
     if (updatedRows !== 1) {
       throw new ApplicationError('Invalid Group ID', { code: 'GROUP_NOT_FOUND', status: 404 })
+    }
+    if (authorityChanged || JSON.stringify(group.pageRules) !== JSON.stringify(pageRules)) {
+      const members = await transaction<{ userId: number }>('userGroups').where('groupId', id).select('userId')
+      await endMemberSessions(transaction, members.map(row => row.userId))
     }
   })
 

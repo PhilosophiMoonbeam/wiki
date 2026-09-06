@@ -1,6 +1,7 @@
 import _ from 'lodash'
 
 import errors from './errors.ts'
+import { accountAdministration } from './account-administration.ts'
 import { ProfilePreferencesInputSchema } from '../../shared/user-presentation.ts'
 
 const { ApplicationError } = errors
@@ -104,7 +105,7 @@ interface WikiUsers {
     users: {
       query(): UserQuery
       createNewUser(input: CreateUserInput): Promise<unknown>
-      sendWelcomeEmail(input: { id: number }): Promise<void>
+      sendWelcomeEmail(input: { id: number; expectedEmail?: string }): Promise<void>
       updateUser(input: UpdateUserInput): Promise<boolean>
       deleteUser(id: number, replaceId: number): Promise<unknown>
       refreshToken(user: number | UserRecord): Promise<{ token: string }>
@@ -293,61 +294,68 @@ const updateInput = (value: unknown): UpdateUserInput => {
   if (input.groups !== undefined && input.groups !== null) result.groups = groupsValue(input.groups)
   return result
 }
-const create = async ({ requester, input }: UserRequest): Promise<{ welcomeEmailError?: string }> => {
-  const normalized = createInput(input)
-  if (!(await wiki.auth.checkAssignUserToGroupAccess(requester, normalized.groups)))
-    throw new ApplicationError('You are not authorized to create a user with an assignment to an administrative group.', {
-      code: 'USER_CREATE_GROUP_FORBIDDEN',
-      status: 403
-    })
-  const result = await wiki.models.users.createNewUser(normalized)
-  if (isRecord(result) && typeof result.welcomeEmailError === 'string') {
-    return { welcomeEmailError: result.welcomeEmailError }
+const create = async ({ requester, input }: UserRequest): Promise<{ id: number; welcomeEmailError?: string }> => {
+  const normalized = createInput(input), store = accountAdministration(), options = await store.creationOptions(requester)
+  const result = await store.create(requester, { fingerprint: options.fingerprint, providerKey: normalized.providerKey, profile: { name: normalized.name, email: normalized.email, groups: normalized.groups, location: '', jobTitle: '', timezone: 'UTC' }, password: normalized.passwordRaw, isVerified: true, mustChangePassword: normalized.mustChangePassword ?? false, reason: 'Account created through the administration API' })
+  if (normalized.sendWelcomeEmail) {
+    try { await wiki.models.users.sendWelcomeEmail({ id: result.id }) }
+    catch { return { ...result, welcomeEmailError: 'The account was created, but the welcome email could not be sent.' } }
   }
-  return {}
+  return result
 }
 const update = async ({ requester, input }: UserRequest): Promise<void> => {
-  const normalized = updateInput(input)
-  if (!(await wiki.auth.checkAssignUserToGroupAccess(requester, normalized.groups)))
-    throw new ApplicationError('You are not authorized to modify / assign a user from / to an administrative group.', {
-      code: 'USER_UPDATE_GROUP_FORBIDDEN',
-      status: 403
-    })
-  if (await wiki.models.users.updateUser(normalized)) revoke(normalized.id)
+  const normalized = updateInput(input), store = accountAdministration(), current = await store.inspect(requester, normalized.id)
+  const profile = { ...current.profile }
+  for (const key of ['name', 'email', 'location', 'jobTitle', 'timezone'] as const) if (typeof normalized[key] === 'string') profile[key] = normalized[key]
+  if (normalized.groups) profile.groups = normalized.groups
+  // Legacy transports have no client review token. Read and pass a current
+  // fingerprint so even these writes use the same target guards and CAS boundary.
+  if (JSON.stringify(profile) === JSON.stringify(current.profile) && !normalized.newPassword && normalized.appearance === undefined && normalized.dateFormat === undefined) return
+  await store.updateProfile(requester, normalized.id, { fingerprint: current.fingerprint, reason: 'Account updated through the administration API', profile, password: normalized.newPassword, appearance: normalized.appearance, dateFormat: normalized.dateFormat })
+  revoke(normalized.id)
 }
 const revoke = (id: number): void => {
   wiki.auth.revokeUserTokens({ id, kind: 'u' })
   wiki.events.outbound.emit('addAuthRevoke', { id, kind: 'u' })
 }
+const requesterValue = (value: unknown): Express.User | undefined => isRecord(value) ? value as Express.User : undefined
 const remove = async (value: unknown): Promise<void> => {
-  const input = recordValue(value)
-  const id = positiveInteger(input.id, 'id')
-  const replaceId = positiveInteger(input.replaceId, 'replaceId')
-  if (id <= 2) throw new ApplicationError('Cannot delete a protected system account.', { code: 'USER_DELETE_PROTECTED', status: 400 })
-  try {
-    await wiki.models.users.deleteUser(id, replaceId)
-  } catch (err: unknown) {
-    if (err instanceof Error && _.includes(_.toLower(err.message), 'foreign'))
-      throw new ApplicationError('Cannot delete user because of content relational constraints.', { code: 'USER_DELETE_FOREIGN_CONSTRAINT', status: 400 })
-    throw err
-  }
+  const input = recordValue(value), id = positiveInteger(input.id, 'id'), replaceId = positiveInteger(input.replaceId, 'replaceId'), requester = requesterValue(input.requester), store = accountAdministration()
+  const current = await store.inspect(requester, id)
+  await store.remove(requester, id, { fingerprint: current.fingerprint, replaceId, reason: 'Account deleted through the administration API' })
   revoke(id)
 }
 const setActive = async (value: unknown): Promise<void> => {
-  const input = recordValue(value)
-  const id = positiveInteger(input.id, 'id')
+  const input = recordValue(value), id = positiveInteger(input.id, 'id'), requester = requesterValue(input.requester), store = accountAdministration()
   if (typeof input.isActive !== 'boolean') throw new ApplicationError('isActive must be a boolean', { code: 'INVALID_INPUT' })
-  if (!input.isActive && id <= 2) throw new ApplicationError('Cannot deactivate system accounts.', { code: 'USER_DEACTIVATE_PROTECTED', status: 400 })
-  await wiki.models.users.query().patch({ isActive: input.isActive }).findById(id)
-  if (!input.isActive) revoke(id)
+  const current = await store.inspect(requester, id)
+  if (current.isActive === input.isActive) return
+  await store.act(requester, id, { fingerprint: current.fingerprint, action: input.isActive ? 'activate' : 'deactivate', reason: 'Account availability updated through the administration API' })
+  revoke(id)
 }
-const verify = (value: unknown): Promise<number> => wiki.models.users.query().patch({ isVerified: true }).findById(positiveInteger(value, 'id'))
-const sendWelcomeEmail = (value: unknown): Promise<void> => wiki.models.users.sendWelcomeEmail({ id: positiveInteger(value, 'id') })
-const setTfa = (value: unknown): Promise<number> => {
-  const input = recordValue(value)
-  const id = positiveInteger(input.id, 'id')
+const verify = async (value: unknown, requester?: Express.User): Promise<void> => {
+  const id = positiveInteger(value, 'id'), store = accountAdministration(), current = await store.inspect(requester, id)
+  if (current.isVerified) return
+  await store.act(requester, id, { fingerprint: current.fingerprint, action: 'verify', reason: 'Email address verified through the administration API' })
+}
+const sendWelcomeEmail = async (value: unknown, requester?: Express.User, review?: Record<string, unknown>): Promise<void> => {
+  const id = positiveInteger(value, 'id'), store = accountAdministration()
+  const input = review ?? { fingerprint: (await store.inspect(requester, id)).fingerprint, reason: 'Welcome email requested through the administration API' }
+  const prepared = await store.prepareWelcome(requester, id, input)
+  let accepted = false
+  try { await wiki.models.users.sendWelcomeEmail({ id, expectedEmail: prepared.email }); accepted = true }
+  catch { /* Preserve a bounded outcome without recording mail transport credentials. */ }
+  try { await store.finishWelcome(id, prepared.requestId, accepted) }
+  catch { throw new ApplicationError(accepted ? 'The mail service accepted the welcome email, but its history could not be updated. Do not resend without checking delivery.' : 'The welcome email failed and its history could not be updated.', { status: 503 }) }
+  if (!accepted) throw new ApplicationError('The mail service did not accept the welcome email. Check Mail settings before retrying.', { status: 502 })
+}
+const setTfa = async (value: unknown): Promise<void> => {
+  const input = recordValue(value), id = positiveInteger(input.id, 'id'), requester = requesterValue(input.requester), store = accountAdministration()
   if (typeof input.enabled !== 'boolean') throw new ApplicationError('enabled must be a boolean', { code: 'INVALID_INPUT' })
-  return wiki.models.users.query().patch({ tfaIsActive: input.enabled, tfaSecret: null }).findById(id)
+  const current = await store.inspect(requester, id)
+  const action = input.enabled ? current.twoFactor === 'enrolled' ? 'reset-2fa' : 'require-2fa' : 'disable-2fa'
+  await store.act(requester, id, { fingerprint: current.fingerprint, action, reason: 'Authenticator policy updated through the administration API' })
+  revoke(id)
 }
 const requireProfileUser = async (requester: Express.User | undefined): Promise<UserRecord> => {
   if (typeof requester?.id !== 'number' || requester.id < 1 || requester.id === 2) throw new wiki.Error.AuthRequired()
@@ -410,7 +418,7 @@ const changePassword = async (value: unknown): Promise<string> => {
     throw new wiki.Error.AuthPasswordInvalid()
   }
   if (await wiki.models.users.updateUser({ id: user.id, newPassword })) revoke(user.id)
-  return (await wiki.models.users.refreshToken(user)).token
+  return (await wiki.models.users.refreshToken(user.id)).token
 }
 const listUserGroups = (user: UserRecord): GroupQuery => user.$relatedQuery('groups')
 const listProfileGroups = async (user: UserRecord): Promise<string[]> => (await user.$relatedQuery('groups')).map(group => group.name)

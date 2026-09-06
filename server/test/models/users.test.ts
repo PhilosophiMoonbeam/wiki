@@ -331,7 +331,9 @@ const installAggregateDatabase = (database: AggregateDatabase): void => {
             if (database.failUserPatch) throw new Error('forced user patch failure')
             const row = trx.state.users.find(candidate => candidate.id === id)
             if (!row) return 0
-            Object.assign(row, input)
+            const next = { ...input }
+            if (typeof next.authVersion === 'object') next.authVersion = Number(row.authVersion ?? 0) + 1
+            Object.assign(row, next)
             return 1
           }
         }
@@ -374,6 +376,7 @@ const installAggregateDatabase = (database: AggregateDatabase): void => {
       })
     },
     knex: {
+      raw: (sql: string, bindings: string[]) => { expect(sql).toBe('?? + 1'); expect(bindings).toEqual(['authVersion']); return { accountVersionIncrement: true } },
       transaction: async <T>(operation: (trx: AggregateTransaction) => Promise<T>): Promise<T> => {
         const trx = { state: structuredClone(database.state) }
         const result = await operation(trx)
@@ -647,6 +650,7 @@ describe('User.refreshToken', () => {
     const claims = signJwt.mock.calls[callIndex]?.[0]
     expect(claims).toMatchObject({
       id: 10,
+      authVersion: 0,
       ap: 'system',
       ff: 'roboto-flex'
     })

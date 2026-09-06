@@ -4,10 +4,12 @@ import type { Knex } from 'knex'
 import { DateTime } from 'luxon'
 import { nanoid } from 'nanoid'
 import User from './users.ts'
+import { accountSessionIsCurrent, sessionVersion } from '../helpers/account-session.ts'
 
 interface GenerateTokenOptions {
   userId: number
   kind: string
+  expectedAuthVersion?: number
 }
 
 interface ValidateTokenOptions {
@@ -21,6 +23,7 @@ export default class UserKey extends Model {
   declare kind: string
   declare token: string
   declare userId: number
+  declare authVersion: number
   declare createdAt: string
   declare validUntil: string
   declare user: User
@@ -58,35 +61,32 @@ export default class UserKey extends Model {
     this.createdAt = DateTime.utc().toISO()
   }
 
-  static async generateToken({ userId, kind }: GenerateTokenOptions, transaction?: Knex.Transaction): Promise<string> {
+  static async generateToken({ userId, kind, expectedAuthVersion }: GenerateTokenOptions, transaction?: Knex.Transaction): Promise<string> {
     const token = nanoid()
-    await wiki.models.userKeys.query(transaction).insert({
-      kind,
-      token,
-      validUntil: DateTime.utc().plus({ days: 1 }).toISO(),
-      userId
-    })
+    const generate = async (trx: Knex.Transaction) => {
+      const user = await wiki.models.users.query(trx).findById(userId).forShare()
+      const authVersion = user ? sessionVersion(user.authVersion) : null
+      if (authVersion === null || (expectedAuthVersion !== undefined && expectedAuthVersion !== authVersion)) throw new wiki.Error.AuthValidationTokenInvalid()
+      await wiki.models.userKeys.query(trx).insert({ kind, token, validUntil: DateTime.utc().plus({ days: 1 }).toISO(), userId, authVersion })
+    }
+    if (transaction) await generate(transaction)
+    else await wiki.models.knex.transaction(generate)
     return token
   }
 
   static async validateToken({ kind, token, skipDelete }: ValidateTokenOptions, transaction?: Knex.Transaction): Promise<User> {
-    if (skipDelete === true) {
-      const result = await wiki.models.userKeys.query(transaction).findOne({ kind, token }).withGraphJoined('user')
-      if (!result || DateTime.utc() > DateTime.fromISO(result.validUntil)) {
-        throw new wiki.Error.AuthValidationTokenInvalid()
-      }
-      return result.user
-    }
-
     const validate = async (trx: Knex.Transaction): Promise<User> => {
+      const candidate = await wiki.models.userKeys.query(trx).findOne({ kind, token })
+      if (!candidate) throw new wiki.Error.AuthValidationTokenInvalid()
+      // Match account administration's account → recovery-key lock order. Read
+      // the candidate again after locking the account to detect consumption.
+      const user = await wiki.models.users.query(trx).findById(candidate.userId).forUpdate()
       const result = await wiki.models.userKeys.query(trx).findOne({ kind, token }).forUpdate()
-      if (!result || DateTime.utc() > DateTime.fromISO(result.validUntil)) {
+      if (!result || DateTime.utc() > DateTime.fromISO(result.validUntil) || !accountSessionIsCurrent({ id: result.userId, authVersion: result.authVersion }, user)) {
         throw new wiki.Error.AuthValidationTokenInvalid()
       }
-      const user = await wiki.models.users.query(trx).findById(result.userId)
-      if (!user) {
-        throw new wiki.Error.AuthValidationTokenInvalid()
-      }
+      if (!user) throw new wiki.Error.AuthValidationTokenInvalid()
+      if (skipDelete === true) return user
       const deleted = await wiki.models.userKeys.query(trx).deleteById(result.id)
       if (deleted !== 1) {
         throw new wiki.Error.AuthValidationTokenInvalid()

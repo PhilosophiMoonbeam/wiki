@@ -21,9 +21,9 @@ export default {
         return { responseResult: graphHelper.generateSuccess('User created successfully') }
       } catch (err: unknown) { return graphHelper.generateError(err) }
     },
-    async delete (_obj: unknown, args: ResolverArgs) {
+    async delete (_obj: unknown, args: ResolverArgs, context: ResolverContext) {
       try {
-        await userOperations.remove({ id: args.id, replaceId: args.replaceId })
+        await userOperations.remove({ id: args.id, replaceId: args.replaceId, requester: context.req.user })
         return { responseResult: graphHelper.generateSuccess('User deleted successfully') }
       } catch (err: unknown) { return graphHelper.generateError(err) }
     },
@@ -33,33 +33,33 @@ export default {
         return { responseResult: graphHelper.generateSuccess('User updated successfully') }
       } catch (err: unknown) { return graphHelper.generateError(err) }
     },
-    async verify (_obj: unknown, args: ResolverArgs) {
+    async verify (_obj: unknown, args: ResolverArgs, context: ResolverContext) {
       try {
-        await userOperations.verify(args.id)
+        await userOperations.verify(args.id, context.req.user)
         return { responseResult: graphHelper.generateSuccess('User verified successfully') }
       } catch (err: unknown) { return graphHelper.generateError(err) }
     },
-    async activate (_obj: unknown, args: ResolverArgs) {
+    async activate (_obj: unknown, args: ResolverArgs, context: ResolverContext) {
       try {
-        await userOperations.setActive({ id: args.id, isActive: true })
+        await userOperations.setActive({ id: args.id, isActive: true, requester: context.req.user })
         return { responseResult: graphHelper.generateSuccess('User activated successfully') }
       } catch (err: unknown) { return graphHelper.generateError(err) }
     },
-    async deactivate (_obj: unknown, args: ResolverArgs) {
+    async deactivate (_obj: unknown, args: ResolverArgs, context: ResolverContext) {
       try {
-        await userOperations.setActive({ id: args.id, isActive: false })
+        await userOperations.setActive({ id: args.id, isActive: false, requester: context.req.user })
         return { responseResult: graphHelper.generateSuccess('User deactivated successfully') }
       } catch (err: unknown) { return graphHelper.generateError(err) }
     },
-    async enableTFA (_obj: unknown, args: ResolverArgs) {
+    async enableTFA (_obj: unknown, args: ResolverArgs, context: ResolverContext) {
       try {
-        await userOperations.setTfa({ id: args.id, enabled: true })
+        await userOperations.setTfa({ id: args.id, enabled: true, requester: context.req.user })
         return { responseResult: graphHelper.generateSuccess('User 2FA enabled successfully') }
       } catch (err: unknown) { return graphHelper.generateError(err) }
     },
-    async disableTFA (_obj: unknown, args: ResolverArgs) {
+    async disableTFA (_obj: unknown, args: ResolverArgs, context: ResolverContext) {
       try {
-        await userOperations.setTfa({ id: args.id, enabled: false })
+        await userOperations.setTfa({ id: args.id, enabled: false, requester: context.req.user })
         return { responseResult: graphHelper.generateSuccess('User 2FA disabled successfully') }
       } catch (err: unknown) { return graphHelper.generateError(err) }
     },

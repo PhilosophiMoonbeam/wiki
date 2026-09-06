@@ -3,6 +3,7 @@ import { type Request, type Response, getWikiAuth } from '../_types.ts'
 import _ from 'lodash'
 import userOperations, { type ListUser } from '../../operations/users.ts'
 import { ProfilePreferencesInputSchema } from '../../../shared/user-presentation.ts'
+import { accountAdministration } from '../../operations/account-administration.ts'
 
 const router = express.Router()
 
@@ -114,6 +115,62 @@ const requireUserMutationAccess = (req: Request, res: Response): boolean => {
   return true
 }
 
+const workspaceErrorMessage = (err: unknown, fallback: string): string => typeof err === 'object' && err !== null && 'status' in err && typeof err.status === 'number' ? errorMessage(err, fallback) : fallback
+
+// Keep workspace routes before the legacy /:id route. Every store operation
+// independently resolves current account/group authority as well as this gate.
+router.get('/workspace', async (req, res) => {
+  if (!requireUserDetailAccess(req, res)) return
+  try { return res.json(await accountAdministration().list(req.user, req.query)) }
+  catch (err) { return res.status(errorStatus(err, 500)).json({ error: workspaceErrorMessage(err, 'Accounts could not be loaded.') }) }
+})
+router.post('/workspace', async (req, res) => {
+  if (!requireUserMutationAccess(req, res)) return
+  try { return res.status(201).json(await accountAdministration().create(req.user, requestBody(req))) }
+  catch (err) { return res.status(errorStatus(err, 500)).json({ error: workspaceErrorMessage(err, 'The account could not be created.') }) }
+})
+router.get('/workspace/creation-options', async (req, res) => {
+  if (!requireUserMutationAccess(req, res)) return
+  try { return res.json(await accountAdministration().creationOptions(req.user)) }
+  catch (err) { return res.status(errorStatus(err, 500)).json({ error: workspaceErrorMessage(err, 'Account creation options could not be loaded.') }) }
+})
+router.get('/workspace/:id', async (req, res) => {
+  if (!requireUserDetailAccess(req, res)) return
+  const id = normalizeUserIdParam(String(req.params.id), res); if (id === null) return
+  try { return res.json(await accountAdministration().inspect(req.user, id)) }
+  catch (err) { return res.status(errorStatus(err, 500)).json({ error: workspaceErrorMessage(err, 'The account could not be loaded.') }) }
+})
+router.put('/workspace/:id/profile', async (req, res) => {
+  if (!requireUserDetailAccess(req, res)) return
+  const id = normalizeUserIdParam(String(req.params.id), res); if (id === null) return
+  try { return res.json(await accountAdministration().updateProfile(req.user, id, requestBody(req))) }
+  catch (err) { return res.status(errorStatus(err, 500)).json({ error: workspaceErrorMessage(err, 'The account could not be saved.') }) }
+})
+router.post('/workspace/:id/actions', async (req, res) => {
+  if (!requireUserDetailAccess(req, res)) return
+  const id = normalizeUserIdParam(String(req.params.id), res); if (id === null) return
+  try { return res.json(await accountAdministration().act(req.user, id, requestBody(req))) }
+  catch (err) { return res.status(errorStatus(err, 500)).json({ error: workspaceErrorMessage(err, 'The account action could not be completed.') }) }
+})
+router.put('/workspace/:id/password', async (req, res) => {
+  if (!requireUserDetailAccess(req, res)) return
+  const id = normalizeUserIdParam(String(req.params.id), res); if (id === null) return
+  try { return res.json(await accountAdministration().setPassword(req.user, id, requestBody(req))) }
+  catch (err) { return res.status(errorStatus(err, 500)).json({ error: workspaceErrorMessage(err, 'The password could not be replaced.') }) }
+})
+router.post('/workspace/:id/welcome-email', async (req, res) => {
+  if (!requireUserDetailAccess(req, res)) return
+  const id = normalizeUserIdParam(String(req.params.id), res); if (id === null) return
+  try { await userOperations.sendWelcomeEmail(id, req.user, requestBody(req)); return res.json({ accepted: true }) }
+  catch (err) { return res.status(errorStatus(err, 500)).json({ error: workspaceErrorMessage(err, 'The welcome email could not be sent.') }) }
+})
+router.delete('/workspace/:id', async (req, res) => {
+  if (!requireUserDetailAccess(req, res)) return
+  const id = normalizeUserIdParam(String(req.params.id), res); if (id === null) return
+  try { return res.json(await accountAdministration().remove(req.user, id, requestBody(req))) }
+  catch (err) { return res.status(errorStatus(err, 500)).json({ error: workspaceErrorMessage(err, 'The account could not be deleted.') }) }
+})
+
 router.post('/', async (req, res) => {
   if (!requireUserMutationAccess(req, res)) {
     return
@@ -141,7 +198,7 @@ router.post('/:id/welcome-email', async (req, res) => {
     return
   }
   try {
-    await userOperations.sendWelcomeEmail(Number(req.params.id))
+    await userOperations.sendWelcomeEmail(Number(req.params.id), req.user)
     return res.json({
       succeeded: true,
       message: 'Welcome email sent successfully'
@@ -344,7 +401,7 @@ router.delete('/:id', async (req, res) => {
   }
 
   try {
-    await userOperations.remove({ id, replaceId })
+    await userOperations.remove({ id, replaceId, requester: req.user })
     return res.json({
       succeeded: true,
       message: 'User deleted successfully'
@@ -370,7 +427,7 @@ router.patch('/:id/status', async (req, res, next) => {
   }
 
   try {
-    await userOperations.setActive({ id, isActive })
+    await userOperations.setActive({ id, isActive, requester: req.user })
 
     return res.json({
       succeeded: true,
@@ -401,7 +458,7 @@ router.patch('/:id/verification', async (req, res, next) => {
   }
 
   try {
-    await userOperations.verify(id)
+    await userOperations.verify(id, req.user)
     return res.json({
       succeeded: true,
       message: 'User verified successfully'
@@ -427,7 +484,7 @@ router.patch('/:id/tfa', async (req, res, next) => {
   }
 
   try {
-    await userOperations.setTfa({ id, enabled })
+    await userOperations.setTfa({ id, enabled, requester: req.user })
     return res.json({
       succeeded: true,
       message: enabled ? 'User 2FA enabled successfully' : 'User 2FA disabled successfully'

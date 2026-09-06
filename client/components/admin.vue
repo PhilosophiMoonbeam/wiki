@@ -94,6 +94,8 @@
                       :key='item.key'
                       :to='item.to'
                       :href='item.href'
+                      :active='currentRouteItem?.key === item.key'
+                      :aria-current='currentRouteItem?.key === item.key ? `page` : undefined'
                       color='primary'
                       :prepend-icon='item.icon'
                       rounded='lg'

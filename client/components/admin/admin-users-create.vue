@@ -1,482 +1,80 @@
-<template lang="pug">
-  v-dialog(
-    v-model='isShown'
-    max-width='650'
-    :persistent='submitting'
-    :fullscreen='$vuetify.display.smAndDown'
-    aria-labelledby='admin-user-create-title'
-    @after-enter='focusEmail'
-  )
-    v-card.admin-dialog--scrollable(tag='form', @submit.prevent='submitUser')
-      .dialog-header.is-short
-        v-icon.mr-3 mdi-plus
-        span#admin-user-create-title New User
-        v-spacer
-        v-btn.mx-0(v-if='$vuetify.display.mdAndUp', variant="outlined", disabled, aria-label='Bulk import unavailable')
-          v-icon(start) mdi-database-import
-          span Bulk Import unavailable
-      v-card-text.pt-5.admin-dialog--scrollable__body
-        v-alert.mb-4(v-if='providerLoadError', type='error', variant='tonal', density='compact')
-          span {{providerLoadError}}
-          template(v-slot:append)
-            v-btn(variant="text", size="small", @click='loadProviders', :loading='providerLoading') Retry
-        v-alert.mb-4(v-else-if='!providersLoaded', type='info', variant='tonal', density='compact') Loading authentication providers...
-        v-select(
-          :items='availableProviders'
-          item-title='displayName'
-          item-value='key'
-          variant="outlined"
-          prepend-icon='mdi-domain'
-          v-model='provider'
-          label='Provider *'
-          required
-          :disabled='!providersLoaded || submitting'
-          )
-        v-text-field(
-          variant="outlined"
-          prepend-icon='mdi-at'
-          v-model='email'
-          :rules='emailRules'
-          type='email'
-          required
-          label='Email Address *'
-          key='newUserEmail'
-          persistent-hint
-          ref='emailInput'
-          :disabled='!providersLoaded || submitting'
-          )
-        v-text-field(
-          v-if='provider === `local`'
-          variant="outlined"
-          prepend-icon='mdi-lock-outline'
-          v-model='password'
-          ref='passwordInput'
-          type='password'
-          :rules='passwordRules'
-          minlength='6'
-          maxlength='255'
-          autocomplete='new-password'
-          required
-          :label='mustChangePwd ? `Temporary Password *` : `Password *`'
-          counter='255'
-          key='newUserPassword'
-          persistent-hint
-          :disabled='!providersLoaded || submitting'
-          )
-          template(v-slot:append-inner)
-            v-tooltip(location="top")
-              template(v-slot:activator='{ props }')
-                v-btn(icon, variant="text", size="small", v-bind='props', aria-label='Generate password', @click='generatePwd')
-                  v-icon mdi-dice-5
-              span Generate password
-        v-text-field(
-          variant="outlined"
-          prepend-icon='mdi-account-outline'
-          v-model='name'
-          ref='nameInput'
-          :rules='nameRules'
-          minlength='2'
-          maxlength='255'
-          required
-          label='Name *'
-          :hint='provider === `local` ? `Can be changed by the user.` : `May be overwritten by the provider during login.`'
-          key='newUserName'
-          persistent-hint
-          :disabled='!providersLoaded || submitting'
-          )
-        v-alert.mb-3(v-if='groupsLoadError', type='warning', variant='tonal', density='compact')
-          span {{groupsLoadError}}
-          template(v-slot:append)
-            v-btn(type='button', variant='text', size='small', @click='loadGroups', :loading='groupsLoading', :disabled='submitting') Retry
-        v-select.mt-2(
-          :items='groups'
-          item-title='name'
-          item-value='id'
-          :item-props='group => ({ disabled: group.isSystem })'
-          variant="outlined"
-          prepend-icon='mdi-account-group'
-          v-model='group'
-          label='Assign to Group(s)...'
-          hint='Note that you cannot assign users to the Administrators or Guests groups from this dialog.'
-          persistent-hint
-          clearable
-          multiple
-          :loading='groupsLoading'
-          :disabled='!providersLoaded || submitting || groupsLoading'
-          )
-        v-divider
-        v-checkbox(
-          color='primary'
-          label='Require password change on first login'
-          v-if='provider === `local`'
-          v-model='mustChangePwd'
-          hide-details
-          :disabled='submitting'
-        )
-        v-checkbox(
-          color='primary'
-          label='Send a welcome email'
-          hide-details
-          v-model='sendWelcomeEmail'
-          :disabled='submitting'
-        )
-      v-card-chin.admin-dialog-actions
-        v-spacer
-        v-btn(type='button', variant="text", @click='isShown = false', :disabled='submitting') Cancel
-        v-btn.px-3(
-          type='submit'
-          value='close'
-          variant="flat"
-          color='primary'
-          prepend-icon='mdi-check'
-          :disabled='!providersLoaded || availableProviders.length < 1 || submitting'
-          :loading='submitting'
-          ) Create
-        v-btn.px-3(
-          type='submit'
-          value='another'
-          variant="outlined"
-          color='primary'
-          :disabled='!providersLoaded || availableProviders.length < 1 || submitting'
-          :loading='submitting'
-          )
-          v-icon(start) mdi-plus
-          span Create another
+<template>
+  <v-dialog :model-value="modelValue" max-width="820" :persistent="saving" aria-label="Create an account" @update:model-value="value => !value && close()">
+    <v-card class="account-create-dialog">
+      <v-card-title><span class="account-create-kicker">People & access · {{ reviewing ? 'Review' : 'New account' }}</span><h2>{{ reviewing ? 'Ready to welcome someone?' : 'A place in your workspace.' }}</h2></v-card-title>
+      <v-card-text>
+        <async-state v-if="loading" state="loading" title="Loading account creation options" />
+        <async-state v-else-if="loadError" state="error" title="Creation options are unavailable" :message="loadError" retry-label="Try again" @retry="loadOptions" />
+        <template v-else-if="options">
+          <template v-if="!reviewing">
+            <p class="account-create-intro">Create a person’s account and choose the groups that give them access. Their sign-in provider keeps responsibility for authentication.</p>
+            <div class="account-create-fields"><v-text-field v-model="profile.name" label="Display name" autocomplete="off" variant="outlined" maxlength="255" :disabled="saving" /><v-text-field v-model="profile.email" label="Email address" type="email" autocomplete="off" variant="outlined" maxlength="255" :disabled="saving" /><v-select v-model="providerKey" label="Sign-in provider" :items="providers" item-title="title" item-value="key" variant="outlined" :disabled="saving" /><v-text-field v-model="profile.timezone" label="Time zone" variant="outlined" hint="An IANA time zone, such as Europe/London or UTC." persistent-hint :disabled="saving" /></div>
+            <div class="account-create-provider"><v-icon :icon="local ? 'mdi-key-outline' : 'mdi-domain'" /><div><strong>{{ local ? 'A temporary password for the first sign-in' : 'Authentication stays with ' + (provider?.title || 'the identity provider') }}</strong><p>{{ local ? 'Share the temporary password with the person through an appropriate private channel. It is never included in a welcome email.' : 'This pre-creates a matching account. It does not create an identity or password in the external service.' }}</p></div></div>
+            <template v-if="local"><v-text-field v-model="password" label="Temporary password" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" variant="outlined" hint="At least 12 characters; at most 72 UTF-8 bytes." persistent-hint :disabled="saving"><template #append-inner><v-btn variant="text" :icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" :aria-label="showPassword ? 'Hide temporary password' : 'Show temporary password'" size="small" @click="showPassword = !showPassword" /></template></v-text-field><v-checkbox v-model="mustChangePassword" label="Require a new password at first sign-in" hide-details :disabled="saving" /></template>
+            <div class="account-create-section"><h3>Membership</h3><p>Choose only the access this person needs. Permissions from selected groups are combined.</p><div class="account-create-groups"><label v-for="group in assignableGroups" :key="group.id" :class="{ selected: profile.groups.includes(group.id) }"><input v-model="profile.groups" type="checkbox" :value="group.id" :disabled="saving" /><span><strong>{{ group.name }}</strong><small>{{ group.permissions.length }} {{ group.permissions.length === 1 ? 'permission' : 'permissions' }}{{ group.isSystem ? ' · System group' : '' }}</small></span></label></div><p v-if="!profile.groups.length" class="account-create-hint">No groups selected. The account will have no group-granted permissions.</p><details v-if="selectedPermissions.length" class="account-create-permissions"><summary>Combined permissions · {{ selectedPermissions.length }}</summary><ul><li v-for="permission in selectedPermissions" :key="permission">{{ permission }}</li></ul></details></div>
+            <div class="account-create-section"><h3>Email ownership</h3><v-checkbox v-model="isVerified" label="I have confirmed this person’s email address" hide-details :disabled="saving" /><p class="account-create-hint">Otherwise the account remains unverified. You can verify it later from its account workspace; this form does not send a verification link.</p></div>
+            <v-alert v-if="attempted && issues.length" type="error" variant="tonal" class="mt-4"><ul><li v-for="issue in issues" :key="issue">{{ issue }}</li></ul></v-alert>
+          </template>
+          <template v-else>
+            <div class="account-create-identity"><span aria-hidden="true">{{ profile.name.trim().slice(0,1).toUpperCase() }}</span><div><h3>{{ profile.name }}</h3><p>{{ profile.email }}</p></div></div>
+            <dl class="account-create-summary"><div><dt>Sign-in provider</dt><dd>{{ provider?.title }}</dd></div><div><dt>Membership</dt><dd>{{ selectedGroups.map(group => group.name).join(', ') || 'No groups' }}</dd></div><div><dt>Email ownership</dt><dd>{{ isVerified ? 'Confirmed by you' : 'Unverified' }}</dd></div><div v-if="local"><dt>First sign-in</dt><dd>{{ mustChangePassword ? 'Must choose a new password' : 'Uses the supplied password' }}</dd></div><div><dt>Email delivery</dt><dd>No email is sent during creation</dd></div></dl>
+            <p class="account-create-hint">The account will be active. Unverified status and the selected provider’s policies may still prevent sign-in. Welcome email can be sent explicitly from the account workspace.</p>
+            <v-textarea v-model="reason" label="Administrative reason" variant="outlined" rows="2" maxlength="1000" hint="3–1,000 characters, retained in account history. Do not include passwords." persistent-hint :disabled="saving" />
+          </template>
+          <v-alert v-if="saveError" type="error" variant="tonal" class="mt-4">{{ saveError }}<v-btn v-if="conflict" variant="text" :disabled="saving" @click="reloadOptions">Reload creation options</v-btn></v-alert>
+        </template>
+      </v-card-text>
+      <v-card-actions><v-btn variant="text" :disabled="saving" @click="reviewing ? reviewing = false : close()">{{ reviewing ? 'Keep editing' : 'Cancel' }}</v-btn><v-spacer /><v-btn v-if="options && !loading && !loadError" color="primary" variant="flat" :loading="saving" :disabled="reviewing && (reason.trim().length < 3 || conflict)" @click="reviewing ? save() : review()">{{ reviewing ? 'Create account' : 'Review account' }}</v-btn></v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
-
-<script lang='ts'>
-import validateValues from '../../../shared/validation'
-
-import { fetchAdminAuthProviders, type AdminAuthProviderSummary } from '../../helpers/auth-api'
-import { fetchGroupOptions, type GroupOption } from '../../helpers/groups-api'
-import { getErrorMessage } from '../../helpers/root-ui-store'
-import { createAdminUser } from '../../helpers/users-api'
-import { wikiStore } from '@/store/index.ts'
-
-type AuthProviderSummary = Pick<AdminAuthProviderSummary, 'key' | 'displayName' | 'isEnabled'>
-
-type FocusableRef = {
-  focus: () => void
-  resetValidation?: () => void
-}
-
-type UserFieldConstraint = {
-  presence: {
-    allowEmpty: boolean
-  }
-  email?: boolean
-  length?: {
-    minimum: number
-    maximum: number
-  }
-}
-
-type UserValidationSchema = {
-  email: UserFieldConstraint
-  name: UserFieldConstraint
-  password?: UserFieldConstraint
-}
-
-const EMAIL_CONSTRAINT: UserFieldConstraint = {
-  presence: { allowEmpty: false },
-  email: true
-}
-
-const NAME_CONSTRAINT: UserFieldConstraint = {
-  presence: { allowEmpty: false },
-  length: { minimum: 2, maximum: 255 }
-}
-
-const PASSWORD_CONSTRAINT: UserFieldConstraint = {
-  presence: { allowEmpty: false },
-  length: { minimum: 6, maximum: 255 }
-}
-
-const validateField = (field: string, value: string, constraint: UserFieldConstraint): true | string => {
-  const results = validateValues({ [field]: value }, { [field]: constraint }, { format: 'flat' })
-  return results?.[0] ?? true
-}
-
-const PASSWORD_CHARS = 'abcdefghkmnpqrstuvwxyzABCDEFHJKLMNPQRSTUVWXYZ23456789_*=?#!()+'
-const PASSWORD_LENGTH = 12
-const MAX_UNBIASED_BYTE = Math.floor(256 / PASSWORD_CHARS.length) * PASSWORD_CHARS.length
-
-const generatePassword = (): string => {
-  const randomBytes = new Uint8Array(PASSWORD_LENGTH)
-  let password = ''
-  while (password.length < PASSWORD_LENGTH) {
-    window.crypto.getRandomValues(randomBytes)
-    for (const byte of randomBytes) {
-      if (byte >= MAX_UNBIASED_BYTE) continue
-      password += PASSWORD_CHARS[byte % PASSWORD_CHARS.length]
-      if (password.length === PASSWORD_LENGTH) break
-    }
-  }
-  return password
-}
-
+<script lang="ts">
+import AsyncState from '@/components/common/async-state.vue'
+import { accountProfileIssues, type AccountCreationOptions, type AccountProfileDraft } from '../../../shared/account-policy.ts'
+import { fetchAccountCreationOptions, createAccount, accountRequestStatus } from '../../helpers/account-api.ts'
+import { getErrorMessage } from '../../helpers/root-ui-store.ts'
+const emptyProfile = (): AccountProfileDraft => ({ name: '', email: '', location: '', jobTitle: '', timezone: 'UTC', groups: [] })
 export default {
-  emits: ['refresh', 'update:modelValue'],
-  props: {
-    modelValue: {
-      type: Boolean,
-      default: false
-    }
-  },
-  data() {
-    return {
-      providerLoadRequestId: 0,
-      groupsLoadRequestId: 0,
-      providers: [] as AuthProviderSummary[],
-      provider: 'local',
-      email: '',
-      password: '',
-      name: '',
-      groups: [] as GroupOption[],
-      group: [] as number[],
-      mustChangePwd: false,
-      sendWelcomeEmail: false,
-      providersLoaded: false,
-      providerLoading: false,
-      providerLoadError: '',
-      groupsLoading: false,
-      groupsLoadError: '',
-      submitting: false,
-      isUnmounted: false
-    }
-  },
+  components: { AsyncState }, props: { modelValue: { type: Boolean, default: false } }, emits: ['update:modelValue', 'created'],
+  data() { return { options: null as AccountCreationOptions | null, profile: emptyProfile(), providerKey: 'local', password: '', showPassword: false, mustChangePassword: true, isVerified: false, reason: '', reviewing: false, attempted: false, loading: false, loadError: '', saving: false, saveError: '', conflict: false, sequence: 0, disposed: false } },
   computed: {
-    availableProviders() {
-      return this.providers.filter(provider => provider.isEnabled === true)
-    },
-    emailRules() {
-      return [(value: string) => validateField('email', value, EMAIL_CONSTRAINT)]
-    },
-    passwordRules() {
-      return [(value: string) => validateField('password', value, PASSWORD_CONSTRAINT)]
-    },
-    nameRules() {
-      return [(value: string) => validateField('name', value, NAME_CONSTRAINT)]
-    },
-    isShown: {
-      get() { return this.modelValue },
-      set(val: boolean) { this.$emit('update:modelValue', val) }
-    }
+    providers() { return (this.options?.providers ?? []).filter(provider => provider.enabled && provider.available) },
+    provider() { return this.providers.find(provider => provider.key === this.providerKey) },
+    local(): boolean { return this.provider?.localPassword === true },
+    assignableGroups() { return (this.options?.groups ?? []).filter(group => group.canAssign) },
+    selectedGroups() { return (this.options?.groups ?? []).filter(group => this.profile.groups.includes(group.id)) },
+    selectedPermissions() { return [...new Set(this.selectedGroups.flatMap(group => group.permissions))].sort() },
+    issues(): string[] { return [...accountProfileIssues(this.profile), ...(!this.provider ? ['Choose an enabled sign-in provider.'] : []), ...(this.local && (this.password.length < 12 || new TextEncoder().encode(this.password).length > 72) ? ['Use a password of at least 12 characters and at most 72 UTF-8 bytes.'] : []), ...(this.profile.groups.some(id => !this.assignableGroups.some(group => group.id === id)) ? ['Remove unavailable groups before continuing.'] : [])] },
+    modified(): boolean { return Boolean(this.profile.name || this.profile.email || this.password || this.profile.groups.length || this.reason) }
   },
   watch: {
-    modelValue: {
-      immediate: true,
-      handler (newValue: boolean) {
-        if (newValue) {
-          if (!this.providersLoaded) {
-            this.loadProviders()
-          }
-        } else {
-          this.resetValidation()
-        }
-      }
-    }
+    modelValue: { immediate: true, handler(value: boolean) { if (value) { this.profile = emptyProfile(); this.password = ''; this.reason = ''; this.reviewing = false; this.attempted = false; this.isVerified = false; this.mustChangePassword = true; this.saveError = ''; this.conflict = false; void this.loadOptions() } else { this.sequence++; this.password = '' } } },
+    providerKey() { this.password = ''; this.showPassword = false }
   },
   methods: {
-    focusEmail() {
-      ;(this.$refs.emailInput as FocusableRef | undefined)?.focus()
-    },
-    resetValidation() {
-      for (const refName of ['emailInput', 'passwordInput', 'nameInput']) {
-        ;(this.$refs[refName] as FocusableRef | undefined)?.resetValidation?.()
-      }
-    },
-    focusFirstInvalidField() {
-      let refName = 'emailInput'
-      if (validateField('email', this.email, EMAIL_CONSTRAINT) === true) {
-        refName = this.provider === 'local' && validateField('password', this.password, PASSWORD_CONSTRAINT) !== true
-          ? 'passwordInput'
-          : 'nameInput'
-      }
-      this.$nextTick(() => {
-        ;(this.$refs[refName] as FocusableRef | undefined)?.focus()
-      })
-    },
-    async loadProviders() {
-      if (this.providerLoading) return
-      const requestId = ++this.providerLoadRequestId
-      this.providerLoading = true
-      this.providerLoadError = ''
-      wikiStore.startLoading('admin-users-strategies-refresh')
-      try {
-        const providers = (await fetchAdminAuthProviders(window.fetch.bind(window), 'Admin authentication providers response is invalid')).map(strategy => ({
-          key: strategy.key,
-          displayName: strategy.displayName,
-          isEnabled: strategy.isEnabled
-        }))
-        if (requestId !== this.providerLoadRequestId) return
-        this.providers = providers
-
-        if (!this.availableProviders.some(strategy => strategy.key === this.provider) && this.availableProviders.length > 0) {
-          this.provider = this.availableProviders[0].key
-        }
-        this.providersLoaded = true
-        if (this.modelValue) {
-          this.$nextTick(() => {
-            if (this.modelValue) this.focusEmail()
-          })
-        }
-      } catch (err) {
-        if (requestId !== this.providerLoadRequestId) return
-        this.providersLoaded = false
-        this.providerLoadError = getErrorMessage(err)
-        wikiStore.showNotification({
-          style: 'red',
-          message: this.providerLoadError,
-          icon: 'alert'
-        })
-      } finally {
-        if (requestId === this.providerLoadRequestId && !this.isUnmounted) {
-          this.providerLoading = false
-        }
-        wikiStore.stopLoading('admin-users-strategies-refresh')
-      }
-    },
-    async loadGroups() {
-      if (this.groupsLoading) return
-      const requestId = ++this.groupsLoadRequestId
-      this.groupsLoading = true
-      this.groupsLoadError = ''
-      wikiStore.startLoading('admin-auth-groups-refresh')
-      try {
-        const groups = await fetchGroupOptions(window.fetch.bind(window), 'Groups response is invalid')
-        if (requestId !== this.groupsLoadRequestId) return
-        this.groups = groups
-      } catch (err) {
-        if (requestId !== this.groupsLoadRequestId) return
-        this.groupsLoadError = getErrorMessage(err)
-        wikiStore.showNotification({
-          style: 'red',
-          message: this.groupsLoadError,
-          icon: 'alert'
-        })
-      } finally {
-        if (requestId === this.groupsLoadRequestId && !this.isUnmounted) {
-          this.groupsLoading = false
-        }
-        wikiStore.stopLoading('admin-auth-groups-refresh')
-      }
-    },
-    submitUser(event: SubmitEvent) {
-      const submitter = event.submitter
-      void this.newUser(!(submitter instanceof HTMLButtonElement) || submitter.value !== 'another')
-    },
-    async newUser(close = false) {
-      if (this.submitting) return
-      if (!this.providersLoaded || this.availableProviders.length < 1) {
-        wikiStore.showNotification({
-          style: 'red',
-          message: 'Authentication providers are not available.',
-          icon: 'alert'
-        })
-        return
-      }
-
-      this.email = this.email.trim()
-      this.name = this.name.trim()
-      const rules: UserValidationSchema = {
-        email: EMAIL_CONSTRAINT,
-        name: NAME_CONSTRAINT
-      }
-      if (this.provider === 'local') {
-        rules.password = PASSWORD_CONSTRAINT
-      }
-      const validationResults = validateValues({
-        email: this.email,
-        password: this.password,
-        name: this.name
-      }, rules, { format: 'flat' }) as string[] | undefined
-
-      if (validationResults) {
-        wikiStore.showNotification({
-          style: 'red',
-          message: validationResults[0],
-          icon: 'alert'
-        })
-        this.focusFirstInvalidField()
-        return
-      }
-
-      this.submitting = true
-      wikiStore.startLoading('admin-users-create')
-      try {
-        const resp = await createAdminUser(window.fetch.bind(window), {
-          providerKey: this.provider,
-          email: this.email,
-          passwordRaw: this.provider === 'local' ? this.password : '',
-          name: this.name,
-          groups: this.group,
-          mustChangePassword: this.provider === 'local' && this.mustChangePwd,
-          sendWelcomeEmail: this.sendWelcomeEmail
-        }, 'User create response is invalid')
-        if (this.isUnmounted) return
-
-        if (!resp.succeeded) {
-          wikiStore.showNotification({
-            style: 'red',
-            message: resp.message || 'An unexpected error occurred.',
-            icon: 'alert'
-          })
-          return
-        }
-
-        wikiStore.showNotification({
-          style: 'success',
-          message: 'New user created successfully.',
-          icon: 'check'
-        })
-        if (resp.welcomeEmailError) {
-          wikiStore.showNotification({
-            style: 'warning',
-            message: `The user was created, but the welcome email could not be sent: ${resp.welcomeEmailError}`,
-            icon: 'email-alert'
-          })
-        }
-        this.$emit('refresh')
-        this.email = ''
-        this.password = ''
-        this.name = ''
-        this.group = []
-        this.mustChangePwd = false
-        this.sendWelcomeEmail = false
-
-        if (close) {
-          this.isShown = false
-        }
-        this.$nextTick(() => {
-          this.resetValidation()
-          if (!close && this.modelValue) this.focusEmail()
-        })
-      } catch (err) {
-        if (!this.isUnmounted) {
-          wikiStore.showNotification({
-            style: 'red',
-            message: getErrorMessage(err),
-            icon: 'alert'
-          })
-        }
-      } finally {
-        if (!this.isUnmounted) this.submitting = false
-        wikiStore.stopLoading('admin-users-create')
-      }
-    },
-    generatePwd() {
-      this.password = generatePassword()
-    }
+    async loadOptions() { const sequence = ++this.sequence; this.loading = true; this.loadError = ''; try { const options = await fetchAccountCreationOptions(); if (this.disposed || sequence !== this.sequence) return; this.options = options; if (!this.providers.some(provider => provider.key === this.providerKey)) this.providerKey = this.providers[0]?.key ?? '' } catch (error) { if (!this.disposed && sequence === this.sequence) this.loadError = getErrorMessage(error) } finally { if (!this.disposed && sequence === this.sequence) this.loading = false } },
+    async reloadOptions() { this.reviewing = false; this.conflict = false; this.saveError = ''; await this.loadOptions() },
+    review() { this.attempted = true; if (!this.issues.length) { this.reviewing = true; this.saveError = '' } },
+    async save() { if (!this.options || this.saving || this.issues.length || this.reason.trim().length < 3) return; this.saving = true; this.saveError = ''; try { const result = await createAccount({ fingerprint: this.options.fingerprint, profile: JSON.parse(JSON.stringify(this.profile)) as AccountProfileDraft, providerKey: this.providerKey, ...(this.local ? { password: this.password } : {}), isVerified: this.isVerified, mustChangePassword: this.local && this.mustChangePassword, reason: this.reason.trim() }); this.password = ''; this.profile = emptyProfile(); this.reason = ''; this.$emit('created', result.id); this.$emit('update:modelValue', false) } catch (error) { this.conflict = accountRequestStatus(error) === 409; this.saveError = getErrorMessage(error) + (accountRequestStatus(error) === 0 ? ' The outcome is unconfirmed. Check the directory for this email before creating it again.' : '') } finally { this.saving = false } },
+    canLeave(): boolean { return !this.saving && (!this.modelValue || !this.modified || window.confirm('Discard this unsaved account?')) },
+    close() { if (this.canLeave()) { this.password = ''; this.$emit('update:modelValue', false) } },
+    beforeUnload(event: BeforeUnloadEvent) { if (this.modelValue && (this.modified || this.saving)) { event.preventDefault(); event.returnValue = '' } }
   },
-  created() {
-    this.loadProviders()
-    this.loadGroups()
-  },
-  beforeUnmount() {
-    this.isUnmounted = true
-    this.providerLoadRequestId++
-    this.groupsLoadRequestId++
-  }
+  mounted() { window.addEventListener('beforeunload', this.beforeUnload) },
+  beforeUnmount() { this.disposed = true; this.sequence++; this.password = ''; window.removeEventListener('beforeunload', this.beforeUnload) }
 }
 </script>
+<style lang="scss">
+.account-create-dialog { --account-line:rgba(var(--v-theme-on-surface),.12); max-height:90dvh; .v-card-title { padding:26px 28px 14px; white-space:normal; h2 { font-size:1.6rem; line-height:1.3; font-weight:500; margin-top:7px; letter-spacing:-.02em; } } .v-card-text { padding:12px 28px 26px; overflow-y:auto; } .v-card-actions { padding:16px 22px; border-top:1px solid var(--account-line); flex-wrap:wrap; } }
+.account-create-kicker { font-size:.65rem; letter-spacing:.12em; font-weight:650; text-transform:uppercase; color:rgba(var(--v-theme-on-surface),.64); }
+.account-create-intro { color:rgba(var(--v-theme-on-surface),.72); font-size:.87rem; line-height:1.65; margin-bottom:24px; }
+.account-create-fields { display:grid; grid-template-columns:1fr 1fr; gap:4px 18px; }
+.account-create-provider { display:flex; gap:14px; align-items:flex-start; background:rgba(var(--v-theme-on-surface),.035); padding:17px; border-radius:8px; margin:12px 0 22px; strong { font-size:.84rem; } p { font-size:.77rem; line-height:1.6; color:rgba(var(--v-theme-on-surface),.7); margin:5px 0 0; } }
+.account-create-section { margin:26px 0; padding-top:24px; border-top:1px solid var(--account-line); h3 { font-size:1rem; font-weight:600; } >p { margin:7px 0 16px; font-size:.8rem; line-height:1.65; color:rgba(var(--v-theme-on-surface),.7); } }
+.account-create-groups { display:grid; grid-template-columns:1fr 1fr; gap:10px; label { display:flex; align-items:flex-start; gap:12px; border:1px solid var(--account-line); padding:14px; border-radius:8px; cursor:pointer; &.selected { border-color:rgba(var(--v-theme-primary),.65); background:rgba(var(--v-theme-primary),.045); } input { margin-top:3px; width:16px; height:16px; accent-color:rgb(var(--v-theme-primary)); } strong,small { display:block; } strong { font-size:.82rem; } small { margin-top:4px; color:rgba(var(--v-theme-on-surface),.66); font-size:.7rem; } } }
+.account-create-hint { font-size:.77rem; color:rgba(var(--v-theme-on-surface),.7); line-height:1.65; margin:12px 0 20px; }
+.account-create-permissions { margin-top:16px; summary { cursor:pointer; font-size:.78rem; } ul { display:flex; flex-wrap:wrap; gap:7px 16px; padding:15px 0; list-style:none; font-size:.72rem; } }
+.account-create-identity { display:flex; gap:16px; align-items:center; margin:8px 0 24px; >span { width:52px; height:52px; border-radius:50%; background:rgba(var(--v-theme-primary),.1); display:grid; place-items:center; font-size:1.2rem; } h3 { font-size:1.2rem; font-weight:550; overflow-wrap:anywhere; } p { margin-top:3px; font-size:.85rem; color:rgba(var(--v-theme-on-surface),.7); overflow-wrap:anywhere; } }
+.account-create-summary { display:grid; grid-template-columns:1fr 1fr; gap:20px; padding:22px 0; border-block:1px solid var(--account-line); dt { font-size:.7rem; color:rgba(var(--v-theme-on-surface),.66); margin-bottom:7px; } dd { font-size:.87rem; overflow-wrap:anywhere; } }
+@media(max-width:600px) { .account-create-fields,.account-create-groups,.account-create-summary { grid-template-columns:1fr; } .account-create-dialog .v-card-title { padding:22px 20px 12px; h2 { font-size:1.35rem; } } .account-create-dialog .v-card-text { padding:10px 20px 20px; } }
+</style>

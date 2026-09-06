@@ -1,3 +1,12 @@
+const workspace = () => ({ id: 42, fingerprint: 'account-version', profile: { name: 'Alice', email: 'alice@example.com', location: '', jobTitle: '', timezone: 'UTC', groups: [3] }, isActive: true, isVerified: false, twoFactor: 'off', capabilities: { edit: true } })
+const accounts = { creationOptions: vi.fn(), create: vi.fn(), inspect: vi.fn(), updateProfile: vi.fn(), remove: vi.fn(), act: vi.fn(), prepareWelcome: vi.fn(), finishWelcome: vi.fn() }
+vi.mockModule('../../operations/account-administration.ts', import.meta.url, () => ({ accountAdministration: () => accounts }))
+beforeEach(() => {
+  for (const fn of Object.values(accounts)) fn.mockReset()
+  accounts.prepareWelcome.mockResolvedValue({ requestId: 'welcome-request', email: 'alice@example.com' }); accounts.finishWelcome.mockResolvedValue(undefined)
+  accounts.creationOptions.mockResolvedValue({ fingerprint: 'creation-version' })
+  accounts.create.mockResolvedValue({ id: 42 }); accounts.inspect.mockResolvedValue(workspace()); accounts.updateProfile.mockResolvedValue(workspace()); accounts.act.mockResolvedValue(workspace()); accounts.remove.mockResolvedValue({ deleted: true })
+})
 vi.mockModule('express', import.meta.url, () => {
   const router = {
     get: vi.fn(),
@@ -171,66 +180,20 @@ describe('controllers/api users endpoints', () => {
   })
 
   it('creates admin users for authorized requests', async () => {
-    const { create } = await loadHandler()
-    const req = {
-      user: { permissions: ['write:users'] },
-      body: {
-        providerKey: 'local',
-        email: 'alice@example.com',
-        passwordRaw: 'temporary-secret',
-        name: 'Alice',
-        groups: [3, 4],
-        mustChangePassword: true,
-        sendWelcomeEmail: false,
-        ignored: 'not forwarded'
-      }
-    }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await create(req, res, vi.fn())
-
-    expect(global.WIKI.auth.checkAccess).toHaveBeenCalledWith({ permissions: ['write:users'] }, ['write:users', 'manage:users', 'manage:system'])
-    expect(global.WIKI.auth.checkAssignUserToGroupAccess).toHaveBeenCalledWith({ permissions: ['write:users'] }, [3, 4])
-    expect(global.WIKI.models.users.createNewUser).toHaveBeenCalledWith({
-      providerKey: 'local',
-      email: 'alice@example.com',
-      passwordRaw: 'temporary-secret',
-      name: 'Alice',
-      groups: [3, 4],
-      mustChangePassword: true,
-      sendWelcomeEmail: false
-    })
-    expect(res.json).toHaveBeenCalledWith({
-      succeeded: true,
-      message: 'User created successfully'
-    })
+    const { create } = await loadHandler(), user = { permissions: ['write:users'] }, body = { providerKey: 'local', email: 'alice@example.com', passwordRaw: 'temporary-secret', name: 'Alice', groups: [3], mustChangePassword: true, sendWelcomeEmail: false, ignored: true }, res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await create({ user, body }, res)
+    expect(accounts.create).toHaveBeenCalledWith(user, expect.objectContaining({ fingerprint: 'creation-version', providerKey: 'local', password: body.passwordRaw, profile: expect.objectContaining({ name: 'Alice', email: body.email, groups: [3] }), mustChangePassword: true }))
+    expect(accounts.create.mock.calls[0][1]).not.toHaveProperty('ignored'); expect(global.WIKI.models.users.sendWelcomeEmail).not.toHaveBeenCalled()
+    expect(res.json).toHaveBeenCalledWith({ succeeded: true, message: 'User created successfully' })
   })
 
 
   it('reports welcome-mail failure without reporting user creation failure', async () => {
-    global.WIKI.models.users.createNewUser.mockResolvedValueOnce({ welcomeEmailError: 'SMTP unavailable' })
-    const { create } = await loadHandler()
-    const req = {
-      user: { permissions: ['write:users'] },
-      body: {
-        providerKey: 'local',
-        email: 'alice@example.com',
-        passwordRaw: 'temporary-secret',
-        name: 'Alice',
-        groups: [],
-        sendWelcomeEmail: true
-      }
-    }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await create(req, res, vi.fn())
-
-    expect(res.status).not.toHaveBeenCalled()
-    expect(res.json).toHaveBeenCalledWith({
-      succeeded: true,
-      message: 'User created successfully',
-      welcomeEmailError: 'SMTP unavailable'
-    })
+    global.WIKI.models.users.sendWelcomeEmail.mockRejectedValueOnce(new Error('SMTP unavailable'))
+    const { create } = await loadHandler(), res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await create({ user: { permissions: ['write:users'] }, body: { providerKey: 'local', email: 'alice@example.com', passwordRaw: 'temporary-secret', name: 'Alice', groups: [], sendWelcomeEmail: true } }, res)
+    expect(accounts.create).toHaveBeenCalledOnce(); expect(global.WIKI.models.users.sendWelcomeEmail).toHaveBeenCalledWith({ id: 42 })
+    expect(res.json).toHaveBeenCalledWith({ succeeded: true, message: 'User created successfully', welcomeEmailError: 'The account was created, but the welcome email could not be sent.' })
   })
 
   it('resends a welcome email for an existing user', async () => {
@@ -240,7 +203,8 @@ describe('controllers/api users endpoints', () => {
 
     await welcomeEmail(req, res)
 
-    expect(global.WIKI.models.users.sendWelcomeEmail).toHaveBeenCalledWith({ id: 42 })
+    expect(global.WIKI.models.users.sendWelcomeEmail).toHaveBeenCalledWith({ id: 42, expectedEmail: 'alice@example.com' })
+    expect(accounts.finishWelcome).toHaveBeenCalledWith(42, 'welcome-request', true)
     expect(res.json).toHaveBeenCalledWith({
       succeeded: true,
       message: 'Welcome email sent successfully'
@@ -272,76 +236,24 @@ describe('controllers/api users endpoints', () => {
   })
 
   it('returns 403 when admin user create assigns disallowed elevated groups', async () => {
-    global.WIKI.auth.checkAssignUserToGroupAccess.mockResolvedValueOnce(false)
-    const { create } = await loadHandler()
-    const req = {
-      user: { permissions: ['write:users'] },
-      body: { providerKey: 'local', email: 'alice@example.com', name: 'Alice', groups: [1] }
-    }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await create(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(403)
-    expect(res.json).toHaveBeenCalledWith({ error: 'You are not authorized to create a user with an assignment to an administrative group.' })
-    expect(global.WIKI.models.users.createNewUser).not.toHaveBeenCalled()
+    accounts.create.mockRejectedValueOnce(Object.assign(new Error('Group is outside your scope.'), { status: 403 }))
+    const { create } = await loadHandler(), res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await create({ user: { permissions: ['write:users'] }, body: { providerKey: 'local', email: 'alice@example.com', passwordRaw: 'temporary-secret', name: 'Alice', groups: [1] } }, res)
+    expect(res.status).toHaveBeenCalledWith(403); expect(global.WIKI.models.users.createNewUser).not.toHaveBeenCalled()
   })
 
   it('returns model validation errors for admin user create failures', async () => {
-    global.WIKI.models.users.createNewUser.mockRejectedValueOnce(new Error('An account already exists using this email address.'))
-    const { create } = await loadHandler()
-    const req = {
-      user: { permissions: ['manage:system'] },
-      body: { providerKey: 'local', email: 'alice@example.com', name: 'Alice', groups: [] }
-    }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await create(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(400)
-    expect(res.json).toHaveBeenCalledWith({ error: 'An account already exists using this email address.' })
+    accounts.create.mockRejectedValueOnce(Object.assign(new Error('Account already exists.'), { status: 409 }))
+    const { create } = await loadHandler(), res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await create({ user: { permissions: ['write:users'] }, body: { providerKey: 'local', email: 'alice@example.com', name: 'Alice', groups: [] } }, res)
+    expect(res.status).toHaveBeenCalledWith(409); expect(res.json).toHaveBeenCalledWith({ error: 'Account already exists.' })
   })
 
   it('updates admin users for authorized requests', async () => {
-    const { update } = await loadHandler()
-    const req = {
-      user: { permissions: ['manage:users'] },
-      params: { id: '42' },
-      body: {
-        email: 'alice@example.com',
-        name: 'Alice',
-        newPassword: 'new-secret',
-        groups: [3, 4],
-        location: 'Tallinn',
-        jobTitle: 'Architect',
-        timezone: 'Europe/Tallinn',
-        dateFormat: 'YYYY-MM-DD',
-        appearance: 'dark',
-        ignored: 'not forwarded'
-      }
-    }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await update(req, res, vi.fn())
-
-    expect(global.WIKI.auth.checkAccess).toHaveBeenCalledWith({ permissions: ['manage:users'] }, ['manage:users', 'manage:system'])
-    expect(global.WIKI.auth.checkAssignUserToGroupAccess).toHaveBeenCalledWith({ permissions: ['manage:users'] }, [3, 4])
-    expect(global.WIKI.models.users.updateUser).toHaveBeenCalledWith({
-      id: 42,
-      email: 'alice@example.com',
-      name: 'Alice',
-      newPassword: 'new-secret',
-      groups: [3, 4],
-      location: 'Tallinn',
-      jobTitle: 'Architect',
-      timezone: 'Europe/Tallinn',
-      dateFormat: 'YYYY-MM-DD',
-      appearance: 'dark'
-    })
-    expect(res.json).toHaveBeenCalledWith({
-      succeeded: true,
-      message: 'User updated successfully'
-    })
+    const { update } = await loadHandler(), user = { permissions: ['manage:users'] }, res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await update({ user, params: { id: '42' }, body: { name: 'Alice updated', groups: [4], location: '', ignored: true } }, res)
+    expect(accounts.updateProfile).toHaveBeenCalledWith(user, 42, expect.objectContaining({ fingerprint: 'account-version', profile: expect.objectContaining({ name: 'Alice updated', groups: [4], location: '' }) }))
+    expect(global.WIKI.models.users.updateUser).not.toHaveBeenCalled(); expect(res.json).toHaveBeenCalledWith({ succeeded: true, message: 'User updated successfully' })
   })
 
   it('returns 400 for malformed admin user update ids and groups', async () => {
@@ -372,45 +284,23 @@ describe('controllers/api users endpoints', () => {
   })
 
   it('returns 403 when admin user update assigns disallowed elevated groups', async () => {
-    global.WIKI.auth.checkAssignUserToGroupAccess.mockResolvedValueOnce(false)
-    const { update } = await loadHandler()
-    const req = { user: { permissions: ['manage:users'] }, params: { id: '42' }, body: { groups: [1] } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await update(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(403)
-    expect(res.json).toHaveBeenCalledWith({ error: 'You are not authorized to modify / assign a user from / to an administrative group.' })
-    expect(global.WIKI.models.users.updateUser).not.toHaveBeenCalled()
+    accounts.updateProfile.mockRejectedValueOnce(Object.assign(new Error('Target account is privileged.'), { status: 403 }))
+    const { update } = await loadHandler(), res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await update({ user: { permissions: ['manage:users'] }, params: { id: '42' }, body: { name: 'Changed' } }, res)
+    expect(res.status).toHaveBeenCalledWith(403); expect(global.WIKI.auth.revokeUserTokens).not.toHaveBeenCalled()
   })
 
   it('returns model validation errors for admin user update failures', async () => {
-    global.WIKI.models.users.updateUser.mockRejectedValueOnce(new Error('Password must be at least 6 characters!'))
-    const { update } = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] }, params: { id: '42' }, body: { groups: [] } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await update(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(400)
-    expect(res.json).toHaveBeenCalledWith({ error: 'Password must be at least 6 characters!' })
+    accounts.updateProfile.mockRejectedValueOnce(Object.assign(new Error('Reload this account.'), { status: 409 }))
+    const { update } = await loadHandler(), res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await update({ user: { permissions: ['manage:users'] }, params: { id: '42' }, body: { name: 'Changed' } }, res)
+    expect(res.status).toHaveBeenCalledWith(409); expect(res.json).toHaveBeenCalledWith({ error: 'Reload this account.' })
   })
 
   it('deletes admin users for authorized requests and revokes tokens', async () => {
-    const { delete: deleteHandler } = await loadHandler()
-    const req = { user: { permissions: ['manage:users'] }, params: { id: '42' }, body: { replaceId: 7 } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await deleteHandler(req, res, vi.fn())
-
-    expect(global.WIKI.auth.checkAccess).toHaveBeenCalledWith({ permissions: ['manage:users'] }, ['manage:users', 'manage:system'])
-    expect(global.WIKI.models.users.deleteUser).toHaveBeenCalledWith(42, 7)
-    expect(global.WIKI.auth.revokeUserTokens).toHaveBeenCalledWith({ id: 42, kind: 'u' })
-    expect(global.WIKI.events.outbound.emit).toHaveBeenCalledWith('addAuthRevoke', { id: 42, kind: 'u' })
-    expect(res.json).toHaveBeenCalledWith({
-      succeeded: true,
-      message: 'User deleted successfully'
-    })
+    const { delete: remove } = await loadHandler(), user = { permissions: ['manage:users'] }, res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await remove({ user, params: { id: '42' }, body: { replaceId: 77 } }, res)
+    expect(accounts.remove).toHaveBeenCalledWith(user, 42, expect.objectContaining({ fingerprint: 'account-version', replaceId: 77 })); expect(global.WIKI.auth.revokeUserTokens).toHaveBeenCalledWith({ id: 42, kind: 'u' })
   })
 
   it('returns 400 for malformed admin user delete ids and replacement ids', async () => {
@@ -441,39 +331,24 @@ describe('controllers/api users endpoints', () => {
   })
 
   it('rejects protected admin user deletes before calling the model', async () => {
-    const { delete: deleteHandler } = await loadHandler()
-    const req = { user: { permissions: ['manage:users'] }, params: { id: '2' }, body: { replaceId: 7 } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await deleteHandler(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(400)
-    expect(res.json).toHaveBeenCalledWith({ error: 'Cannot delete a protected system account.' })
-    expect(global.WIKI.models.users.deleteUser).not.toHaveBeenCalled()
+    accounts.remove.mockRejectedValueOnce(Object.assign(new Error('System account cannot be deleted.'), { status: 403 }))
+    const { delete: remove } = await loadHandler(), res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await remove({ user: { permissions: ['manage:users'] }, params: { id: '1' }, body: { replaceId: 77 } }, res)
+    expect(res.status).toHaveBeenCalledWith(403); expect(global.WIKI.models.users.deleteUser).not.toHaveBeenCalled(); expect(global.WIKI.auth.revokeUserTokens).not.toHaveBeenCalled()
   })
 
   it('maps foreign constraint admin user delete failures', async () => {
-    global.WIKI.models.users.deleteUser.mockRejectedValueOnce(new Error('update or delete on table "users" violates foreign key constraint'))
-    const { delete: deleteHandler } = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] }, params: { id: '42' }, body: { replaceId: 7 } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await deleteHandler(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(400)
-    expect(res.json).toHaveBeenCalledWith({ error: 'Cannot delete user because of content relational constraints.' })
+    accounts.remove.mockRejectedValueOnce(Object.assign(new Error('Private history still belongs to this account.'), { status: 403 }))
+    const { delete: remove } = await loadHandler(), res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await remove({ user: { permissions: ['manage:users'] }, params: { id: '42' }, body: { replaceId: 77 } }, res)
+    expect(res.status).toHaveBeenCalledWith(403); expect(res.json).toHaveBeenCalledWith({ error: 'Private history still belongs to this account.' })
   })
 
   it('returns model errors for admin user delete failures', async () => {
-    global.WIKI.models.users.deleteUser.mockRejectedValueOnce(new Error('This user does not exist.'))
-    const { delete: deleteHandler } = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] }, params: { id: '42' }, body: { replaceId: 7 } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await deleteHandler(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(400)
-    expect(res.json).toHaveBeenCalledWith({ error: 'This user does not exist.' })
+    accounts.remove.mockRejectedValueOnce(Object.assign(new Error('Account changed.'), { status: 409 }))
+    const { delete: remove } = await loadHandler(), res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await remove({ user: { permissions: ['manage:users'] }, params: { id: '42' }, body: { replaceId: 77 } }, res)
+    expect(res.status).toHaveBeenCalledWith(409); expect(global.WIKI.auth.revokeUserTokens).not.toHaveBeenCalled()
   })
 
   it('registers the last-logins route before the detail route', async () => {
@@ -545,109 +420,36 @@ describe('controllers/api users endpoints', () => {
 
 
   it('activates admin users through REST status action', async () => {
-    const patchBuilder = {
-      patch: vi.fn().mockReturnThis(),
-      findById: vi.fn().mockResolvedValue(1)
-    }
-    global.WIKI.models.users.query.mockReturnValueOnce(patchBuilder)
-    const { status } = await loadHandler()
-    const req = { user: { permissions: ['manage:users'] }, params: { id: '42' }, body: { isActive: true } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await status(req, res, vi.fn())
-
-    expect(global.WIKI.auth.checkAccess).toHaveBeenCalledWith({ permissions: ['manage:users'] }, ['manage:users', 'manage:system'])
-    expect(patchBuilder.patch).toHaveBeenCalledWith({ isActive: true })
-    expect(patchBuilder.findById).toHaveBeenCalledWith(42)
-    expect(global.WIKI.auth.revokeUserTokens).not.toHaveBeenCalled()
-    expect(res.json).toHaveBeenCalledWith({
-      succeeded: true,
-      message: 'User activated successfully'
-    })
+    accounts.inspect.mockResolvedValueOnce({ ...workspace(), isActive: false })
+    const { status } = await loadHandler(), user = { permissions: ['manage:users'] }, res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await status({ user, params: { id: '42' }, body: { isActive: true } }, res, vi.fn())
+    expect(accounts.act).toHaveBeenCalledWith(user, 42, expect.objectContaining({ fingerprint: 'account-version', action: 'activate' }))
   })
 
   it('deactivates admin users through REST status action and revokes tokens', async () => {
-    const patchBuilder = {
-      patch: vi.fn().mockReturnThis(),
-      findById: vi.fn().mockResolvedValue(1)
-    }
-    global.WIKI.models.users.query.mockReturnValueOnce(patchBuilder)
-    const { status } = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] }, params: { id: '42' }, body: { isActive: false } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await status(req, res, vi.fn())
-
-    expect(patchBuilder.patch).toHaveBeenCalledWith({ isActive: false })
-    expect(patchBuilder.findById).toHaveBeenCalledWith(42)
-    expect(global.WIKI.auth.revokeUserTokens).toHaveBeenCalledWith({ id: 42, kind: 'u' })
-    expect(global.WIKI.events.outbound.emit).toHaveBeenCalledWith('addAuthRevoke', { id: 42, kind: 'u' })
-    expect(res.json).toHaveBeenCalledWith({
-      succeeded: true,
-      message: 'User deactivated successfully'
-    })
+    const { status } = await loadHandler(), user = { permissions: ['manage:users'] }, res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await status({ user, params: { id: '42' }, body: { isActive: false } }, res, vi.fn())
+    expect(accounts.act).toHaveBeenCalledWith(user, 42, expect.objectContaining({ action: 'deactivate' })); expect(global.WIKI.auth.revokeUserTokens).toHaveBeenCalledWith({ id: 42, kind: 'u' })
   })
 
   it('rejects protected account deactivation through REST status action', async () => {
-    const { status } = await loadHandler()
-    const req = { user: { permissions: ['manage:users'] }, params: { id: '2' }, body: { isActive: false } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await status(req, res, vi.fn())
-
-    expect(res.status).toHaveBeenCalledWith(400)
-    expect(res.json).toHaveBeenCalledWith({ error: 'Cannot deactivate system accounts.' })
-    expect(global.WIKI.models.users.query).not.toHaveBeenCalled()
+    accounts.act.mockRejectedValueOnce(Object.assign(new Error('System account cannot be deactivated.'), { status: 403 }))
+    const { status } = await loadHandler(), res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await status({ user: { permissions: ['manage:users'] }, params: { id: '1' }, body: { isActive: false } }, res, vi.fn())
+    expect(res.status).toHaveBeenCalledWith(403); expect(global.WIKI.auth.revokeUserTokens).not.toHaveBeenCalled()
   })
 
   it('verifies admin users through REST verification action', async () => {
-    const patchBuilder = {
-      patch: vi.fn().mockReturnThis(),
-      findById: vi.fn().mockResolvedValue(1)
-    }
-    global.WIKI.models.users.query.mockReturnValueOnce(patchBuilder)
-    const { verification } = await loadHandler()
-    const req = { user: { permissions: ['manage:users'] }, params: { id: '42' }, body: { isVerified: true } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await verification(req, res, vi.fn())
-
-    expect(patchBuilder.patch).toHaveBeenCalledWith({ isVerified: true })
-    expect(patchBuilder.findById).toHaveBeenCalledWith(42)
-    expect(res.json).toHaveBeenCalledWith({
-      succeeded: true,
-      message: 'User verified successfully'
-    })
+    const { verification } = await loadHandler(), user = { permissions: ['manage:users'] }, res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await verification({ user, params: { id: '42' }, body: { isVerified: true } }, res, vi.fn())
+    expect(accounts.act).toHaveBeenCalledWith(user, 42, expect.objectContaining({ fingerprint: 'account-version', action: 'verify' }))
   })
 
   it('toggles admin user 2FA through REST tfa action', async () => {
-    const enableBuilder = {
-      patch: vi.fn().mockReturnThis(),
-      findById: vi.fn().mockResolvedValue(1)
-    }
-    const disableBuilder = {
-      patch: vi.fn().mockReturnThis(),
-      findById: vi.fn().mockResolvedValue(1)
-    }
-    global.WIKI.models.users.query
-      .mockReturnValueOnce(enableBuilder)
-      .mockReturnValueOnce(disableBuilder)
-    const { tfa } = await loadHandler()
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await tfa({ user: { permissions: ['manage:users'] }, params: { id: '42' }, body: { enabled: true } }, res, vi.fn())
-    await tfa({ user: { permissions: ['manage:users'] }, params: { id: '42' }, body: { enabled: false } }, res, vi.fn())
-
-    expect(enableBuilder.patch).toHaveBeenCalledWith({ tfaIsActive: true, tfaSecret: null })
-    expect(disableBuilder.patch).toHaveBeenCalledWith({ tfaIsActive: false, tfaSecret: null })
-    expect(res.json).toHaveBeenNthCalledWith(1, {
-      succeeded: true,
-      message: 'User 2FA enabled successfully'
-    })
-    expect(res.json).toHaveBeenNthCalledWith(2, {
-      succeeded: true,
-      message: 'User 2FA disabled successfully'
-    })
+    const { tfa } = await loadHandler(), user = { permissions: ['manage:users'] }, res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await tfa({ user, params: { id: '42' }, body: { enabled: true } }, res, vi.fn())
+    await tfa({ user, params: { id: '42' }, body: { enabled: false } }, res, vi.fn())
+    expect(accounts.act).toHaveBeenCalledWith(user, 42, expect.objectContaining({ action: 'require-2fa' })); expect(accounts.act).toHaveBeenCalledWith(user, 42, expect.objectContaining({ action: 'disable-2fa' }))
   })
 
   it('returns 403 for unauthorized admin user action requests', async () => {
@@ -680,19 +482,10 @@ describe('controllers/api users endpoints', () => {
   })
 
   it('forwards unexpected admin user action failures to next', async () => {
-    const next = vi.fn()
-    global.WIKI.models.users.query.mockReturnValueOnce({
-      patch: vi.fn().mockReturnThis(),
-      findById: vi.fn().mockRejectedValue(new Error('status db down'))
-    })
-    const { status } = await loadHandler()
-    const req = { user: { permissions: ['manage:system'] }, params: { id: '42' }, body: { isActive: true } }
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
-
-    await status(req, res, next)
-
-    expect(next).toHaveBeenCalledWith(expect.any(Error))
-    expect(next.mock.calls[0][0].message).toBe('status db down')
+    const failure = new Error('account store unavailable'); accounts.act.mockRejectedValueOnce(failure)
+    const { status } = await loadHandler(), next = vi.fn(), res = { json: vi.fn(), status: vi.fn().mockReturnThis() }
+    await status({ user: { permissions: ['manage:users'] }, params: { id: '42' }, body: { isActive: false } }, res, next)
+    expect(next).toHaveBeenCalledWith(failure)
   })
 
   it('returns the paginated admin users list for authorized requests', async () => {

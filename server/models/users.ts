@@ -1,5 +1,7 @@
 /* global WIKI */
 
+import { randomUUID } from 'node:crypto'
+import { sessionVersion } from '../helpers/account-session.ts'
 import bcrypt from 'bcryptjs-then'
 import _ from 'lodash'
 import tfa from 'node-2fa'
@@ -214,6 +216,8 @@ interface UpdateUserOptions {
 }
 
 interface UserPatch {
+  authVersion?: number
+  sessionsRevokedAt?: string
   email?: string
   name?: string
   password?: string
@@ -261,6 +265,9 @@ export default class User extends Model {
   declare fontFamily: UserFontFamily
   declare isSystem: boolean
   declare isActive: boolean
+  declare authVersion: number
+  declare adminRevision: string
+  declare sessionsRevokedAt: string | null
   declare isVerified: boolean
   declare mustChangePwd: boolean
   declare createdAt: string
@@ -351,6 +358,7 @@ export default class User extends Model {
     await super.$beforeUpdate(opt, context)
 
     this.updatedAt = new Date().toISOString()
+    this.adminRevision = randomUUID()
 
     if (!(opt.patch && this.password === undefined)) {
       await this.generateHash()
@@ -656,6 +664,7 @@ export default class User extends Model {
         try {
           const tfaToken = await wiki.models.userKeys.generateToken({
             kind: 'tfa',
+            expectedAuthVersion: sessionVersion(user.authVersion) ?? -1,
             userId: user.id
           })
           return {
@@ -672,6 +681,7 @@ export default class User extends Model {
           const { qrImage: tfaQRImage, secret: tfaSecret } = await user.generateTFA()
           const tfaToken = await wiki.models.userKeys.generateToken({
             kind: 'tfaSetup',
+            expectedAuthVersion: sessionVersion(user.authVersion) ?? -1,
             userId: user.id
           })
           return {
@@ -693,6 +703,7 @@ export default class User extends Model {
       try {
         const pwdChangeToken = await wiki.models.userKeys.generateToken({
           kind: 'changePwd',
+          expectedAuthVersion: sessionVersion(user.authVersion) ?? -1,
           userId: user.id
         })
 
@@ -721,7 +732,7 @@ export default class User extends Model {
   /**
    * Generate a new token for a user
    */
-  static async refreshToken(user: number | User, options: { audience?: NonNullable<SignOptions['audience']> } = {}): Promise<{ token: string; user: User }> {
+  static async refreshToken(user: number | User, options: { audience?: NonNullable<SignOptions['audience']>; expectedAuthVersion?: number } = {}): Promise<{ token: string; user: User }> {
     let currentUser: User
     if (typeof user === 'number') {
       if (!Number.isSafeInteger(user)) {
@@ -751,6 +762,9 @@ export default class User extends Model {
       }
     }
 
+    const authVersion = sessionVersion(currentUser.authVersion)
+    if (authVersion === null || (options.expectedAuthVersion !== undefined && options.expectedAuthVersion !== authVersion)) throw new wiki.Error.AuthLoginFailed()
+
     // Update Last Login Date
     // -> Bypass Objection.js to avoid updating the updatedAt field
     await wiki.models.knex('users').where('id', currentUser.id).update({ lastLoginAt: new Date().toISOString() })
@@ -759,6 +773,7 @@ export default class User extends Model {
       token: jwt.sign(
         {
           id: currentUser.id,
+          authVersion,
           email: currentUser.email,
           name: currentUser.name,
           av: currentUser.pictureUrl,
@@ -835,6 +850,8 @@ export default class User extends Model {
         .query(trx)
         .patch({
           password: newPassword,
+          authVersion: wiki.models.knex.raw('?? + 1', ['authVersion']),
+          sessionsRevokedAt: new Date().toISOString(),
           mustChangePwd: false
         })
         .findById(tokenUser.id)
@@ -846,7 +863,7 @@ export default class User extends Model {
         if (err) {
           return reject(err)
         }
-        const jwtToken = await wiki.models.users.refreshToken(usr)
+        const jwtToken = await wiki.models.users.refreshToken(usr.id)
         resolve({ jwt: jwtToken.token, userId: usr.id })
       })
     })
@@ -873,6 +890,7 @@ export default class User extends Model {
     }
     const resetToken = await wiki.models.userKeys.generateToken({
       userId: usr.id,
+      expectedAuthVersion: sessionVersion(usr.authVersion) ?? -1,
       kind: 'resetPwd'
     })
 
@@ -923,6 +941,8 @@ export default class User extends Model {
         .query(trx)
         .patch({
           password: newPassword,
+          authVersion: wiki.models.knex.raw('?? + 1', ['authVersion']),
+          sessionsRevokedAt: new Date().toISOString(),
           mustChangePwd: false,
           isVerified: true
         })
@@ -934,11 +954,12 @@ export default class User extends Model {
   /**
    * Send the standard invitation for an existing account.
    */
-  static async sendWelcomeEmail({ id }: { id: number }): Promise<void> {
+  static async sendWelcomeEmail({ id, expectedEmail }: { id: number; expectedEmail?: string }): Promise<void> {
     const usr = await wiki.models.users.query().findById(id)
     if (!usr) {
       throw new wiki.Error.UserNotFound()
     }
+    if (expectedEmail !== undefined && usr.email !== expectedEmail) throw new wiki.Error.InputInvalid('The account email changed. Reload before sending a welcome message.')
     await wiki.mail.send({
       template: 'accountWelcome',
       to: usr.email,
@@ -1125,6 +1146,8 @@ export default class User extends Model {
           throw new wiki.Error.InputInvalid('Password must be at least 6 characters!')
         }
         usrData.password = newPassword
+        usrData.authVersion = (usr.authVersion ?? 0) + 1
+        usrData.sessionsRevokedAt = new Date().toISOString()
         authorizationChanged = true
       }
       if (_.isArray(groups)) {
@@ -1140,10 +1163,10 @@ export default class User extends Model {
         }
         authorizationChanged ||= addUsrGroups.length > 0 || remUsrGroups.length > 0
       }
-      if (typeof location === 'string' && !_.isEmpty(location) && location !== usr.location) {
+      if (typeof location === 'string' && location !== usr.location) {
         usrData.location = _.trim(location)
       }
-      if (typeof jobTitle === 'string' && !_.isEmpty(jobTitle) && jobTitle !== usr.jobTitle) {
+      if (typeof jobTitle === 'string' && jobTitle !== usr.jobTitle) {
         usrData.jobTitle = _.trim(jobTitle)
       }
       if (typeof timezone === 'string' && !_.isEmpty(timezone) && timezone !== usr.timezone) {
@@ -1157,6 +1180,10 @@ export default class User extends Model {
       }
       if (fontFamily !== undefined && fontFamily !== usr.fontFamily) {
         usrData.fontFamily = fontFamily
+      }
+      if (authorizationChanged) {
+        usrData.authVersion = (usr.authVersion ?? 0) + 1
+        usrData.sessionsRevokedAt = new Date().toISOString()
       }
       await wiki.models.users.query(trx).patch(usrData).findById(id)
       return authorizationChanged

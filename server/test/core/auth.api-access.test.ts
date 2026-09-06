@@ -176,7 +176,8 @@ describe('API-key authentication boundary', () => {
   })
 
   test('preserves internal REST access for signed-in user sessions', async () => {
-    const sessionUser = { id: 42, permissions: ['manage:system'] } as Express.User
+    const sessionUser = { id: 42, iat: Math.floor(Date.now()/1000), groups: [3], authVersion: 0, permissions: ['manage:system'] } as Express.User
+    ;(WIKI.models.users.query as ReturnType<typeof vi.fn>).mockReturnValue({ findById: vi.fn().mockResolvedValue({ id: 42, isActive: true, authVersion: 0 }) })
     authenticatedPrincipal = sessionUser
     const req = createRequest('/_api/system/info')
 

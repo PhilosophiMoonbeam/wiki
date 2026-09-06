@@ -93,14 +93,17 @@ describe('group operations authority boundaries', () => {
       if (table === 'users') {
         return {
           where: (criteria: { id: number }) => ({
-            first: () => findUserById(criteria.id)
-          })
+            forUpdate: () => ({ first: () => findUserById(criteria.id) })
+          }),
+          whereIn: () => ({ orderBy: () => ({ forUpdate: () => ({ select: async () => [] }) }), update: async () => { lifecycle.push('end-sessions'); return 1 } })
         }
       }
       if (table === 'userGroups') {
         return {
           where: (_criteria: { userId: number; groupId: number }) => ({
-            first: async () => (membershipExists ? { userId: 10, groupId: group.id } : undefined)
+            first: async () => (membershipExists ? { userId: 10, groupId: group.id } : undefined),
+            select: async () => [],
+            delete: () => unrelateWhere('userId', 10)
           }),
           insert: insertMembership
         }
@@ -108,7 +111,7 @@ describe('group operations authority boundaries', () => {
       throw new Error(`Unexpected test table: ${table}`)
     })
     transaction = vi.fn(async callback => callback(database))
-    const knex = Object.assign(database, { transaction })
+    const knex = Object.assign(database, { transaction, raw: () => 'authVersion + 1' })
 
     queryGroups = vi.fn(() => ({ deleteById, findById, patch }))
     Reflect.set(globalThis, 'WIKI', {
@@ -269,7 +272,7 @@ describe('group operations authority boundaries', () => {
     expect(findById).toHaveBeenCalledWith(3)
     expect(findUserById).toHaveBeenCalledWith(10)
     expect(insertMembership).toHaveBeenCalledWith({ userId: 10, groupId: 3 })
-    expect(lifecycle).toEqual(['lookup', 'relate', 'revoke'])
+    expect(lifecycle).toEqual(['lookup', 'relate', 'end-sessions', 'revoke'])
   })
 
   it('rejects lower-tier assignment against authority read under the group lock', async () => {
@@ -344,7 +347,8 @@ describe('group operations authority boundaries', () => {
     await operations.unassignUser({ requester: requester(['manage:groups']), groupId: 3, userId: 10 })
 
     expect(findUserById).toHaveBeenCalledWith(10)
-    expect(relatedQuery).toHaveBeenCalledWith('users')
+    expect(transaction).toHaveBeenCalledTimes(1)
+    expect(lifecycle).toContain('end-sessions')
     expect(unrelateWhere).toHaveBeenCalledWith('userId', 10)
     expect(revokeUserTokens).toHaveBeenCalledWith({ id: 10, kind: 'u' })
   })

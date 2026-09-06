@@ -1,325 +1,83 @@
-<template lang='pug'>
-  v-container.admin-users(fluid)
-    v-row
-      v-col(cols='12')
-        AdminHero(
-          title='Users'
-          description='Manage the people who read, write and care for your shared knowledge.'
-          eyebrow='People & access'
-          icon='mdi-account-outline'
-          heading-id='admin-users-heading'
-        )
-          template(v-slot:actions)
-            v-btn(
-              icon
-              variant="outlined"
-              color='grey'
-              :loading='loading || strategiesLoading'
-              :disabled='loading || strategiesLoading'
-              @click='refresh'
-              aria-label='Refresh users'
-            )
-              v-icon mdi-refresh
-            v-btn(color='primary' size="large" variant="flat" @click='createUser' :icon='$vuetify.display.smAndDown' aria-label='New user')
-              v-icon(:start='$vuetify.display.mdAndUp') mdi-plus
-              span(v-if='$vuetify.display.mdAndUp') New User
-        v-card.mt-3.animated.fadeInUp
-          .admin-filter-bar.pa-2.d-flex.align-center
-            v-text-field.admin-users-filter-search(
-              variant="solo"
-              flat
-              v-model='search'
-              prepend-inner-icon='mdi-account-search-outline'
-              label='Search users'
-              hide-details
-              density="compact"
-            )
-            v-spacer
-            v-select.admin-users-filter-provider(
-              variant="solo"
-              flat
-              hide-details
-              label='Identity Provider'
-              :items='strategyOptions'
-              v-model='filterStrategy'
-              item-title='displayName'
-              item-value='key'
-              density="compact"
-            )
-            v-btn.admin-users-filter-clear(v-if='hasActiveFilters' variant='text' size='small' color='primary' @click='clearFilters') Clear filters
-          v-alert(v-if='errorMessage && users.length' type='error' variant='tonal' class='ma-3')
-            .d-flex.align-center
-              span {{ errorMessage }}
-              v-spacer
-              v-btn(variant='text' color='primary' @click='loadUsers') Try again
-          v-divider
-          v-data-table-server.admin-responsive-table(
-            :items='users'
-            :items-length='totalUsers'
-            :headers='responsiveHeaders'
-            :hide-default-header='$vuetify.display.smAndDown'
-            v-model:page='pagination'
-            v-model:sort-by='sortBy'
-            :items-per-page='15'
-            :loading='loading'
-            hide-default-footer
-          )
-            template(v-slot:item='props')
-              tr(v-if='$vuetify.display.mdAndUp')
-                td {{ props.item.id }}
-                td
-                  router-link.admin-record-link(:to='`/users/${props.item.id}`') {{ props.item.name }}
-                td {{ props.item.email }}
-                td {{ getStrategyName(props.item.providerKey) }}
-                td {{ $helpers.formatMoment(props.item.createdAt, 'from') }}
-                td
-                  span(v-if='props.item.lastLoginAt') {{ $helpers.formatMoment(props.item.lastLoginAt, 'from') }}
-                  em.text-medium-emphasis(v-else) Never
-                td
-                  v-icon.me-2(v-if='props.item.isSystem' size='18' aria-label='System user') mdi-lock-outline
-                  span.admin-status(v-if='props.item.isActive') Active
-                  span.admin-status.admin-status--inactive(v-else) Inactive
-              tr.admin-mobile-table-row(v-else)
-                td(:colspan='responsiveHeaders.length')
-                  .admin-mobile-record
-                    .d-flex.align-center
-                      router-link.admin-mobile-record-title(:to='`/users/${props.item.id}`') {{ props.item.name }}
-                      v-spacer
-                      v-icon.me-2(v-if='props.item.isSystem' size="small" aria-label='System user') mdi-lock-outline
-                      span.admin-status(v-if='props.item.isActive') Active
-                      span.admin-status.admin-status--inactive(v-else) Inactive
-                    .admin-users-email.text-body-medium {{ props.item.email }}
-                    .admin-mobile-record-meta {{ getStrategyName(props.item.providerKey) }}
-                    .text-body-small.text-medium-emphasis.mt-2
-                      span(v-if='props.item.lastLoginAt') Last login {{ $helpers.formatMoment(props.item.lastLoginAt, 'from') }}
-                      em(v-else) Never logged in
-            template(v-slot:no-data)
-              async-state(v-if='loading' state='loading' title='Loading users' message='Fetching the latest user list.')
-              async-state(v-else-if='errorMessage' state='error' title='Users could not be loaded' :message='errorMessage' retry-label='Try again' @retry='loadUsers')
-              async-state(v-else-if='hasActiveFilters' state='empty' title='No users match these filters' message='Clear the filters to see all users.')
-              async-state(v-else state='empty' title='No users yet' message='Create a user to grant access.')
-          v-card-chin(v-if='pageCount > 1')
-            v-spacer
-            v-pagination(v-model='pagination' :length='pageCount')
-            v-spacer
-    user-create(v-model='isCreateDialogShown' @refresh='refresh(false)')
+<template>
+  <v-container fluid class="account-directory">
+    <admin-hero title="Users" description="The people who shape your shared knowledge." eyebrow="People & access" icon="mdi-account-outline">
+      <template #actions><v-btn variant="text" prepend-icon="mdi-refresh" :loading="loading" :disabled="creating" @click="load">Reload directory</v-btn><v-btn v-if="directory?.canCreate" color="primary" variant="flat" prepend-icon="mdi-account-plus-outline" @click="creating = true">Create account</v-btn></template>
+    </admin-hero>
+
+    <nav class="account-directory-stats" aria-label="Account status filters"><button :aria-pressed="state === 'all' && verified === 'all'" @click="setStatus('all')"><span>All accounts</span><strong>{{ directory?.counts.accounts ?? '—' }}</strong></button><button :aria-pressed="state === 'active' && verified === 'all'" @click="setStatus('active')"><span>Active</span><strong>{{ directory?.counts.active ?? '—' }}</strong></button><button :aria-pressed="state === 'inactive' && verified === 'all'" @click="setStatus('inactive')"><span>Inactive</span><strong>{{ directory?.counts.inactive ?? '—' }}</strong></button><button :aria-pressed="verified === 'unverified'" @click="setStatus('unverified')"><span>Email unverified</span><strong>{{ directory?.counts.unverified ?? '—' }}</strong></button></nav>
+    <p class="account-directory-guide">Group memberships connect people to permissions and page rules. <router-link to="/groups">Manage groups <v-icon icon="mdi-arrow-right" size="16" /></router-link></p>
+    <section class="account-directory-register" aria-labelledby="account-register-heading">
+      <div class="account-register-heading"><div><span class="account-kicker">Account register</span><h2 id="account-register-heading">Find your people</h2></div><span aria-live="polite">{{ directory ? directory.total + (directory.total === 1 ? ' account' : ' accounts') : '' }}</span></div>
+      <form class="account-directory-filters" @submit.prevent="searchNow"><v-text-field v-model="search" label="Search name or email" prepend-inner-icon="mdi-magnify" variant="outlined" density="comfortable" hide-details clearable /><v-select v-model="provider" :items="providerOptions" label="Sign-in provider" variant="outlined" density="comfortable" hide-details /><v-select v-model="group" :items="groupOptions" label="Group membership" variant="outlined" density="comfortable" hide-details /><v-btn v-if="filtered" variant="text" @click="clearFilters">Clear filters</v-btn></form>
+      <async-state v-if="loading" state="loading" title="Loading accounts" message="Reading current memberships and account status." />
+      <async-state v-else-if="error" state="error" title="The account directory is unavailable" :message="error" retry-label="Try again" @retry="load" />
+      <async-state v-else-if="!directory?.items.length" state="empty" :title="filtered ? 'No matching accounts' : 'No accounts to show'" :message="filtered ? 'Try another name, provider or group, or clear your filters.' : 'Create an account to welcome someone into the workspace.'" />
+      <template v-else>
+        <div class="account-register-columns" aria-hidden="true"><span>Person & membership</span><span>Sign-in provider</span><span>Account state</span></div>
+        <ul class="account-register-list"><li v-for="person in directory.items" :key="person.id"><div class="account-person"><span class="account-initials" aria-hidden="true">{{ initials(person.name) }}</span><div><router-link class="account-person-name" :to="accountLink(person.id)">{{ person.name }} <v-icon v-if="person.id <= 2 || person.isSystem" icon="mdi-lock-outline" size="15" :aria-label="person.id === 2 ? 'Guest identity' : 'Protected account'" /></router-link><p class="account-email">{{ person.email }}</p><div class="account-memberships"><span v-for="membership in person.groups" :key="membership.id">{{ membership.name }}</span><em v-if="!person.groups.length">No group membership</em></div></div></div><div class="account-provider"><strong>{{ person.providerTitle }}</strong><span>{{ person.lastLoginAt ? 'Sign-in or renewal ' + relativeDate(person.lastLoginAt) : 'No sign-in recorded' }}</span></div><div class="account-row-state"><span class="account-state" :class="{ 'account-state-paused': !person.isActive }"><i aria-hidden="true" />{{ person.isActive ? 'Active' : 'Inactive' }}</span><span v-if="!person.isVerified" class="account-unverified">Email unverified</span><span v-else-if="person.twoFactor === 'enrollment-required'" class="account-unverified">Authenticator required</span><router-link :to="accountLink(person.id)" :aria-label="`Manage ${person.name}`">Manage <v-icon icon="mdi-arrow-right" size="16" /></router-link></div></li></ul>
+        <footer class="account-register-footer"><span>{{ offset + 1 }}–{{ Math.min(offset + directory.limit, directory.total) }} of {{ directory.total }} · Includes system identities</span><div><v-btn variant="text" :disabled="offset === 0" prepend-icon="mdi-chevron-left" @click="page(-1)">Previous</v-btn><v-btn variant="text" :disabled="offset + directory.limit >= directory.total" append-icon="mdi-chevron-right" @click="page(1)">Next</v-btn></div></footer>
+      </template>
+    </section>
+    <account-create ref="createDialog" v-model="creating" @created="created" />
+  </v-container>
 </template>
-
-<script lang='ts'>
-import { fetchAdminAuthProviders, type AdminAuthProviderSummary } from '../../helpers/auth-api'
+<script lang="ts">
 import AsyncState from '@/components/common/async-state.vue'
-import { getErrorMessage } from '../../helpers/root-ui-store'
-import { fetchAdminUsersList, type AdminUserListRow } from '../../helpers/users-api'
-import UserCreate from './admin-users-create.vue'
-import { wikiStore } from '@/store/index.ts'
-
-type AuthStrategySummary = Pick<AdminAuthProviderSummary, 'key' | 'displayName'> & {
-  isEnabled?: boolean
-}
-type UserTableHeader = { title: string, key: string, value: string, sortable: boolean, width?: number }
-type UserTableSort = { key: string, order: 'asc' | 'desc' }
-
+import AccountCreate from './admin-users-create.vue'
+import { fetchAccountDirectory } from '../../helpers/account-api.ts'
+import { getErrorMessage } from '../../helpers/root-ui-store.ts'
+import type { AccountDirectory } from '../../../shared/account-policy.ts'
+const directoryFilters = (query: Record<string, unknown>) => ({ search: typeof query.search === 'string' ? query.search.slice(0,200) : '', state: ['active','inactive'].includes(String(query.state)) ? String(query.state) : 'all', verified: query.verified === 'unverified' ? 'unverified' : 'all', provider: typeof query.provider === 'string' ? query.provider : 'all', group: typeof query.group === 'string' ? query.group : 'all', offset: Number.isSafeInteger(Number(query.offset)) && Number(query.offset) >= 0 && Number(query.offset) <= 1000000 ? Number(query.offset) : 0 })
 export default {
-  components: { AsyncState, UserCreate },
-  data() {
-    return {
-      pagination: 1,
-      pageCount: 0,
-      totalUsers: 0,
-      sortBy: [{ key: 'name', order: 'asc' }] as UserTableSort[],
-      users: [] as AdminUserListRow[],
-      headers: [
-        { title: 'ID', key: 'id', value: 'id', width: 80, sortable: true },
-        { title: 'Name', key: 'name', value: 'name', sortable: true },
-        { title: 'Email', key: 'email', value: 'email', sortable: true },
-        { title: 'Provider', key: 'providerKey', value: 'providerKey', sortable: true },
-        { title: 'Created', key: 'createdAt', value: 'createdAt', sortable: true },
-        { title: 'Last Login', key: 'lastLoginAt', value: 'lastLoginAt', sortable: true },
-        { title: 'Status', key: 'actions', value: 'actions', sortable: false, width: 110 }
-      ] as UserTableHeader[],
-      strategies: [] as AuthStrategySummary[],
-      filterStrategy: 'all',
-      search: '',
-      loading: false,
-      strategiesLoading: false,
-      errorMessage: '',
-      loadRequestId: 0,
-      strategiesRequestId: 0,
-      searchDebounce: null as ReturnType<typeof setTimeout> | null,
-      isCreateDialogShown: false,
-      isDisposed: false,
-      isClearingFilters: false
-    }
-  },
+  components: { AsyncState, AccountCreate },
+  data() { return { directory: null as AccountDirectory | null, loading: false, error: '', ...directoryFilters(this.$route.query), restoring: false, creating: false, sequence: 0, disposed: false, timer: null as ReturnType<typeof setTimeout> | null } },
   computed: {
-    responsiveHeaders() {
-      return this.$vuetify.display.smAndDown ? this.headers.filter(header => (header.key ?? header.value) === 'name') : this.headers
-    },
-    strategyOptions() {
-      return this.strategies.map(strategy => ({
-        ...strategy,
-        displayName: strategy.key !== 'all' && strategy.isEnabled === false ? `${strategy.displayName} (disabled)` : strategy.displayName
-      }))
-    },
-    hasActiveFilters() {
-      return Boolean(this.search.trim() || this.filterStrategy !== 'all')
-    }
+    filtered(): boolean { return Boolean(this.search || this.state !== 'all' || this.verified !== 'all' || this.provider !== 'all' || this.group !== 'all') },
+    providerOptions() { return [{ title: 'All providers', value: 'all' }, ...(this.directory?.providers ?? []).map(row => ({ title: row.title, value: row.key }))] },
+    groupOptions() { return [{ title: 'All groups', value: 'all' }, ...(this.directory?.groups ?? []).map(row => ({ title: row.name, value: String(row.id) }))] }
   },
   watch: {
-    search() {
-      if (this.isClearingFilters) return
-      if (this.searchDebounce !== null) clearTimeout(this.searchDebounce)
-      this.searchDebounce = setTimeout(() => {
-        this.searchDebounce = null
-        if (this.pagination !== 1) this.pagination = 1
-        else this.loadUsers()
-      }, 300)
-    },
-    filterStrategy() {
-      if (this.isClearingFilters) return
-      if (this.pagination !== 1) this.pagination = 1
-      else this.loadUsers()
-    },
-    sortBy() { this.loadUsers() },
-    pagination() { this.loadUsers() }
+    search() { if (!this.restoring) this.queueSearch() }, provider() { if (!this.restoring) this.queueSearch() }, group() { if (!this.restoring) this.queueSearch() },
+    '$route.query'(query: Record<string, unknown>) { const next = directoryFilters(query); if (Object.entries(next).every(([key,value]) => Reflect.get(this,key) === value)) return; this.restoring = true; Object.assign(this,next); this.$nextTick(() => { this.restoring = false; void this.load(false) }) }
   },
   methods: {
-    createUser() { this.isCreateDialogShown = true },
-    clearFilters() {
-      if (this.searchDebounce !== null) {
-        clearTimeout(this.searchDebounce)
-        this.searchDebounce = null
-      }
-      this.isClearingFilters = true
-      this.search = ''
-      this.filterStrategy = 'all'
-      this.$nextTick(() => {
-        if (this.isDisposed) return
-        this.isClearingFilters = false
-        if (this.pagination !== 1) this.pagination = 1
-        else this.loadUsers()
-      })
-    },
-    async loadStrategies() {
-      if (this.isDisposed) return false
-      const requestId = ++this.strategiesRequestId
-      this.strategiesLoading = true
-      wikiStore.startLoading('admin-users-strategies-refresh')
-      try {
-        const providers = await fetchAdminAuthProviders(window.fetch.bind(window), 'Admin authentication providers response is invalid')
-        if (requestId !== this.strategiesRequestId) return false
-        this.strategies = [{ key: 'all', displayName: 'All Providers' }, ...providers.map(provider => ({ key: provider.key, displayName: provider.displayName, isEnabled: provider.isEnabled }))]
-        if (!this.strategies.some(strategy => strategy.key === this.filterStrategy)) this.filterStrategy = 'all'
-        return true
-      } catch (err) {
-        if (requestId !== this.strategiesRequestId) return false
-        wikiStore.showNotification({ style: 'red', message: getErrorMessage(err), icon: 'alert' })
-        return false
-      } finally {
-        wikiStore.stopLoading('admin-users-strategies-refresh')
-        if (requestId === this.strategiesRequestId) this.strategiesLoading = false
-      }
-    },
-    async loadUsers() {
-      if (this.isDisposed) return false
-      const requestId = ++this.loadRequestId
-      this.loading = true
-      this.errorMessage = ''
-      wikiStore.startLoading('admin-users-refresh')
-      try {
-        const result = await fetchAdminUsersList(window.fetch.bind(window), {
-          page: this.pagination,
-          pageSize: 15,
-          filter: this.search.trim(),
-          providerKey: this.filterStrategy,
-          orderBy: this.sortBy[0]?.key ?? 'name',
-          orderByDirection: this.sortBy[0]?.order ?? 'asc'
-        }, 'Users list response is invalid')
-        if (requestId !== this.loadRequestId) return false
-        this.users = result.users
-        this.totalUsers = result.total
-        this.pageCount = Math.max(1, Math.ceil(result.total / 15))
-        return true
-      } catch (err) {
-        if (requestId !== this.loadRequestId) return false
-        this.errorMessage = getErrorMessage(err)
-        this.pageCount = 0
-        wikiStore.showNotification({ message: this.errorMessage, style: 'error', icon: 'alert' })
-        return false
-      } finally {
-        wikiStore.stopLoading('admin-users-refresh')
-        if (requestId === this.loadRequestId) this.loading = false
-      }
-    },
-    async refresh(notify = true) {
-      if (this.isDisposed) return
-      const strategiesLoaded = await this.loadStrategies()
-      if (this.isDisposed) return
-      const usersLoaded = await this.loadUsers()
-      if (notify && strategiesLoaded && usersLoaded) wikiStore.showNotification({ message: 'Users list has been refreshed.', style: 'success', icon: 'cached' })
-    },
-    getStrategyName(key: string) {
-      return this.strategies.find(strategy => strategy.key === key)?.displayName || key
-    }
+    async load(syncQuery = true) { if (syncQuery) this.syncQuery(); const sequence = ++this.sequence; this.loading = true; this.error = ''; try { const directory = await fetchAccountDirectory(new URLSearchParams({ search: this.search || '', state: this.state, verified: this.verified, provider: this.provider, group: this.group, offset: String(this.offset), limit: '25' })); if (this.disposed || sequence !== this.sequence) return; this.directory = directory; if (this.offset && this.offset >= directory.total) { this.offset = 0; void this.load() } } catch (error) { if (!this.disposed && sequence === this.sequence) this.error = getErrorMessage(error) } finally { if (!this.disposed && sequence === this.sequence) this.loading = false } },
+    syncQuery() { const query = { ...this.$route.query }; for (const key of ['search','state','verified','provider','group','offset']) delete query[key]; if (this.search) query.search = this.search; if (this.state !== 'all') query.state = this.state; if (this.verified !== 'all') query.verified = this.verified; if (this.provider !== 'all') query.provider = this.provider; if (this.group !== 'all') query.group = this.group; if (this.offset) query.offset = String(this.offset); void this.$router.replace({ query }) },
+    accountLink(id: number) { return { path: `/users/${id}`, query: { from: this.$route.fullPath } } },
+    queueSearch() { if (this.timer) clearTimeout(this.timer); this.timer = setTimeout(() => this.searchNow(), 250) },
+    searchNow() { if (this.timer) clearTimeout(this.timer); this.offset = 0; void this.load() },
+    setStatus(status: string) { this.state = ['active', 'inactive'].includes(status) ? status : 'all'; this.verified = status === 'unverified' ? 'unverified' : 'all'; this.searchNow() },
+    clearFilters() { this.search = ''; this.state = 'all'; this.verified = 'all'; this.provider = 'all'; this.group = 'all'; this.searchNow() },
+    page(direction: number) { this.offset = Math.max(0, this.offset + direction * 25); void this.load() },
+    initials(name: string) { return name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase() },
+    relativeDate(value: string) { const days = Math.floor((Date.now() - Date.parse(value)) / 86400000); return days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago` },
+    created(id: number) { this.creating = false; void this.$router.push(this.accountLink(id)) }
   },
-  mounted() {
-    this.loadStrategies()
-    this.loadUsers()
-  },
-  beforeUnmount() {
-    this.isDisposed = true
-    this.loadRequestId++
-    this.strategiesRequestId++
-    if (this.searchDebounce !== null) clearTimeout(this.searchDebounce)
-  }
+  mounted() { void this.load() },
+  beforeRouteLeave() { return (this.$refs.createDialog as { canLeave: () => boolean } | undefined)?.canLeave() ?? true },
+  beforeUnmount() { this.disposed = true; this.sequence++; if (this.timer) clearTimeout(this.timer) }
 }
 </script>
-
-<style lang='scss'>
-.v-application.admin .admin-main > .v-container.admin-users .admin-filter-bar {
-  display: grid !important;
-  grid-template-columns: minmax(14rem, 1fr) minmax(12rem, 16rem) auto;
-  align-items: center;
-
-  > .v-spacer {
-    display: none;
-  }
-
-  > .v-input {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-    margin-inline-start: 0 !important;
-  }
-}
-
-.v-application.admin .admin-main > .v-container.admin-users .admin-users-email {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-@media (min-width: 840px) and (max-width: 959px) {
-  .v-application.admin .admin-main > .v-container.admin-users .admin-filter-bar {
-    grid-template-columns: minmax(13rem, 2fr) minmax(11rem, 14rem) auto;
-  }
-}
-
-@media (min-width: 600px) and (max-width: 839px) {
-  .v-application.admin .admin-main > .v-container.admin-users .admin-filter-bar {
-    grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem);
-
-    > .admin-users-filter-clear {
-      grid-column: 1 / -1;
-      justify-self: start;
-    }
-  }
-}
-
-@media (max-width: 599px) {
-  .v-application.admin .admin-main > .v-container.admin-users .admin-filter-bar {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
+<style lang="scss">
+.account-directory { --account-line: rgba(var(--v-theme-on-surface), .12); }
+.account-kicker { display:block; font-size:.68rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:rgba(var(--v-theme-on-surface), .66); }
+.account-directory-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; border:1px solid var(--account-line); border-radius:12px; overflow:hidden; background:var(--account-line); margin:26px 0 16px; button { display:flex; align-items:center; justify-content:space-between; gap:12px; border:0; border-top:3px solid transparent; text-align:left; padding:18px 22px; background:rgb(var(--v-theme-surface)); color:rgb(var(--v-theme-on-surface)); cursor:pointer; &[aria-pressed=true] { border-top-color:rgb(var(--v-theme-primary)); background:color-mix(in srgb,rgb(var(--v-theme-primary)) 7%,rgb(var(--v-theme-surface))); } span { font-size:.8rem; } strong { font-size:1.65rem; font-weight:500; font-variant-numeric:tabular-nums; } &:focus-visible { outline:2px solid rgb(var(--v-theme-on-surface)); outline-offset:-5px; } } }
+.account-directory-guide { font-size:.78rem; line-height:1.6; color:rgba(var(--v-theme-on-surface),.68); margin:0 0 26px; a { color:rgb(var(--v-theme-on-surface)); text-underline-offset:4px; white-space:nowrap; margin-left:8px; } }
+.account-directory-register { border:1px solid var(--account-line); border-radius:14px; background:rgb(var(--v-theme-surface)); overflow:hidden; }
+.account-register-heading { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:24px 26px 20px; h2 { font-size:1.3rem; margin-top:5px; font-weight:500; } >span { font-size:.8rem; color:rgba(var(--v-theme-on-surface),.65); } }
+.account-directory-filters { display:grid; grid-template-columns:minmax(220px,1.5fr) minmax(150px,1fr) minmax(150px,1fr) auto; gap:12px; padding:0 26px 24px; align-items:center; >* { min-width:0; } }
+.account-register-columns { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(140px,.8fr) minmax(130px,.55fr); gap:28px; padding:12px 26px; border-top:1px solid var(--account-line); border-bottom:1px solid var(--account-line); font-size:.65rem; text-transform:uppercase; letter-spacing:.1em; color:rgba(var(--v-theme-on-surface),.6); }
+.account-register-list { list-style:none; padding:0; margin:0; >li { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(140px,.8fr) minmax(130px,.55fr); gap:28px; align-items:center; padding:23px 26px; border-bottom:1px solid var(--account-line); &:last-child { border-bottom:0; } } }
+.account-person { display:flex; align-items:flex-start; gap:15px; min-width:0; >div { min-width:0; } }
+.account-initials { display:grid; place-items:center; flex-shrink:0; width:42px; height:42px; border-radius:50%; background:rgba(var(--v-theme-on-surface),.055); border:1px solid var(--account-line); font-size:.75rem; letter-spacing:.03em; }
+.account-person-name { font-size:.95rem; font-weight:650; color:rgb(var(--v-theme-on-surface)); text-decoration:none; overflow-wrap:anywhere; &:hover { text-decoration:underline; text-underline-offset:4px; } }
+.account-email { margin:4px 0 8px; font-size:.8rem; color:rgba(var(--v-theme-on-surface),.66); overflow-wrap:anywhere; }
+.account-memberships { display:flex; flex-wrap:wrap; gap:5px; span { border:1px solid var(--account-line); border-radius:4px; padding:2px 6px; font-size:.64rem; } em { font-size:.7rem; color:rgba(var(--v-theme-on-surface),.65); } }
+.account-provider { display:flex; flex-direction:column; gap:5px; overflow-wrap:anywhere; strong { font-size:.8rem; font-weight:500; } span { font-size:.71rem; color:rgba(var(--v-theme-on-surface),.62); } }
+.account-row-state { display:flex; flex-direction:column; gap:8px; align-items:flex-start; a { color:rgb(var(--v-theme-on-surface)); font-size:.72rem; text-underline-offset:3px; } }
+.account-state { display:inline-flex; align-items:center; gap:6px; font-size:.74rem; i { width:6px; height:6px; background:rgb(var(--v-theme-success)); border-radius:50%; } &.account-state-paused i { background:rgba(var(--v-theme-on-surface),.38); } }
+.account-unverified { font-size:.68rem; }
+.account-register-footer { border-top:1px solid var(--account-line); padding:14px 20px; display:flex; align-items:center; justify-content:space-between; gap:10px; >span { font-size:.72rem; color:rgba(var(--v-theme-on-surface),.65); } }
+@media(max-width:1000px) { .account-directory-stats button { padding:14px; flex-direction:column; align-items:flex-start; gap:6px; } .account-directory-filters { grid-template-columns:1fr 1fr; >:first-child { grid-column:1/-1; } } .account-register-columns { display:none; } .account-register-list>li { grid-template-columns:minmax(0,1fr) auto; gap:16px; } .account-provider { grid-column:1; padding-left:57px; } .account-row-state { grid-column:2; grid-row:1/3; } }
+@media(max-width:600px) { .account-directory-stats { grid-template-columns:repeat(2,1fr); } .account-directory-stats button { flex-direction:row; align-items:center; } .account-register-heading,.account-directory-filters { padding-left:16px; padding-right:16px; } .account-directory-filters { grid-template-columns:1fr; >:first-child { grid-column:auto; } } .account-register-list>li { padding:20px 16px; grid-template-columns:minmax(0,1fr); gap:13px; } .account-row-state { grid-column:1; grid-row:auto; flex-direction:row; align-items:center; padding-left:57px; flex-wrap:wrap; } .account-register-footer { align-items:flex-start; flex-direction:column; } .account-directory-stats button span { font-size:.74rem; } }
 </style>
-

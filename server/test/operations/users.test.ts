@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from '../bun-test.mts'
 
+const adminWorkspace = () => ({ id: 10, fingerprint: 'reviewed-version', profile: { name: 'User', email: 'user@example.test', location: '', jobTitle: '', timezone: 'UTC', groups: [2] }, capabilities: { edit: true }, isActive: true })
+const accountStore = { inspect: vi.fn(), updateProfile: vi.fn() }
+vi.mockModule('../../operations/account-administration.ts', import.meta.url, () => ({ accountAdministration: () => accountStore }))
 class AuthRequired extends Error {}
 class AuthAccountBanned extends Error {}
 class AuthAccountNotVerified extends Error {}
@@ -81,6 +84,8 @@ const installWiki = (overrides: Record<string, unknown> = {}) => {
 
 beforeEach(() => {
   vi.resetModules()
+  accountStore.inspect.mockReset().mockResolvedValue(adminWorkspace())
+  accountStore.updateProfile.mockReset().mockResolvedValue(adminWorkspace())
 })
 
 describe('user authority revocation', () => {
@@ -88,9 +93,11 @@ describe('user authority revocation', () => {
     const { emit, lifecycle, revokeUserTokens, updateUser } = installWiki()
     const operations = await vi.importFresh('../../operations/users.ts', import.meta.url)
 
+    accountStore.updateProfile.mockImplementationOnce(async () => { lifecycle.push('commit'); return adminWorkspace() })
     await operations.default.update({ requester, input: { id: 10, groups: [3] } })
 
-    expect(updateUser).toHaveBeenCalledWith({ id: 10, groups: [3] })
+    expect(accountStore.updateProfile).toHaveBeenCalledWith(requester, 10, expect.objectContaining({ fingerprint: 'reviewed-version', profile: expect.objectContaining({ groups: [3] }) }))
+    expect(updateUser).not.toHaveBeenCalled()
     expect(lifecycle).toEqual(['commit', 'revoke-local', 'revoke-peer'])
     expect(revokeUserTokens).toHaveBeenCalledWith({ id: 10, kind: 'u' })
     expect(emit).toHaveBeenCalledWith('addAuthRevoke', { id: 10, kind: 'u' })
@@ -101,7 +108,7 @@ describe('user authority revocation', () => {
     updateUser.mockResolvedValueOnce(false)
     const operations = await vi.importFresh('../../operations/users.ts', import.meta.url)
 
-    await operations.default.update({ requester, input: { id: 10, name: 'Renamed' } })
+    await operations.default.update({ requester, input: { id: 10, name: 'User' } })
 
     expect(revokeUserTokens).not.toHaveBeenCalled()
   })
