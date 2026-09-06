@@ -92,6 +92,11 @@ describe('modal focus scope', () => {
     expect(escapes).toBe(0)
 
     composer.focus()
+    const earlyEscape = new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    composer.dispatchEvent(earlyEscape)
+    expect(earlyEscape.defaultPrevented).toBe(false)
+    expect(escapes).toBe(0)
+    ownedOverlay.classList.remove('v-overlay--active')
     composer.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     expect(escapes).toBe(1)
 

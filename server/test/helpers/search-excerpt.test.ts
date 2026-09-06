@@ -10,6 +10,6 @@ describe('source preview excerpts', () => {
     expect(result.excerptTruncated).toBe(true)
   })
   it('keeps paragraphs readable and reports complete short content', () => {
-    expect(searchExcerpt('<h1>Title</h1><p>First</p><p>Second</p>', '')).toEqual({ excerpt: 'Title\n\nFirst\n\nSecond', excerptTruncated: false })
+    expect(searchExcerpt('<h1><a class="toc-anchor" href="#title">¶</a>Title</h1><p>First</p><p>Second</p>', '')).toEqual({ excerpt: 'Title\n\nFirst\n\nSecond', excerptTruncated: false })
   })
 })

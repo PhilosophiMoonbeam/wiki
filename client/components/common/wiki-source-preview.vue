@@ -6,7 +6,7 @@
           <div><p class="wiki-source-preview__eyebrow">Source notebook</p><h2 :id="titleId">{{ source?.title || 'Read a little closer' }}</h2></div>
           <v-btn icon="mdi-close" variant="text" aria-label="Close source preview" @click="emit('close')" />
         </header>
-        <div class="wiki-source-preview__body">
+        <div class="wiki-source-preview__body" tabindex="0" role="region" aria-label="Source excerpt">
           <div v-if="loading" class="wiki-source-preview__state" role="status"><v-progress-circular indeterminate size="24" width="2" /><p>Opening the source…</p></div>
           <div v-else-if="error" class="wiki-source-preview__state" role="alert"><v-icon icon="mdi-file-hidden" size="30" /><p>{{ error }}</p><v-btn variant="tonal" @click="loadSource">Try again</v-btn></div>
           <template v-else-if="source">
@@ -78,7 +78,7 @@ onBeforeUnmount(() => { request?.abort(); focusScope?.deactivate() })
 .wiki-source-preview__panel { display: flex; flex-direction: column; width: min(42rem, 100%); height: 100%; background: var(--wiki-surface-raised, rgb(var(--v-theme-surface))); color: rgb(var(--v-theme-on-surface)); box-shadow: -12px 0 60px rgb(0 0 0 / .18); }
 .wiki-source-preview__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 2rem 1.75rem 1.25rem; border-bottom: 1px solid rgba(var(--v-theme-on-surface), .12); }
 .wiki-source-preview__eyebrow { font-size: .68rem; text-transform: uppercase; letter-spacing: .16em; color: rgb(var(--v-theme-primary)); font-weight: 700; margin: 0 0 .75rem; }
-.wiki-source-preview h2 { font-family: var(--wiki-font-display, 'Newsreader', serif); font-size: clamp(1.7rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.12; overflow-wrap: anywhere; }
+.wiki-source-preview h2 { margin: 0; font-family: var(--wiki-font-display, 'Newsreader', serif); font-size: clamp(1.7rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.12; overflow-wrap: anywhere; }
 .wiki-source-preview__body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 1.75rem; }
 .wiki-source-preview__metadata { display: flex; flex-wrap: wrap; gap: .5rem 1rem; font-size: .7rem; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; }
 .wiki-source-preview__path { font-size: .78rem; opacity: .6; overflow-wrap: anywhere; margin: .4rem 0 1.5rem; }

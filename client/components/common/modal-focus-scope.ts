@@ -212,6 +212,8 @@ export const createModalFocusScope = ({ root, restoreTarget, additionalRoots, on
     const ElementConstructor = document.defaultView?.Element
     const overlay = ElementConstructor && event.target instanceof ElementConstructor ? event.target.closest('.v-overlay--active') : null
     if (overlay && isWithinModal(root, modalAdditionalRoots(), overlay)) return
+    // Opening dialogs can receive Escape before their enter transition moves focus.
+    if (event.key === 'Escape' && modalAdditionalRoots().some(element => element.matches('.v-overlay--active'))) return
     if (event.key === 'Escape' && containsTarget([root, ...modalAdditionalRoots()], event.target as Node)) {
       event.preventDefault()
       event.stopImmediatePropagation()

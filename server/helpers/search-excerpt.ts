@@ -3,7 +3,7 @@ import { load } from 'cheerio'
 /** Plain text only; callers must authorize the current page before invoking this helper. */
 export const searchExcerpt = (render: string, query: string, limit = 2400): { excerpt: string; excerptTruncated: boolean } => {
   const $ = load(render)
-  $('script, style, template, noscript, [hidden], [aria-hidden="true"]').remove()
+  $('script, style, template, noscript, [hidden], [aria-hidden="true"], a.toc-anchor').remove()
   $('p, div, section, article, li, tr, h1, h2, h3, h4, h5, h6, br, pre').before('\n').after('\n')
   const text = $.root().text().replace(/[\t ]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim()
   const terms = query.toLocaleLowerCase().match(/[\p{L}\p{N}]{2,}/gu)?.slice(0, 12) ?? []

@@ -365,5 +365,18 @@
     "meanReciprocalRankAt5": 0.8181818181818182,
     "meanNdcgAt5": 0.8181818181818182,
     "zeroResultRate": 0.18181818181818182
+  },
+  "authorizedBrowserWindow": {
+    "candidateLimit": 1001,
+    "allowedIdentities": 20000,
+    "samplesMilliseconds": [
+      359.218544,
+      357.657533,
+      360.030457,
+      361.860554,
+      354.997519
+    ],
+    "p95Milliseconds": 361.860554,
+    "scope": "Metadata identity query plus PostgreSQL engine search on the same isolated synthetic corpus; excludes HTTP transport and application page-rule evaluation."
   }
 }
