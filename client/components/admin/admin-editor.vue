@@ -1,327 +1,111 @@
-<template lang='pug'>
-  v-container.admin-editor(fluid)
-    admin-hero(
-      icon='mdi-pencil-ruler'
-      title='Editors'
-      description='Choose which editors authors can use when creating pages'
-    )
-      template(v-slot:status)
-        v-chip(v-if='hasChanges', color='warning', variant='tonal', size='small') Unsaved changes
-        v-chip(v-else-if='loadError', color='error', variant='tonal', size='small') Configuration unavailable
-      template(v-slot:actions)
-        v-btn.animated.fadeInRight(
-          color='success'
-          variant='flat'
-          size='large'
-          :loading='saving'
-          :disabled='!loaded || loading || saving || !hasChanges'
-          @click='save'
-        )
-          v-icon(start) mdi-check
-          span Save changes
-    v-row
-      v-col(cols='12', lg='8')
-        v-card.animated.fadeInUp
-          v-toolbar(color='primary', density='compact')
-            v-icon.ml-4 mdi-pencil-ruler
-            v-toolbar-title.text-body-large Available for new pages
-            v-chip.mr-3(
-              v-if='loaded'
-              color='white'
-              variant='outlined'
-              size='small'
-            ) {{ selectionSummary }}
-          v-card-text
-            template(v-if='loaded')
-              .d-flex.flex-wrap.align-center.ga-2.mb-5
-                .text-body-medium.text-medium-emphasis.flex-grow-1
-                  | Hidden editors disappear from the new-page chooser. Existing pages keep their current editor and remain editable.
-                v-btn(
-                  size='small'
-                  variant='text'
-                  prepend-icon='mdi-select-all'
-                  :disabled='allEditorsAvailable'
-                  @click='makeAllAvailable'
-                ) Select all
-                v-btn(
-                  size='small'
-                  variant='text'
-                  prepend-icon='mdi-undo-variant'
-                  :disabled='!hasChanges'
-                  @click='restoreSaved'
-                ) Restore saved
-
-            v-skeleton-loader(v-if='loading', type='list-item-avatar-three-line@3')
-            v-alert(
-              v-else-if='loadError'
-              type='error'
-              variant='tonal'
-              icon='mdi-alert-circle-outline'
-            )
-              .text-body-medium Editor configuration could not be loaded.
-              .text-body-small.mt-1 {{ loadError }}
-              v-btn.mt-3(
-                variant='outlined'
-                size='small'
-                prepend-icon='mdi-refresh'
-                @click='loadConfig'
-              ) Retry
-            .editor-grid(v-else-if='loaded')
-              v-card.editor-choice(
-                v-for='editor in editors'
-                :key='editor.key'
-                :class='{ "editor-choice--available": isAvailable(editor.key) }'
-                variant='outlined'
-                :aria-disabled='isOnlyAvailable(editor.key) ? "true" : undefined'
-                @click='!isOnlyAvailable(editor.key) && toggleEditor(editor.key)'
-              )
-                v-card-text.editor-choice__body
-                  .editor-choice__icon
-                    img(:src='editor.image', alt='')
-                  .editor-choice__content
-                    .d-flex.align-center.ga-2
-                      .text-title-medium {{ editor.title }}
-                    .text-body-small.text-medium-emphasis.mt-1 {{ editor.description }}
-                  v-switch.editor-choice__switch(
-                    :model-value='isAvailable(editor.key)'
-                    :disabled='isOnlyAvailable(editor.key)'
-                    color='success'
-                    hide-details
-                    inset
-                    :aria-label='`${editor.title} availability`'
-                    @click.stop
-                    @update:model-value='setAvailability(editor.key, Boolean($event))'
-                    :aria-describedby='isOnlyAvailable(editor.key) ? "editor-required-hint" : undefined'
-                  )
-                .editor-choice__status(:class='{ "editor-choice__status--available": isAvailable(editor.key) }')
-                  span {{ isAvailable(editor.key) ? 'Available' : 'Hidden' }}
-
-      v-col(cols='12', lg='4')
-        v-card.animated.fadeInUp.wait-p1s
-          v-toolbar(color='primary', density='compact')
-            v-icon.ml-4 mdi-lightbulb-outline
-            v-toolbar-title.text-body-large A focused authoring experience
-          v-card-text
-            .text-body-medium
-              | Offer the formats your organization supports. A smaller set makes page creation faster and keeps source conventions consistent.
-            v-list.mt-3(lines='two')
-              v-list-item
-                template(v-slot:prepend)
-                  v-avatar(color='primary', variant='tonal')
-                    v-icon mdi-shield-check-outline
-                v-list-item-title Existing content is safe
-                v-list-item-subtitle Changing this setting never converts or disables existing pages.
-              v-list-item
-                template(v-slot:prepend)
-                  v-avatar(color='primary', variant='tonal')
-                    v-icon mdi-cursor-default-click-outline
-                v-list-item-title One editor, no extra step
-                v-list-item-subtitle When only one editor is available, new pages open it immediately.
-              v-list-item
-                template(v-slot:prepend)
-                  v-avatar(color='primary', variant='tonal')
-                    v-icon mdi-lock-outline
-                v-list-item-title At least one required
-                v-list-item-subtitle The final available editor cannot be hidden.
-
-        v-alert#editor-required-hint.mt-3(
-          type='info'
-          variant='tonal'
-          icon='mdi-information-outline'
-          density='comfortable'
-        )
-          .text-body-small
-            | At least one editor must remain available. Existing pages keep their current editor.
+<template>
+  <v-container fluid class="admin-authoring">
+    <admin-hero title="Editors" description="Shape how people create knowledge." icon="mdi-pencil-ruler">
+      <template #actions><v-btn variant="text" prepend-icon="mdi-refresh" :disabled="saving || reviewOpen" :loading="loading" @click="reload">Reload saved policy</v-btn><v-btn variant="flat" color="primary" :disabled="!dirty || loading || saving || !valid" @click="reviewOpen = true">Review changes</v-btn></template>
+    </admin-hero>
+    <section class="authoring-intro"><div><span class="authoring-kicker">The authoring experience</span><h2>A good starting point for every author.</h2><p>Offer the right tools, recommend a shared starting point, and understand the formats already in your workspace.</p></div><dl><div><dt>Available in draft</dt><dd>{{ loaded ? draft.available.length : '—' }}<small> / {{ editors.length }}</small></dd></div><div><dt>Existing pages</dt><dd>{{ loaded ? totalPages : '—' }}</dd></div><div><dt>Chooser formats in use</dt><dd>{{ loaded ? usedFormats : '—' }}</dd></div></dl></section>
+    <v-alert v-if="success" type="success" variant="tonal" closable class="mb-4" @click:close="success = ''">{{ success }}</v-alert>
+    <v-alert v-for="warning in warnings" :key="warning" type="warning" variant="tonal" class="mb-4">{{ warning }}</v-alert>
+    <async-state v-if="loading" state="loading" title="Loading the authoring workspace" message="Reading the saved policy, editor registry and page usage." />
+    <async-state v-else-if="loadError" state="error" title="Editor settings could not be loaded" :message="loadError" retry-label="Try again" @retry="reload" />
+    <template v-else-if="loaded">
+      <div class="authoring-tabs-row"><div class="authoring-tabs" role="tablist" aria-label="Editor workspace sections"><button v-for="tab in tabs" :id="`authoring-tab-${tab.value}`" :key="tab.value" role="tab" :aria-selected="section === tab.value" :aria-controls="`authoring-panel-${tab.value}`" :tabindex="section === tab.value ? 0 : -1" @click="setSection(tab.value)" @keydown="tabKey($event, tab.value)">{{ tab.title }}</button></div><span class="authoring-draft-state" aria-live="polite">{{ dirty ? 'Unsaved policy' : 'Matches the saved policy' }}</span></div>
+      <div v-show="section === 'policy'" id="authoring-panel-policy" role="tabpanel" aria-labelledby="authoring-tab-policy" class="authoring-policy">
+        <section class="authoring-catalogue"><div class="authoring-section-heading"><div><h3>Available for new pages</h3><p>Choose the editors that belong in your authoring workflow.</p></div><v-btn size="small" variant="text" :disabled="saving || reviewOpen || allAvailable" @click="selectAll">Enable all registered</v-btn></div>
+          <div class="authoring-options"><article v-for="editor in editors" :key="editor.key" class="authoring-option" :class="{ 'is-enabled': enabled(editor.key) }"><div class="authoring-option-top"><v-icon :icon="editor.icon" size="28" /><span class="authoring-format">{{ editor.format }}</span></div><h4>{{ editor.title }}</h4><p>{{ editor.description }}</p><div class="authoring-option-usage"><span>{{ usage(editor.key).pages }} existing {{ usage(editor.key).pages === 1 ? 'page' : 'pages' }}</span><small v-if="usage(editor.key).privatePages">{{ usage(editor.key).privatePages }} private</small></div><div class="authoring-option-control"><label><input type="checkbox" :checked="enabled(editor.key)" :disabled="saving || reviewOpen || (enabled(editor.key) && draft.available.length === 1) || (!enabled(editor.key) && !registered(editor.key))" :aria-label="`${editor.title} availability`" @change="toggle(editor.key)" /><span>{{ enabled(editor.key) ? 'Available for creation' : 'Hidden from creation' }}</span></label><v-icon v-if="draft.recommended === editor.key" icon="mdi-star-outline" size="18" aria-label="Workspace recommendation" /></div><p v-if="!registered(editor.key)" class="authoring-registration">Missing from the server registry. Repair the deployment before enabling.</p></article></div>
+          <p class="authoring-footnote">At least one editor stays available. Hiding an editor removes it from new-page choices; existing pages remain editable in their current editor.</p>
+        </section>
+        <aside class="authoring-guidance"><section class="authoring-recommendation"><span class="authoring-kicker">Guide the first choice</span><h3>A workspace recommendation</h3><p>Put your preferred editor first in the chooser and mark it as recommended. Authors can still choose any available option.</p><v-select v-model="draft.recommended" :items="recommendations" label="Recommended editor" variant="outlined" density="comfortable" hide-details :disabled="saving || reviewOpen" /><p v-if="recommendationNotice" class="authoring-notice" role="status">{{ recommendationNotice }}</p></section><section class="authoring-flow"><span class="authoring-kicker">New-page journey</span><ol><li><span>01</span><div><strong>Start a page</strong><small>The author chooses a location and language.</small></div></li><li><span>02</span><div><strong>{{ draft.available.length === 1 ? `Open ${title(draft.available[0]!)}` : `Choose from ${draft.available.length} editors` }}</strong><small>{{ draft.available.length === 1 ? 'With one option, the chooser is skipped.' : draft.recommended ? `${title(draft.recommended)} appears first as the recommendation.` : 'Every enabled editor is offered without a recommendation.' }}</small></div></li><li><span>03</span><div><strong>Write in the chosen format</strong><small>Existing pages continue using their saved editor.</small></div></li></ol><v-btn variant="text" size="small" append-icon="mdi-arrow-right" @click="setSection('preview')">Preview the starting point</v-btn></section><div class="authoring-reset"><span>{{ dirty ? 'Your changes are local until saved.' : 'The workspace is using this policy.' }}</span><v-btn variant="text" size="small" :disabled="!dirty || saving || reviewOpen" @click="reset">Reset draft</v-btn></div></aside>
+      </div>
+      <section v-show="section === 'formats'" id="authoring-panel-formats" role="tabpanel" aria-labelledby="authoring-tab-formats" class="authoring-format-panel"><div class="authoring-section-heading"><div><span class="authoring-kicker">Understand the tradeoffs</span><h3>Tools differ. The source matters.</h3><p>Choose formats that fit your authors and the systems that read their knowledge.</p></div></div><div class="authoring-comparison" tabindex="0" role="region" aria-label="Editor capabilities and usage"><table><thead><tr><th>Editor</th><th>Authoring</th><th>Stored source</th><th>Preview</th><th>Collaboration</th><th>Existing pages</th></tr></thead><tbody><tr v-for="editor in editors" :key="editor.key"><th><v-icon :icon="editor.icon" size="19" />{{ editor.title }}<small>{{ enabled(editor.key) ? 'Available in draft' : 'Hidden in draft' }}</small></th><td>{{ editor.key === 'ckeditor' || editor.key === 'visual-markdown' ? 'Visual rich text' : 'Source editing' }}</td><td>{{ editor.format }}</td><td>{{ editor.key === 'code' ? 'Source only' : editor.key === 'markdown' || editor.key === 'asciidoc' ? 'Live preview pane' : 'Inline visual editing' }}</td><td>{{ editor.key === 'markdown' ? 'Live coediting' : 'Revision checks' }}</td><td><strong>{{ usage(editor.key).pages }}</strong><small>{{ usage(editor.key).privatePages }} private</small></td></tr></tbody></table></div><div class="authoring-format-notes"><article><h4>Markdown for portable knowledge</h4><p>Markdown and Visual Markdown share a source format. Source editing provides direct syntax control; visual editing provides a rich-text surface. Agent tools can read and write the stored Markdown.</p></article><article><h4>HTML and AsciiDoc for specific needs</h4><p>Visual HTML and Code store HTML. AsciiDoc keeps its own structured source. Changing availability never converts a page; review conversions from page administration.</p></article><article><h4>Usage is a current snapshot</h4><p>Counts include all current workspace and private pages visible to system administration. Live coediting applies to supported existing Markdown pages. Other editors use save-time revision checks.</p></article></div><v-alert v-if="otherUsage.length" type="info" variant="tonal" class="mt-5">{{ otherUsage.reduce((sum, row) => sum + row.pages, 0) }} pages use other editor types: {{ otherUsage.map(row => `${row.key} (${row.pages})`).join(', ') }}. These types are outside the human new-page chooser.</v-alert></section>
+      <section v-show="section === 'preview'" id="authoring-panel-preview" role="tabpanel" aria-labelledby="authoring-tab-preview" class="authoring-preview-panel"><div class="authoring-section-heading"><div><span class="authoring-kicker">Before authors see it</span><h3>Preview the starting point</h3><p>Compare your draft with the saved policy. This preview does not create a page.</p></div><div class="authoring-preview-toggle" role="group" aria-label="Preview policy"><button :aria-pressed="previewMode === 'draft'" @click="previewMode = 'draft'">Draft</button><button :aria-pressed="previewMode === 'saved'" @click="previewMode = 'saved'">Saved</button></div></div><div class="authoring-preview-window"><div class="authoring-preview-chrome"><v-icon icon="mdi-file-plus-outline" size="18" /><span>New page</span><small>{{ previewMode === 'draft' ? 'Draft policy preview' : 'Saved policy preview' }}</small></div><div v-if="previewPolicy.available.length === 1" class="authoring-direct-preview"><v-icon :icon="definition(previewPolicy.available[0]!).icon" size="42" /><h4>{{ title(previewPolicy.available[0]!) }} opens directly.</h4><p>One editor is available, so authors go straight to writing without an editor-selection step.</p><span class="authoring-preview-format">{{ definition(previewPolicy.available[0]!).format }} source</span></div><template v-else><div class="authoring-preview-title"><h4>How would you like to write?</h4><p>Choose an editor for this page.</p></div><div class="authoring-preview-choices"><article v-for="editor in previewEditors" :key="editor.key" :class="{ 'is-recommended': previewPolicy.recommended === editor.key }"><div><v-icon :icon="editor.icon" size="24" /><span v-if="previewPolicy.recommended === editor.key">Recommended</span></div><h5>{{ editor.title }}</h5><p>{{ editor.chooserDescription }}</p><small>{{ editor.format }} source</small></article><article class="authoring-template-preview"><v-icon icon="mdi-content-copy" size="24" /><h5>From a template</h5><p>Reuse an existing page as a starting point.</p><small>Source access and creation policy apply</small></article></div></template></div></section>
+    </template>
+    <v-dialog v-model="reviewOpen" max-width="720" :persistent="saving" aria-labelledby="authoring-review-title"><v-card class="authoring-review"><div class="authoring-review-heading"><span class="authoring-kicker">Review the new-page policy</span><h3 id="authoring-review-title">A clearer starting point.</h3><p>This changes the editors offered for new pages. Existing pages keep their content, format and editor.</p></div><v-card-text><div class="authoring-review-diff"><section><h4>Enable for creation</h4><ul v-if="added.length"><li v-for="key in added" :key="key">{{ title(key) }}</li></ul><p v-else>No editors added</p></section><section><h4>Hide from creation</h4><ul v-if="removed.length"><li v-for="key in removed" :key="key">{{ title(key) }}<small>{{ usage(key).pages }} existing pages remain editable</small></li></ul><p v-else>No editors hidden</p></section></div><div class="authoring-review-recommendation"><span>Workspace recommendation</span><strong>{{ saved?.recommended ? title(saved.recommended) : 'None' }} → {{ draft.recommended ? title(draft.recommended) : 'None' }}</strong></div><p class="authoring-footnote">{{ draft.available.length === 1 ? `${title(draft.available[0]!)} will open directly for new pages.` : `The chooser will offer ${draft.available.length} editors${draft.recommended ? `, with ${title(draft.recommended)} first` : ''}.` }} Newly opened creation flows receive the saved policy.</p><v-alert v-if="saveError" type="error" variant="tonal" class="mt-4">{{ saveError }}<div><v-btn variant="text" size="small" class="mt-2" :disabled="saving" @click="reloadFromReview">Reload saved policy</v-btn></div></v-alert></v-card-text><v-card-actions><v-btn variant="text" :disabled="saving" @click="reviewOpen = false">Cancel</v-btn><v-spacer /><v-btn variant="flat" color="primary" :loading="saving" :disabled="saving || !valid || !dirty" @click="save">Save editor policy</v-btn></v-card-actions></v-card></v-dialog>
+  </v-container>
 </template>
-
-<script setup lang='ts'>
-import { computed, onMounted, ref, shallowRef } from 'vue'
-import { wikiStore } from '@/store/index.ts'
-import { PAGE_EDITOR_DEFINITIONS } from '../../helpers/page-editors.ts'
-import { fetchSiteConfig, saveSiteConfig } from '../../helpers/site-api.ts'
-import { getErrorMessage, loadingStart, loadingStop, pushGraphError, showNotification } from '../../helpers/root-ui-store.ts'
-import { normalizeAvailableEditors, type PageEditorKey } from '../../../shared/page-editors.ts'
-
-const editors = PAGE_EDITOR_DEFINITIONS
-const availableEditors = shallowRef<PageEditorKey[]>([])
-const persistedEditors = shallowRef<PageEditorKey[]>([])
-const loading = ref(true)
-const loadError = ref('')
-const saving = ref(false)
-const loaded = computed(() => !loading.value && !loadError.value)
-
-const hasChanges = computed(() => {
-  return availableEditors.value.length !== persistedEditors.value.length ||
-    availableEditors.value.some((editor, index) => editor !== persistedEditors.value[index])
-})
-const allEditorsAvailable = computed(() => availableEditors.value.length === editors.length)
-const selectionSummary = computed(() => `${availableEditors.value.length} of ${editors.length} available`)
-
-const isAvailable = (editor: PageEditorKey): boolean => availableEditors.value.includes(editor)
-const isOnlyAvailable = (editor: PageEditorKey): boolean => isAvailable(editor) && availableEditors.value.length === 1
-
-const setAvailability = (editor: PageEditorKey, available: boolean): void => {
-  const selected = new Set(availableEditors.value)
-  if (available) selected.add(editor)
-  else if (selected.size > 1) selected.delete(editor)
-  availableEditors.value = editors.map(candidate => candidate.key).filter(key => selected.has(key))
+<script lang="ts">
+import AsyncState from '@/components/common/async-state.vue'
+import { PAGE_EDITOR_DEFINITIONS, type PageEditorDefinition } from '../../helpers/page-editors.ts'
+import { fetchEditorWorkspace, saveEditorWorkspace } from '../../helpers/editor-policy-api.ts'
+import { validateEditorPolicy, type EditorPolicy, type EditorPolicySnapshot, type EditorUsage } from '../../../shared/editor-policy.ts'
+import type { PageEditorKey } from '../../../shared/page-editors.ts'
+import { getErrorMessage } from '../../helpers/root-ui-store.ts'
+export default {
+  components: { AsyncState },
+  data() { return { editors: PAGE_EDITOR_DEFINITIONS, draft: { available: [], recommended: null } as EditorPolicy, saved: null as EditorPolicySnapshot | null, registeredKeys: [] as string[], counts: [] as EditorUsage[], loading: true, loadError: '', saving: false, saveError: '', reviewOpen: false, success: '', warnings: [] as string[], recommendationNotice: '', section: 'policy', previewMode: 'draft',
+    tabs: [{ title: 'Creation policy', value: 'policy' }, { title: 'Formats & usage', value: 'formats' }, { title: 'Author preview', value: 'preview' }] } },
+  computed: {
+    loaded(): boolean { return Boolean(this.saved) && !this.loadError },
+    dirty(): boolean { return Boolean(this.saved && (this.saved.recommended !== this.draft.recommended || this.saved.available.join(',') !== this.draft.available.join(','))) },
+    valid(): boolean { return validateEditorPolicy(this.draft).ok && this.draft.available.every(this.registered) },
+    allAvailable(): boolean { return this.editors.filter(editor => this.registered(editor.key)).every(editor => this.enabled(editor.key)) },
+    recommendations() { return [{ title: 'No recommendation', value: null }, ...this.editors.filter(editor => this.enabled(editor.key)).map(editor => ({ title: editor.title, value: editor.key }))] },
+    totalPages(): number { return this.counts.reduce((sum, row) => sum + row.pages, 0) },
+    usedFormats(): number { return new Set(this.editors.filter(editor => this.usage(editor.key).pages > 0).map(editor => editor.format)).size },
+    otherUsage(): EditorUsage[] { return this.counts.filter(row => !this.editors.some(editor => editor.key === row.key)) },
+    added(): PageEditorKey[] { return this.draft.available.filter(key => !this.saved?.available.includes(key)) },
+    removed(): PageEditorKey[] { return this.saved?.available.filter(key => !this.draft.available.includes(key)) ?? [] },
+    previewPolicy(): EditorPolicy { return this.previewMode === 'saved' && this.saved ? this.saved : this.draft },
+    previewEditors(): PageEditorDefinition[] { return this.editors.filter(editor => this.previewPolicy.available.includes(editor.key)).sort((a, b) => Number(b.key === this.previewPolicy.recommended) - Number(a.key === this.previewPolicy.recommended)) }
+  },
+  methods: {
+    enabled(key: PageEditorKey): boolean { return this.draft.available.includes(key) },
+    registered(key: PageEditorKey): boolean { return this.registeredKeys.includes(key) },
+    definition(key: PageEditorKey): PageEditorDefinition { return this.editors.find(editor => editor.key === key)! },
+    title(key: PageEditorKey): string { return this.definition(key).title },
+    usage(key: string): EditorUsage { return this.counts.find(row => row.key === key) ?? { key, pages: 0, privatePages: 0 } },
+    toggle(key: PageEditorKey) { if (this.saving || this.reviewOpen || (this.enabled(key) && this.draft.available.length === 1) || (!this.enabled(key) && !this.registered(key))) return; const selected = new Set(this.draft.available); if (selected.has(key)) selected.delete(key); else selected.add(key); this.draft.available = this.editors.filter(editor => selected.has(editor.key)).map(editor => editor.key); if (this.draft.recommended && !selected.has(this.draft.recommended)) { this.recommendationNotice = `${this.title(this.draft.recommended)} was hidden, so its recommendation was cleared.`; this.draft.recommended = null } this.saveError = '' },
+    selectAll() { const available = this.editors.filter(editor => this.registered(editor.key)).map(editor => editor.key); if (!available.length) return; this.draft.available = available; if (this.draft.recommended && !available.includes(this.draft.recommended)) this.draft.recommended = null },
+    reset() { if (this.saved) this.draft = { available: [...this.saved.available], recommended: this.saved.recommended }; this.recommendationNotice = ''; this.saveError = '' },
+    setSection(value: string) { this.section = value; this.$router.replace({ hash: `#${value}` }) },
+    tabKey(event: KeyboardEvent, value: string) { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const index = this.tabs.findIndex(tab => tab.value === value), next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (index + (event.key === 'ArrowRight' ? 1 : -1) + 3) % 3; this.setSection(this.tabs[next]!.value); this.$nextTick(() => document.getElementById(`authoring-tab-${this.section}`)?.focus()) },
+    async reload() { if (this.saving || (this.dirty && !window.confirm('Discard the unsaved editor policy and reload the saved settings?'))) return; this.loading = true; this.loadError = ''; try { const result = await fetchEditorWorkspace(); this.saved = result.policy; this.registeredKeys = result.registered; this.counts = result.usage; this.reset() } catch (error) { this.loadError = getErrorMessage(error) } finally { this.loading = false } },
+    async reloadFromReview() { if (this.saving) return; if (this.dirty && !window.confirm('Discard the unsaved editor policy and load the current saved settings?')) return; this.reviewOpen = false; this.reset(); await this.reload() },
+    async save() { if (!this.saved || this.saving || !this.valid || !this.dirty) return; this.saving = true; this.saveError = ''; const draft = { available: [...this.draft.available], recommended: this.draft.recommended }; try { const result = await saveEditorWorkspace(draft, this.saved.fingerprint); this.saved = result.policy; this.reset(); siteConfig.availableEditors = [...result.policy.available]; siteConfig.recommendedEditor = result.policy.recommended; this.warnings = result.warnings; this.success = 'Editor policy saved. New authoring sessions will use these choices.'; this.reviewOpen = false } catch (error) { this.saveError = getErrorMessage(error) } finally { this.saving = false } },
+    beforeUnload(event: BeforeUnloadEvent) { if (this.dirty || this.saving) { event.preventDefault(); event.returnValue = '' } }
+  },
+  watch: { '$route.hash'(hash: string) { const value = hash.slice(1); if (this.tabs.some(tab => tab.value === value)) this.section = value } },
+  beforeRouteLeave() { return !this.saving && (!this.dirty || window.confirm('Discard the unsaved editor policy?')) },
+  mounted() { const hash = this.$route.hash.slice(1); if (this.tabs.some(tab => tab.value === hash)) this.section = hash; this.reload(); window.addEventListener('beforeunload', this.beforeUnload) },
+  beforeUnmount() { window.removeEventListener('beforeunload', this.beforeUnload) }
 }
-
-const toggleEditor = (editor: PageEditorKey): void => {
-  setAvailability(editor, !isAvailable(editor))
-}
-
-const makeAllAvailable = (): void => {
-  availableEditors.value = editors.map(editor => editor.key)
-}
-
-const restoreSaved = (): void => {
-  availableEditors.value = [...persistedEditors.value]
-}
-
-const loadConfig = async (): Promise<void> => {
-  loading.value = true
-  loadError.value = ''
-  loadingStart(wikiStore, 'admin-editors-refresh')
-  try {
-    const config = await fetchSiteConfig(window.fetch.bind(window), 'Editor configuration response is invalid')
-    const selected = normalizeAvailableEditors(config.availableEditors)
-    availableEditors.value = selected
-    persistedEditors.value = [...selected]
-  } catch (error) {
-    availableEditors.value = []
-    persistedEditors.value = []
-    loadError.value = getErrorMessage(error)
-    pushGraphError(wikiStore, error)
-  } finally {
-    loading.value = false
-    loadingStop(wikiStore, 'admin-editors-refresh')
-  }
-}
-
-const save = async (): Promise<void> => {
-  if (!loaded.value || saving.value || !hasChanges.value) return
-  saving.value = true
-  loadingStart(wikiStore, 'admin-editors-save')
-  try {
-    const selected = [...availableEditors.value]
-    await saveSiteConfig(window.fetch.bind(window), { availableEditors: selected }, 'Editor configuration update failed')
-    persistedEditors.value = selected
-    siteConfig.availableEditors = [...selected]
-    showNotification(wikiStore, {
-      message: 'Editor availability saved successfully.',
-      style: 'success',
-      icon: 'check'
-    })
-  } catch (error) {
-    pushGraphError(wikiStore, error)
-  } finally {
-    saving.value = false
-    loadingStop(wikiStore, 'admin-editors-save')
-  }
-}
-
-onMounted(() => { void loadConfig() })
 </script>
-
-<style lang='scss' scoped>
-.admin-editor {
-  max-width: 1680px;
-}
-
-.editor-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.editor-choice {
-  position: relative;
-  overflow: hidden;
-  cursor: pointer;
-  border-color: rgba(var(--v-border-color), var(--v-border-opacity));
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
-
-  &:hover,
-  &:focus-visible {
-    border-color: rgba(var(--v-theme-primary), .55);
-    box-shadow: 0 6px 18px rgba(var(--v-theme-on-surface), .08);
-    transform: translateY(-1px);
-    outline: none;
-  }
-
-  &--available {
-    border-color: rgba(var(--v-theme-primary), .65);
-    background: linear-gradient(135deg, rgba(var(--v-theme-primary), .08), rgba(var(--v-theme-surface), 0) 58%);
-  }
-
-  &__body {
-    display: grid;
-    grid-template-columns: 52px minmax(0, 1fr) auto;
-    gap: 14px;
-    align-items: start;
-    min-height: 132px;
-    padding-bottom: 42px;
-  }
-
-  &__icon {
-    display: grid;
-    place-items: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 12px;
-    background: rgba(var(--v-theme-primary), .1);
-
-    img {
-      width: 34px;
-      height: 34px;
-    }
-  }
-
-  &__switch {
-    margin-top: -6px;
-  }
-
-  &__status {
-    position: absolute;
-    inset: auto 0 0;
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    padding: 8px 16px;
-    color: rgb(var(--v-theme-medium-emphasis));
-    background: rgba(var(--v-theme-on-surface), .035);
-    font-size: .75rem;
-    font-weight: 600;
-    letter-spacing: .02em;
-
-    &--available {
-      color: rgb(var(--v-theme-success));
-      background: rgba(var(--v-theme-success), .08);
-    }
-  }
-}
-
-@media (max-width: 959px) {
-  .editor-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 599px) {
-  .editor-choice__body {
-    grid-template-columns: 44px minmax(0, 1fr) auto;
-    gap: 10px;
-  }
-
-  .editor-choice__icon {
-    width: 44px;
-    height: 44px;
-
-    img {
-      width: 30px;
-      height: 30px;
-    }
-  }
-}
+<style lang="scss" scoped>
+.admin-authoring { --authoring-border:rgba(var(--v-theme-on-surface),.13); --authoring-muted:rgba(var(--v-theme-on-surface),.72); }
+.authoring-kicker { display:block; font-size:.65rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--authoring-muted); }
+.authoring-intro { display:flex; align-items:center; justify-content:space-between; gap:2rem; padding:1.8rem 0 2rem; h2 { font-size:clamp(1.4rem,2.3vw,1.9rem); font-weight:600; letter-spacing:-.04em; line-height:1.2; margin:.6rem 0; } p { font-size:.84rem; line-height:1.75; max-width:620px; color:var(--authoring-muted); margin:0; } dl { display:flex; gap:2rem; flex-shrink:0; } dt { font-size:.67rem; color:var(--authoring-muted); } dd { margin:.5rem 0 0; font-size:1.9rem; line-height:1; font-weight:550; } dd small { font-size:.8rem; color:var(--authoring-muted); } }
+.authoring-tabs-row { display:flex; align-items:center; gap:.8rem; border-block:1px solid var(--authoring-border); margin-bottom:1.7rem; }
+.authoring-tabs { display:flex; align-items:center; gap:.8rem; button { border:0; border-bottom:2px solid transparent; background:transparent; color:var(--authoring-muted); padding:.9rem .5rem; font-size:.8rem; white-space:nowrap; &[aria-selected=true] { color:rgb(var(--v-theme-on-surface)); border-bottom-color:rgb(var(--v-theme-primary)); font-weight:650; } &:focus-visible { outline:2px solid rgb(var(--v-theme-on-surface)); outline-offset:-3px; } } }
+.authoring-draft-state { margin-left:auto; font-size:.68rem; color:var(--authoring-muted); }
+.authoring-policy { display:grid; grid-template-columns:minmax(0,2fr) minmax(260px,1fr); gap:1.6rem; align-items:start; }
+.authoring-section-heading { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:1.2rem; h3 { font-size:1.12rem; font-weight:600; letter-spacing:-.02em; margin:.35rem 0 .4rem; } p { margin:0; color:var(--authoring-muted); font-size:.77rem; line-height:1.75; } }
+.authoring-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.85rem; }
+.authoring-option { display:flex; flex-direction:column; min-width:0; border:1px solid var(--authoring-border); border-radius:10px; background:rgb(var(--v-theme-surface)); padding:1.15rem; &.is-enabled { border-color:rgba(var(--v-theme-primary),.4); } h4 { font-size:1rem; font-weight:600; margin:.9rem 0 .4rem; letter-spacing:-.02em; } >p { font-size:.74rem; color:var(--authoring-muted); line-height:1.75; margin:0 0 1rem; flex:1; } }
+.authoring-option-top { display:flex; justify-content:space-between; align-items:center; .v-icon { color:rgb(var(--v-theme-primary)); } }
+.authoring-format { font-size:.65rem; padding:.25rem .5rem; border:1px solid var(--authoring-border); border-radius:4px; color:var(--authoring-muted); }
+.authoring-option-usage { display:flex; justify-content:space-between; align-items:center; gap:.5rem; font-size:.69rem; padding:.6rem 0; small { color:var(--authoring-muted); } }
+.authoring-option-control { display:flex; align-items:center; justify-content:space-between; gap:.6rem; border-top:1px solid var(--authoring-border); padding-top:.8rem; label { display:flex; align-items:center; gap:.6rem; font-size:.73rem; cursor:pointer; } input { width:17px; height:17px; flex-shrink:0; accent-color:rgb(var(--v-theme-primary)); } }
+.authoring-registration { font-size:.68rem!important; margin:.8rem 0 0!important; }
+.authoring-footnote { font-size:.72rem; line-height:1.8; color:var(--authoring-muted); margin:1rem 0 0; }
+.authoring-guidance { display:grid; gap:1rem; min-width:0; }
+.authoring-recommendation,.authoring-flow { background:rgb(var(--v-theme-surface)); border:1px solid var(--authoring-border); border-radius:10px; padding:1.3rem; h3 { font-size:1rem; font-weight:600; margin:.7rem 0 .5rem; } p { color:var(--authoring-muted); font-size:.76rem; line-height:1.8; margin:0 0 1.2rem; } }
+.authoring-flow ol { list-style:none; padding:0; margin:1rem 0; li { display:flex; gap:.8rem; position:relative; padding-bottom:1.5rem; &:last-child { padding-bottom:0; } >span { border:1px solid var(--authoring-border); border-radius:50%; width:27px; height:27px; display:grid; place-items:center; flex-shrink:0; font-size:.6rem; } strong { display:block; font-size:.77rem; font-weight:550; margin:.2rem 0 .3rem; } small { display:block; font-size:.7rem; line-height:1.7; color:var(--authoring-muted); } } }
+.authoring-reset { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.6rem; padding:.2rem; span { font-size:.7rem; color:var(--authoring-muted); } }
+.authoring-notice { margin:.75rem 0 0!important; font-size:.7rem!important; }
+.authoring-format-panel,.authoring-preview-panel { min-width:0; }
+.authoring-comparison { overflow:auto; border:1px solid var(--authoring-border); border-radius:10px; background:rgb(var(--v-theme-surface)); table { border-collapse:collapse; width:100%; text-align:left; font-size:.75rem; } th,td { padding:1rem; border-bottom:1px solid var(--authoring-border); min-width:115px; vertical-align:middle; } thead th { font-size:.66rem; font-weight:600; color:var(--authoring-muted); } tbody th { font-weight:600; min-width:200px; .v-icon { margin-right:.6rem; } } small { display:block; font-size:.65rem; color:var(--authoring-muted); margin-top:.4rem; font-weight:400; } }
+.authoring-format-notes { display:grid; grid-template-columns:repeat(3,1fr); gap:1.6rem; margin-top:1.7rem; h4 { font-size:.86rem; font-weight:600; margin-bottom:.6rem; } p { font-size:.74rem; line-height:1.8; color:var(--authoring-muted); margin:0; } }
+.authoring-preview-toggle { display:flex; border:1px solid var(--authoring-border); border-radius:6px; padding:3px; button { color:var(--authoring-muted); border:0; background:transparent; padding:.4rem .7rem; border-radius:4px; font-size:.73rem; &[aria-pressed=true] { background:rgba(var(--v-theme-on-surface),.08); color:rgb(var(--v-theme-on-surface)); } } }
+.authoring-preview-window { max-width:850px; margin:1.6rem auto 0; border:1px solid var(--authoring-border); border-radius:12px; background:rgb(var(--v-theme-surface)); overflow:hidden; }
+.authoring-preview-chrome { display:flex; align-items:center; gap:.7rem; padding:1rem 1.4rem; border-bottom:1px solid var(--authoring-border); font-size:.8rem; small { margin-left:auto; color:var(--authoring-muted); font-size:.65rem; } }
+.authoring-preview-title { padding:1.7rem 1.7rem 0; h4 { font-size:1.3rem; font-weight:600; letter-spacing:-.03em; } p { font-size:.8rem; color:var(--authoring-muted); margin:.5rem 0 0; } }
+.authoring-preview-choices { padding:1.4rem 1.7rem 1.7rem; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.85rem; article { border:1px solid var(--authoring-border); border-radius:8px; padding:1.2rem; >div { display:flex; justify-content:space-between; gap:.5rem; align-items:center; } &.is-recommended { border-color:rgba(var(--v-theme-primary),.65); background:rgba(var(--v-theme-primary),.04); } h5 { font-size:.9rem; font-weight:600; margin:.75rem 0 .4rem; } p { font-size:.73rem; line-height:1.7; color:var(--authoring-muted); margin:0 0 .8rem; } small,span { font-size:.65rem; color:var(--authoring-muted); } } .authoring-template-preview { border-style:dashed; } }
+.authoring-direct-preview { text-align:center; padding:3.5rem 2rem; h4 { font-size:1.3rem; font-weight:600; margin:1rem 0 .6rem; } p { max-width:380px; margin:0 auto 1rem; font-size:.8rem; line-height:1.8; color:var(--authoring-muted); } }
+.authoring-preview-format { font-size:.7rem; border:1px solid var(--authoring-border); padding:.4rem .7rem; border-radius:5px; }
+.authoring-review { --authoring-border:rgba(var(--v-theme-on-surface),.13); --authoring-muted:rgba(var(--v-theme-on-surface),.72); .v-card-actions { padding:1rem 1.5rem; border-top:1px solid var(--authoring-border); } }
+.authoring-review-heading { padding:1.6rem 1.5rem 1rem; h3 { font-size:1.5rem; font-weight:600; letter-spacing:-.04em; margin:.6rem 0; } p { font-size:.8rem; color:var(--authoring-muted); line-height:1.8; margin:0; } }
+.authoring-review-diff { display:grid; grid-template-columns:1fr 1fr; gap:1.4rem; h4 { font-size:.8rem; font-weight:600; } ul { padding-left:1rem; font-size:.8rem; margin:.7rem 0 0; } li { padding:.3rem 0; } small { display:block; font-size:.68rem; color:var(--authoring-muted); margin-top:.3rem; } p { font-size:.73rem; color:var(--authoring-muted); margin:.7rem 0 0; } }
+.authoring-review-recommendation { display:grid; gap:.5rem; border-block:1px solid var(--authoring-border); padding:1rem 0; margin-top:1.4rem; span { font-size:.68rem; color:var(--authoring-muted); } strong { font-size:.9rem; font-weight:550; } }
+@media(max-width:1150px) { .authoring-intro { align-items:flex-start; flex-direction:column; gap:1.4rem; } .authoring-policy { grid-template-columns:minmax(0,1.8fr) minmax(230px,1fr); gap:1rem; } .authoring-section-heading { align-items:flex-start; flex-wrap:wrap; } .authoring-options { grid-template-columns:1fr; } }
+@media(max-width:760px) { .authoring-policy { grid-template-columns:1fr; } .authoring-guidance { grid-row:1; } .authoring-flow { display:none; } .authoring-tabs-row { flex-wrap:wrap; gap:0; } .authoring-tabs { gap:.2rem; button { font-size:.7rem; padding:.9rem .45rem; } } .authoring-draft-state { flex-basis:100%; margin:0 0 .7rem .45rem; } .authoring-format-notes { grid-template-columns:1fr; gap:1.2rem; } .authoring-intro dl { gap:1.8rem; dt { font-size:.62rem; } dd { font-size:1.6rem; } } .authoring-preview-choices { grid-template-columns:1fr; padding:1.2rem; } .authoring-preview-title { padding:1.2rem 1.2rem 0; } .authoring-preview-chrome { padding:1rem; gap:.5rem; small { font-size:.58rem; } } .authoring-review-diff { grid-template-columns:1fr; gap:1.2rem; } .authoring-direct-preview { padding:2.5rem 1.3rem; } }
 </style>

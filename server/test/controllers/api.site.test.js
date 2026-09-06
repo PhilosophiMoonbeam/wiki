@@ -1,3 +1,4 @@
+vi.mockModule('../../operations/editors.ts', import.meta.url, () => ({ updateEditorAvailability: async available => { global.WIKI.config.editors = { ...global.WIKI.config.editors, available } } }))
 vi.mockModule('express', import.meta.url, () => {
   const routers = []
 
@@ -306,7 +307,7 @@ describe('controllers/api site endpoints', () => {
     expect(global.WIKI.config.uploads.maxFileSize).toBe(2097152)
     expect(global.WIKI.config.uploads.maxFiles).toBe(20)
     expect(global.WIKI.config.uploads.forceDownload).toBe(true)
-    expect(global.WIKI.configSvc.saveToDb).toHaveBeenCalledWith(['host', 'title', 'company', 'contentLicense', 'footerOverride', 'banner', 'seo', 'pageExtensions', 'editors', 'auth', 'editShortcuts', 'features', 'security', 'uploads'])
+    expect(global.WIKI.configSvc.saveToDb).toHaveBeenCalledWith(['host', 'title', 'company', 'contentLicense', 'footerOverride', 'banner', 'seo', 'pageExtensions', 'auth', 'editShortcuts', 'features', 'security', 'uploads'])
     expect(global.WIKI.app.set.mock.calls).toEqual([['trust proxy', 1]])
     expect(res.status).not.toHaveBeenCalled()
     expect(res.json).toHaveBeenCalledWith({ message: 'Site configuration updated successfully' })
@@ -331,6 +332,15 @@ describe('controllers/api site endpoints', () => {
     await handler({ user: {}, body: { securityTrustProxy: false } }, res)
 
     expect(global.WIKI.app.set.mock.calls).toEqual([['trust proxy', false]])
+  })
+
+  it('does not report a failed persistence result as a successful save', async () => {
+    global.WIKI.configSvc.saveToDb.mockResolvedValue(false)
+    const handler = await loadPutConfigHandler()
+    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() }
+    await handler({ user: {}, body: { title: 'A change' } }, res)
+    expect(res.status).toHaveBeenCalledWith(500)
+    expect(res.json).toHaveBeenCalledWith({ error: 'Site configuration could not be persisted. Reload before retrying.' })
   })
 
   it('uses the initialized application when it becomes available after import', async () => {

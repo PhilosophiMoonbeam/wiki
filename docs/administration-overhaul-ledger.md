@@ -8,7 +8,7 @@ The visual direction is an editorial workspace: quiet surfaces, concise context,
 | --- | --- | --- |
 | Pages | Inventory, filtering, ownership, publication, detail and bulk actions | Implemented; first milestone verified |
 | Tags | Taxonomy, usage, editing and consolidation | Implemented; first milestone verified |
-| Editors | Availability, defaults and configuration | Pending |
+| Editors | Availability, recommendations, format usage and authoring entry | Implemented; production verification pending |
 | Rendering | Pipeline, dependencies, configuration and output | Pending |
 | Comments | Providers, discussion and moderation | Pending |
 | Users | Discovery, details, creation and access lifecycle | Pending |
@@ -167,3 +167,15 @@ The existing subsection changes new-page editor availability through site config
 
 
 Final Tags image `0926086b` is healthy. Its production build/bundle gates and client type check passed. A final live test held a detail response, cleared the selection, and verified that the welcome state returned immediately and the late response did not overwrite it. The temporary browser authentication-state file was removed after verification. `compose.before-0926086b.yml` retains the preceding migrated image; the earlier pre-migration backup remains the recovery point for reverting taxonomy semantics.
+
+
+### Editors implementation and verification
+
+- Three directly linked sections: Creation policy, Formats & usage and Author preview. Five editor choices show actual page/private-page usage and registry availability. The format comparison explains stored source, editing surface, preview and actual collaboration support; internal editor types are counted separately.
+- Added a persisted workspace recommendation that places an enabled editor first in the real new-page chooser. It is optional and does not override authors’ choices. One available editor retains the existing direct-entry behavior. Hiding the recommended editor clears the recommendation explicitly; existing pages keep their editor and source.
+- Independent drafts, reset, navigation protection, saved-versus-draft previews and a reviewed change summary replace the old immediate configuration form. Controls lock during review/save, failures retain the draft, and stale settings offer a deliberate reload path.
+- New administrator-only editor API persists only the editor settings row. PostgreSQL transaction/advisory locking and revision fingerprints reject concurrent and stale writes; unknown configuration fields survive. Runtime activation occurs after commit and reports refresh warnings honestly. Legacy availability writes use the same persistence path; unrelated site saves cannot overwrite editor settings. Failed generic configuration persistence now reports failure.
+- Rebuilt the author-facing chooser with responsive, keyboard-operable cards, readable format labels and the actual saved recommendation. Template entry checks the source editor before navigation and preserves the destination’s private namespace, fixing the previous private-to-public URL reconstruction. Existing server source-access and new-page availability enforcement remain authoritative.
+- Capability limits: this is a workspace recommendation, not a new per-user default, content conversion, or per-editor plugin-settings system. Usage is a current aggregate snapshot. New creation sessions receive the policy; already open sessions still encounter the server’s current creation checks at save time. No database migration is needed.
+
+Validation: all 30 policy/formats/preview/review/chooser width-and-theme browser cases passed without overflow, JavaScript errors or WCAG A/AA violations. Interactions covered recommendation order, the last-editor guard, recommendation clearing, saved/draft preview, navigation protection, conflict recovery, save locking and read retry. Six isolated PostgreSQL tests passed atomic persistence, unrelated-setting preservation, concurrent-save rejection, database rollback, activation warnings and stale fingerprint rejection after an intervening change. Policy, template privacy/availability/access failure, transport, legacy site configuration, creation enforcement and editor-shell regressions passed. Shared/client/server type checks and repository lint passed. Production deployment and unintercepted policy restoration remain pending.

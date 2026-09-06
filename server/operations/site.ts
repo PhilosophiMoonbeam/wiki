@@ -3,6 +3,7 @@ import _ from 'lodash'
 import { siteBannerOrDefault, validateSiteBanner } from '../../shared/site-banner.ts'
 import { normalizeAvailableEditors, validateAvailableEditors } from '../../shared/page-editors.ts'
 
+import { updateEditorAvailability } from './editors.ts'
 import errors from './errors.ts'
 
 const { ApplicationError } = errors
@@ -16,7 +17,6 @@ const saveKeys = [
   'banner',
   'seo',
   'pageExtensions',
-  'editors',
   'auth',
   'editShortcuts',
   'features',
@@ -116,12 +116,7 @@ const updateConfig = async (input: unknown): Promise<void> => {
   } else {
     config.banner = siteBannerOrDefault(config.banner)
   }
-  if (availableEditorsValidation?.ok) {
-    config.editors = {
-      ...(config.editors ?? {}),
-      available: availableEditorsValidation.value
-    }
-  }
+  if (availableEditorsValidation?.ok) await updateEditorAvailability(availableEditorsValidation.value)
   if (requestedHost !== null) {
     config.host = requestedHost
   }
@@ -184,7 +179,7 @@ const updateConfig = async (input: unknown): Promise<void> => {
     forceDownload: _.get(args, 'uploadForceDownload', config.uploads.forceDownload)
   }
 
-  await configService.saveToDb(saveKeys)
+  if (await configService.saveToDb(saveKeys) === false) throw new ApplicationError('Site configuration could not be persisted. Reload before retrying.', { status: 500 })
   const app = WIKI.app as { set(setting: string, value: number | false): void }
   app.set('trust proxy', config.security.securityTrustProxy ? 1 : false)
 }

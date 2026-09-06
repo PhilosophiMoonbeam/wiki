@@ -1,3 +1,4 @@
+import { normalizeEditorPolicy } from '../shared/editor-policy.ts'
 import compression from 'compression'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
@@ -524,6 +525,7 @@ export default async function startMaster(wiki: HttpTransportRuntime): Promise<t
       logoUrl: branding.logoUrl,
       logoEffect: branding.logoEffect,
       availableEditors: normalizeAvailableEditors(wiki.config.editors?.available),
+      recommendedEditor: normalizeEditorPolicy(wiki.config.editors).recommended,
       product: wiki.product,
       agentsEnabled: wiki.config.agents.enabled,
       agentProviderEnabled: wiki.config.agents.provider.enabled,

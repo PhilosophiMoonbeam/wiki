@@ -29,6 +29,7 @@ export type SiteConfig = {
   logoEffect: LogoEffectDescriptor | null
   product: ProductMetadata
   availableEditors: PageEditorKey[]
+  recommendedEditor?: PageEditorKey | null
   agentsEnabled: boolean
   agentProviderEnabled: boolean
   agentSkillsEnabled: boolean
